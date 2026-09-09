@@ -1,7 +1,14 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { SistemaContext } from './SistemaContext'
 import type { Cliente } from '../types/Cliente'
-import type { Pet } from '../types/Pet'
+import type { Pet, Raca } from '../types/Pet'
+import {
+  editarCliente,
+  inserirCliente,
+  listarClientes,
+} from '../data/clientes'
+import { editarPet, inserirPet, listarPets, type DadosPet } from '../data/pets'
+import { listarRacas } from '../data/racas'
 
 type Props = {
   children: ReactNode
@@ -10,57 +17,122 @@ type Props = {
 export function SistemaProvider({ children }: Props) {
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [pets, setPets] = useState<Pet[]>([])
+  const [racas, setRacas] = useState<Raca[]>([])
+  const [carregando, setCarregando] = useState(true)
+  const [erro, setErro] = useState<string | null>(null)
 
-  function gerarIdCliente() {
-    const maior = clientes.reduce((valor, cliente) => {
-      const numero = Number(cliente.id.replace('CLI-', ''))
-      return numero > valor ? numero : valor
-    }, 0)
+  useEffect(() => {
+    let ativo = true
 
-    return `CLI-${String(maior + 1).padStart(6, '0')}`
-  }
+    async function carregarDados() {
+      setCarregando(true)
+      setErro(null)
 
-  function gerarIdPet() {
-    const maior = pets.reduce((valor, pet) => {
-      const numero = Number(pet.id.replace('PET-', ''))
-      return numero > valor ? numero : valor
-    }, 0)
+      try {
+        const [clientesCarregados, petsCarregados, racasCarregadas] = await Promise.all([
+          listarClientes(),
+          listarPets(),
+          listarRacas(),
+        ])
 
-    return `PET-${String(maior + 1).padStart(6, '0')}`
-  }
+        if (ativo) {
+          setClientes(clientesCarregados)
+          setPets(petsCarregados)
+          setRacas(racasCarregadas)
+        }
+      } catch (error) {
+        if (ativo) setErro(obterMensagemErro(error))
+      } finally {
+        if (ativo) setCarregando(false)
+      }
+    }
 
-  function adicionarCliente(
+    void carregarDados()
+
+    return () => {
+      ativo = false
+    }
+  }, [])
+
+  async function adicionarCliente(
     cliente: Omit<Cliente, 'id' | 'criadoEm'>
   ) {
-    const novoCliente: Cliente = {
-      ...cliente,
-      id: gerarIdCliente(),
-      criadoEm: new Date().toISOString(),
-    }
+    setErro(null)
 
-    setClientes((lista) => [...lista, novoCliente])
+    try {
+      const novoCliente = await inserirCliente(cliente)
+      setClientes((lista) => [...lista, novoCliente])
+    } catch (error) {
+      setErro(obterMensagemErro(error))
+      throw error
+    }
   }
 
-  function adicionarPet(
-    pet: Omit<Pet, 'id' | 'criadoEm'>
+  async function atualizarCliente(
+    id: string,
+    cliente: Omit<Cliente, 'id' | 'criadoEm'>,
   ) {
-    const novoPet: Pet = {
-      ...pet,
-      id: gerarIdPet(),
-      criadoEm: new Date().toISOString(),
-    }
+    setErro(null)
 
-    setPets((lista) => [...lista, novoPet])
+    try {
+      const clienteAtualizado = await editarCliente(id, cliente)
+      setClientes((lista) =>
+        lista.map((clienteAtual) =>
+          clienteAtual.id === id ? clienteAtualizado : clienteAtual,
+        ),
+      )
+    } catch (error) {
+      setErro(obterMensagemErro(error))
+      throw error
+    }
+  }
+
+  async function adicionarPet(
+    pet: DadosPet
+  ) {
+    setErro(null)
+
+    try {
+      const novoPet = await inserirPet(pet)
+      setPets((lista) => [...lista, novoPet])
+    } catch (error) {
+      setErro(obterMensagemErro(error))
+      throw error
+    }
+  }
+
+  async function atualizarPet(
+    id: string,
+    pet: DadosPet,
+  ) {
+    setErro(null)
+
+    try {
+      const petAtualizado = await editarPet(id, pet)
+      setPets((lista) =>
+        lista.map((petAtual) =>
+          petAtual.id === id ? petAtualizado : petAtual,
+        ),
+      )
+    } catch (error) {
+      setErro(obterMensagemErro(error))
+      throw error
+    }
   }
 
   const value = useMemo(
     () => ({
       clientes,
       pets,
+      racas,
+      carregando,
+      erro,
       adicionarCliente,
+      atualizarCliente,
       adicionarPet,
+      atualizarPet,
     }),
-    [clientes, pets],
+    [clientes, pets, racas, carregando, erro],
   )
 
   return (
@@ -68,4 +140,17 @@ export function SistemaProvider({ children }: Props) {
       {children}
     </SistemaContext.Provider>
   )
+}
+
+function obterMensagemErro(error: unknown) {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof error.message === 'string'
+  ) {
+    return error.message
+  }
+
+  return 'Não foi possível concluir a operação no Supabase.'
 }

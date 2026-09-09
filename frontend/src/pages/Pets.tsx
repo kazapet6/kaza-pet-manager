@@ -1,28 +1,36 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useContext, useMemo, useState, type FormEvent } from 'react'
 import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
 import Select from '../components/ui/Select'
 import Card from '../components/ui/Card'
 import Modal from '../components/ui/Modal'
+import { SistemaContext } from '../context/SistemaContext'
 import type { Pet } from '../types/Pet'
 
 export default function Pets() {
-  const [pets, setPets] = useState<Pet[]>([])
+  const { clientes, pets, racas, adicionarPet, atualizarPet } =
+    useContext(SistemaContext)
   const [modalAberto, setModalAberto] = useState(false)
+  const [petEmEdicaoId, setPetEmEdicaoId] = useState<string | null>(null)
+  const [petSelecionadoId, setPetSelecionadoId] = useState<string | null>(null)
+  const [tutorExpandido, setTutorExpandido] = useState(false)
   const [pesquisa, setPesquisa] = useState('')
 
   const [clienteId, setClienteId] = useState('')
   const [nome, setNome] = useState('')
   const [especie, setEspecie] = useState<'cao' | 'gato'>('cao')
-  const [raca, setRaca] = useState('')
+  const [racaId, setRacaId] = useState('')
+  const [racaBusca, setRacaBusca] = useState('')
   const [sexo, setSexo] = useState<'macho' | 'femea'>('macho')
   const [porte, setPorte] = useState<
     'mini' | 'pequeno' | 'medio' | 'grande' | 'gigante'
   >('pequeno')
+  const [pelagem, setPelagem] = useState<Pet['pelagem']>('curta')
   const [peso, setPeso] = useState('')
   const [cor, setCor] = useState('')
   const [dataNascimento, setDataNascimento] = useState('')
   const [castrado, setCastrado] = useState(false)
+  const [temperamento, setTemperamento] = useState<Pet['temperamento']>('calmo')
   const [observacoes, setObservacoes] = useState('')
 
   const petsFiltrados = useMemo(() => {
@@ -35,46 +43,87 @@ export default function Pets() {
     return pets.filter((pet) => {
       return (
         pet.nome.toLowerCase().includes(termo) ||
-        pet.raca.toLowerCase().includes(termo) ||
+        pet.racaNome.toLowerCase().includes(termo) ||
         pet.id.toLowerCase().includes(termo) ||
         pet.clienteId.toLowerCase().includes(termo)
       )
     })
   }, [pets, pesquisa])
 
+  const racasSugeridas = useMemo(() => {
+    const termo = racaBusca.trim().toLocaleLowerCase('pt-BR')
+    return racas
+      .filter((raca) => raca.ativo && raca.especie === especie)
+      .filter((raca) => !termo || raca.nome.toLocaleLowerCase('pt-BR').includes(termo) || raca.sinonimos.some((sinonimo) => sinonimo.ativo && sinonimo.nome.toLocaleLowerCase('pt-BR').includes(termo)))
+      .slice(0, 8)
+  }, [racas, especie, racaBusca])
+
+  const petSelecionado = pets.find((pet) => pet.id === petSelecionadoId)
+  const tutorDoPet = petSelecionado
+    ? clientes.find((cliente) => cliente.id === petSelecionado.clienteId)
+    : undefined
+
   function abrirModal() {
+    setPetEmEdicaoId(null)
+    limparFormulario()
     setModalAberto(true)
   }
 
   function fecharModal() {
     setModalAberto(false)
+    setPetEmEdicaoId(null)
     limparFormulario()
+  }
+
+  function editarPet(pet: Pet) {
+    setClienteId(pet.clienteId)
+    setNome(pet.nome)
+    setEspecie(pet.especie)
+    setRacaId(pet.racaId)
+    setRacaBusca(pet.racaNome)
+    setSexo(pet.sexo)
+    setPorte(pet.porte)
+    setPelagem(pet.pelagem)
+    setPeso(pet.peso === null ? '' : String(pet.peso))
+    setCor(pet.cor)
+    setDataNascimento(pet.dataNascimento)
+    setCastrado(pet.castrado)
+    setTemperamento(pet.temperamento)
+    setObservacoes(pet.observacoes)
+    setPetEmEdicaoId(pet.id)
+    setPetSelecionadoId(null)
+    setTutorExpandido(false)
+    setModalAberto(true)
+  }
+
+  function abrirDetalhesDoPet(id: string) {
+    setPetSelecionadoId(id)
+    setTutorExpandido(false)
+  }
+
+  function fecharDetalhesDoPet() {
+    setPetSelecionadoId(null)
+    setTutorExpandido(false)
   }
 
   function limparFormulario() {
     setClienteId('')
     setNome('')
     setEspecie('cao')
-    setRaca('')
+    setRacaId('')
+    setRacaBusca('')
     setSexo('macho')
     setPorte('pequeno')
+    setPelagem('curta')
     setPeso('')
     setCor('')
     setDataNascimento('')
     setCastrado(false)
+    setTemperamento('calmo')
     setObservacoes('')
   }
 
-  function gerarProximoId() {
-    const maiorNumero = pets.reduce((maior, pet) => {
-      const numero = Number(pet.id.replace('PET-', ''))
-      return numero > maior ? numero : maior
-    }, 0)
-
-    return `PET-${String(maiorNumero + 1).padStart(6, '0')}`
-  }
-
-  function salvarPet(evento: FormEvent<HTMLFormElement>) {
+  async function salvarPet(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault()
 
     if (!clienteId.trim()) {
@@ -87,29 +136,38 @@ export default function Pets() {
       return
     }
 
-    if (!raca.trim()) {
-      alert('Preencha a raça do pet.')
+    if (!racaId) {
+      alert('Selecione uma raça válida do catálogo.')
       return
     }
 
-    const novoPet: Pet = {
-      id: gerarProximoId(),
-      clienteId: clienteId.trim().toUpperCase(),
+    const dadosPet = {
+      clienteId,
       nome: nome.trim(),
       especie,
-      raca: raca.trim(),
+      racaId,
       sexo,
       porte,
+      pelagem,
       peso: peso ? Number(peso) : null,
       cor: cor.trim(),
       dataNascimento: dataNascimento.trim(),
       castrado,
+      temperamento,
       observacoes: observacoes.trim(),
-      criadoEm: new Date().toISOString(),
     }
 
-    setPets((petsAtuais) => [...petsAtuais, novoPet])
-    fecharModal()
+    try {
+      if (petEmEdicaoId) {
+        await atualizarPet(petEmEdicaoId, dadosPet)
+      } else {
+        await adicionarPet(dadosPet)
+      }
+
+      fecharModal()
+    } catch (error) {
+      alert(obterMensagemErro(error))
+    }
   }
 
   return (
@@ -123,12 +181,13 @@ export default function Pets() {
           marginBottom: '24px',
         }}
       >
-        <div>
-          <h1 style={{ margin: 0 }}>🐶 Pets</h1>
+        <div style={{ display: 'grid', gap: '10px' }}>
+          <h1 style={{ margin: 0, lineHeight: 1.15 }}>🐶 Pets</h1>
 
           <p
             style={{
-              margin: '6px 0 0',
+              margin: 0,
+              lineHeight: 1.5,
               color: 'var(--color-text-muted)',
             }}
           >
@@ -188,7 +247,23 @@ export default function Pets() {
           }}
         >
           {petsFiltrados.map((pet) => (
-            <Card key={pet.id}>
+            <div
+              key={pet.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => abrirDetalhesDoPet(pet.id)}
+              onKeyDown={(evento) => {
+                if (
+                  evento.target === evento.currentTarget &&
+                  (evento.key === 'Enter' || evento.key === ' ')
+                ) {
+                  evento.preventDefault()
+                  abrirDetalhesDoPet(pet.id)
+                }
+              }}
+              style={{ cursor: 'pointer' }}
+            >
+            <Card>
               <span
                 style={{
                   color: 'var(--color-primary)',
@@ -204,7 +279,7 @@ export default function Pets() {
               </h2>
 
               <p style={{ margin: '4px 0' }}>
-                {pet.raca} • {pet.porte}
+                {pet.racaNome} • {pet.porte}
               </p>
 
               <p
@@ -227,17 +302,23 @@ export default function Pets() {
                   : 'Peso não informado'}
               </p>
 
-              <Button variant="secondary">
-                Ver pet
-              </Button>
+              <div onClick={(evento) => evento.stopPropagation()}>
+                <Button
+                  variant="secondary"
+                  onClick={() => editarPet(pet)}
+                >
+                  Editar
+                </Button>
+              </div>
             </Card>
+            </div>
           ))}
         </div>
       )}
 
       <Modal
         aberto={modalAberto}
-        titulo="Novo pet"
+        titulo={petEmEdicaoId ? 'Editar pet' : 'Novo pet'}
         onClose={fecharModal}
       >
         <form
@@ -248,10 +329,16 @@ export default function Pets() {
           }}
         >
           <Campo titulo="Código do cliente *">
-            <Input
-              placeholder="Exemplo: CLI-000001"
+            <Select
               value={clienteId}
               onChange={(evento) => setClienteId(evento.target.value)}
+              options={[
+                { value: '', label: 'Selecione o cliente' },
+                ...clientes.map((cliente) => ({
+                  value: cliente.id,
+                  label: `${cliente.nome} (${cliente.id})`,
+                })),
+              ]}
             />
           </Campo>
 
@@ -267,9 +354,11 @@ export default function Pets() {
             <Campo titulo="Espécie">
               <Select
                 value={especie}
-                onChange={(evento) =>
+                onChange={(evento) => {
                   setEspecie(evento.target.value as 'cao' | 'gato')
-                }
+                  setRacaId('')
+                  setRacaBusca('')
+                }}
                 options={[
                   { value: 'cao', label: 'Cão' },
                   { value: 'gato', label: 'Gato' },
@@ -278,11 +367,36 @@ export default function Pets() {
             </Campo>
 
             <Campo titulo="Raça *">
-              <Input
-                placeholder="Raça"
-                value={raca}
-                onChange={(evento) => setRaca(evento.target.value)}
-              />
+              <div style={{ position: 'relative' }}>
+                <Input
+                  placeholder="Busque uma raça"
+                  value={racaBusca}
+                  onChange={(evento) => {
+                    setRacaBusca(evento.target.value)
+                    setRacaId('')
+                  }}
+                />
+                {!racaId && racaBusca.trim() && (
+                  <div style={listaAutocomplete}>
+                    {racasSugeridas.map((raca) => (
+                      <button
+                        type="button"
+                        key={raca.id}
+                        style={opcaoAutocomplete}
+                        onClick={() => {
+                          setRacaId(raca.id)
+                          setRacaBusca(raca.nome)
+                        }}
+                      >
+                        {raca.nome}
+                      </button>
+                    ))}
+                    {racasSugeridas.length === 0 && (
+                      <span style={{ padding: '12px' }}>Nenhuma raça encontrada.</span>
+                    )}
+                  </div>
+                )}
+              </div>
             </Campo>
           </div>
 
@@ -324,6 +438,18 @@ export default function Pets() {
             </Campo>
           </div>
 
+          <Campo titulo="Pelagem">
+            <Select
+              value={pelagem}
+              onChange={(evento) => setPelagem(evento.target.value as Pet['pelagem'])}
+              options={[
+                { value: 'curta', label: 'Curta' },
+                { value: 'media', label: 'Média' },
+                { value: 'longa', label: 'Longa' },
+              ]}
+            />
+          </Campo>
+
           <div style={gradeDuasColunas}>
             <Campo titulo="Peso">
               <Input
@@ -350,6 +476,20 @@ export default function Pets() {
               onChange={(evento) =>
                 setDataNascimento(evento.target.value)
               }
+            />
+          </Campo>
+
+          <Campo titulo="Temperamento">
+            <Select
+              value={temperamento}
+              onChange={(evento) =>
+                setTemperamento(evento.target.value as Pet['temperamento'])
+              }
+              options={[
+                { value: 'calmo', label: 'Calmo' },
+                { value: 'moderado', label: 'Moderado' },
+                { value: 'dificil', label: 'Difícil' },
+              ]}
             />
           </Campo>
 
@@ -409,13 +549,222 @@ export default function Pets() {
             </Button>
 
             <Button type="submit">
-              Salvar Pet
+              {petEmEdicaoId ? 'Salvar alterações' : 'Salvar Pet'}
             </Button>
           </div>
         </form>
       </Modal>
+
+      <Modal
+        aberto={Boolean(petSelecionado)}
+        titulo="Detalhes do pet"
+        onClose={fecharDetalhesDoPet}
+      >
+        {petSelecionado && (
+          <div style={{ display: 'grid', gap: '20px' }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                gap: '16px',
+              }}
+            >
+              <Detalhe titulo="Código" valor={petSelecionado.id} />
+              <Detalhe titulo="Nome" valor={petSelecionado.nome} />
+              <Detalhe
+                titulo="Espécie"
+                valor={petSelecionado.especie === 'cao' ? 'Cão' : 'Gato'}
+              />
+              <Detalhe titulo="Raça" valor={petSelecionado.racaNome} />
+              <Detalhe
+                titulo="Sexo"
+                valor={petSelecionado.sexo === 'macho' ? 'Macho' : 'Fêmea'}
+              />
+              <Detalhe
+                titulo="Porte"
+                valor={formatarPorte(petSelecionado.porte)}
+              />
+              <Detalhe titulo="Pelagem" valor={formatarPelagem(petSelecionado.pelagem)} />
+              <Detalhe
+                titulo="Peso"
+                valor={
+                  petSelecionado.peso === null
+                    ? ''
+                    : `${petSelecionado.peso} kg`
+                }
+              />
+              <Detalhe titulo="Cor" valor={petSelecionado.cor} />
+              <Detalhe
+                titulo="Data de nascimento"
+                valor={petSelecionado.dataNascimento}
+              />
+              <Detalhe
+                titulo="Castrado"
+                valor={petSelecionado.castrado ? 'Sim' : 'Não'}
+              />
+              <Detalhe
+                titulo="Temperamento"
+                valor={formatarTemperamento(petSelecionado.temperamento)}
+              />
+              <Detalhe
+                titulo="Data de cadastro"
+                valor={formatarDataCadastro(petSelecionado.criadoEm)}
+              />
+            </div>
+
+            <Detalhe
+              titulo="Observações"
+              valor={petSelecionado.observacoes}
+            />
+
+            <div>
+              <strong>Tutor</strong>
+
+              {tutorDoPet ? (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setTutorExpandido((valor) => !valor)}
+                  onKeyDown={(evento) => {
+                    if (evento.key === 'Enter' || evento.key === ' ') {
+                      evento.preventDefault()
+                      setTutorExpandido((valor) => !valor)
+                    }
+                  }}
+                  style={{ cursor: 'pointer', marginTop: '12px' }}
+                >
+                  <Card style={{ padding: '16px' }}>
+                    <strong>{tutorDoPet.nome}</strong>
+                    <p
+                      style={{
+                        margin: '6px 0 0',
+                        color: 'var(--color-text-muted)',
+                      }}
+                    >
+                      {tutorDoPet.id} • {tutorDoPet.whatsapp}
+                    </p>
+
+                    {tutorExpandido && (
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns:
+                            'repeat(2, minmax(0, 1fr))',
+                          gap: '12px',
+                          marginTop: '16px',
+                        }}
+                      >
+                        <Detalhe
+                          titulo="Endereço"
+                          valor={tutorDoPet.endereco}
+                        />
+                        <Detalhe titulo="Bairro" valor={tutorDoPet.bairro} />
+                        <Detalhe titulo="Cidade" valor={tutorDoPet.cidade} />
+                        <Detalhe
+                          titulo="Observações"
+                          valor={tutorDoPet.observacoes}
+                        />
+                      </div>
+                    )}
+
+                    <small
+                      style={{
+                        display: 'block',
+                        marginTop: '12px',
+                        color: 'var(--color-primary)',
+                      }}
+                    >
+                      {tutorExpandido
+                        ? 'Ocultar informações'
+                        : 'Ver informações do responsável'}
+                    </small>
+                  </Card>
+                </div>
+              ) : (
+                <p
+                  style={{
+                    margin: '10px 0 0',
+                    color: 'var(--color-text-muted)',
+                  }}
+                >
+                  Responsável não encontrado.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
+}
+
+type DetalheProps = {
+  titulo: string
+  valor: string
+}
+
+function Detalhe({ titulo, valor }: DetalheProps) {
+  return (
+    <div>
+      <small
+        style={{
+          display: 'block',
+          marginBottom: '4px',
+          color: 'var(--color-text-muted)',
+        }}
+      >
+        {titulo}
+      </small>
+      <span>{valor || 'Não informado'}</span>
+    </div>
+  )
+}
+
+function formatarPorte(porte: Pet['porte']) {
+  const nomes = {
+    mini: 'Mini',
+    pequeno: 'Pequeno',
+    medio: 'Médio',
+    grande: 'Grande',
+    gigante: 'Gigante',
+  }
+
+  return nomes[porte]
+}
+
+function formatarTemperamento(temperamento: Pet['temperamento']) {
+  const nomes = {
+    calmo: 'Calmo',
+    moderado: 'Moderado',
+    dificil: 'Difícil',
+  }
+
+  return nomes[temperamento]
+}
+
+function formatarPelagem(pelagem: Pet['pelagem']) {
+  return { curta: 'Curta', media: 'Média', longa: 'Longa' }[pelagem]
+}
+
+function formatarDataCadastro(valor: string) {
+  const data = new Date(valor)
+
+  return Number.isNaN(data.getTime())
+    ? 'Não informado'
+    : data.toLocaleDateString('pt-BR')
+}
+
+function obterMensagemErro(error: unknown) {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof error.message === 'string'
+  ) {
+    return error.message
+  }
+
+  return 'Não foi possível salvar o pet. Tente novamente.'
 }
 
 type CampoProps = {
@@ -439,4 +788,26 @@ const gradeDuasColunas = {
   display: 'grid',
   gridTemplateColumns: '1fr 1fr',
   gap: '14px',
+}
+
+const listaAutocomplete = {
+  position: 'absolute' as const,
+  zIndex: 10,
+  top: 'calc(100% + 6px)',
+  width: '100%',
+  display: 'grid',
+  maxHeight: '220px',
+  overflowY: 'auto' as const,
+  border: '1px solid var(--color-border)',
+  borderRadius: 'var(--radius-md)',
+  background: 'var(--color-card)',
+  boxShadow: 'var(--shadow-lg)',
+}
+
+const opcaoAutocomplete = {
+  padding: '11px 12px',
+  textAlign: 'left' as const,
+  background: 'transparent',
+  color: 'var(--color-text)',
+  borderBottom: '1px solid var(--color-border)',
 }

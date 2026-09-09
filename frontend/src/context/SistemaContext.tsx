@@ -1,18 +1,32 @@
 import { createContext } from 'react'
 import type { Cliente } from '../types/Cliente'
-import type { Pet } from '../types/Pet'
+import type { Pet, Raca } from '../types/Pet'
+import type { DadosPet } from '../data/pets'
 
 type SistemaContextType = {
   clientes: Cliente[]
   pets: Pet[]
+  racas: Raca[]
+  carregando: boolean
+  erro: string | null
 
   adicionarCliente: (
     cliente: Omit<Cliente, 'id' | 'criadoEm'>
-  ) => void
+  ) => Promise<void>
+
+  atualizarCliente: (
+    id: string,
+    cliente: Omit<Cliente, 'id' | 'criadoEm'>,
+  ) => Promise<void>
 
   adicionarPet: (
-    pet: Omit<Pet, 'id' | 'criadoEm'>
-  ) => void
+    pet: DadosPet
+  ) => Promise<void>
+
+  atualizarPet: (
+    id: string,
+    pet: DadosPet,
+  ) => Promise<void>
 }
 
 export const SistemaContext =

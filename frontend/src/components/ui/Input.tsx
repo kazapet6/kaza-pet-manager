@@ -4,8 +4,9 @@ type InputProps = {
   placeholder?: string
   value?: string
   onChange?: (e: ChangeEvent<HTMLInputElement>) => void
-  type?: 'text' | 'email' | 'password' | 'number' | 'tel'
+  type?: 'text' | 'email' | 'password' | 'number' | 'tel' | 'time' | 'date'
   style?: CSSProperties
+  disabled?: boolean
 }
 
 export default function Input({
@@ -14,6 +15,7 @@ export default function Input({
   onChange,
   type = 'text',
   style,
+  disabled,
 }: InputProps) {
   return (
     <input
@@ -21,6 +23,7 @@ export default function Input({
       placeholder={placeholder}
       value={value}
       onChange={onChange}
+      disabled={disabled}
       style={{
         width: '100%',
         padding: '12px 14px',

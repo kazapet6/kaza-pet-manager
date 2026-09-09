@@ -1,13 +1,21 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useContext, useMemo, useState, type FormEvent } from 'react'
 import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
 import Card from '../components/ui/Card'
 import Modal from '../components/ui/Modal'
+import { SistemaContext } from '../context/SistemaContext'
 import type { Cliente } from '../types/Cliente'
 
 export default function Clientes() {
+  const { clientes, pets, adicionarCliente, atualizarCliente } =
+    useContext(SistemaContext)
   const [modalAberto, setModalAberto] = useState(false)
-  const [clientes, setClientes] = useState<Cliente[]>([])
+  const [clienteEmEdicaoId, setClienteEmEdicaoId] = useState<
+    string | null
+  >(null)
+  const [clienteSelecionadoId, setClienteSelecionadoId] = useState<
+    string | null
+  >(null)
   const [pesquisa, setPesquisa] = useState('')
 
   const [nome, setNome] = useState('')
@@ -33,13 +41,42 @@ export default function Clientes() {
     })
   }, [clientes, pesquisa])
 
+  const clienteSelecionado = clientes.find(
+    (cliente) => cliente.id === clienteSelecionadoId,
+  )
+
+  const petsDoClienteSelecionado = clienteSelecionado
+    ? pets.filter((pet) => pet.clienteId === clienteSelecionado.id)
+    : []
+
   function abrirModal() {
+    setClienteEmEdicaoId(null)
+    limparFormulario()
     setModalAberto(true)
   }
 
   function fecharModal() {
     setModalAberto(false)
+    setClienteEmEdicaoId(null)
     limparFormulario()
+  }
+
+  function abrirEdicaoCliente(cliente: Cliente) {
+    setNome(cliente.nome)
+    setWhatsapp(cliente.whatsapp)
+    setEndereco(cliente.endereco)
+    setBairro(cliente.bairro)
+    setCidade(cliente.cidade)
+    setObservacoes(cliente.observacoes)
+    setClienteEmEdicaoId(cliente.id)
+    setClienteSelecionadoId(null)
+    setModalAberto(true)
+  }
+
+  function editarCliente() {
+    if (clienteSelecionado) {
+      abrirEdicaoCliente(clienteSelecionado)
+    }
   }
 
   function limparFormulario() {
@@ -51,16 +88,11 @@ export default function Clientes() {
     setObservacoes('')
   }
 
-  function gerarProximoId() {
-    const maiorNumero = clientes.reduce((maior, cliente) => {
-      const numero = Number(cliente.id.replace('CLI-', ''))
-      return numero > maior ? numero : maior
-    }, 0)
-
-    return `CLI-${String(maiorNumero + 1).padStart(6, '0')}`
+  function contarPetsDoCliente(clienteId: string) {
+    return pets.filter((pet) => pet.clienteId === clienteId).length
   }
 
-  function salvarCliente(evento: FormEvent<HTMLFormElement>) {
+  async function salvarCliente(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault()
 
     if (!nome.trim()) {
@@ -73,19 +105,26 @@ export default function Clientes() {
       return
     }
 
-    const novoCliente: Cliente = {
-      id: gerarProximoId(),
+    const dadosCliente = {
       nome: nome.trim(),
       whatsapp: whatsapp.trim(),
       endereco: endereco.trim(),
       bairro: bairro.trim(),
       cidade: cidade.trim(),
       observacoes: observacoes.trim(),
-      criadoEm: new Date().toISOString(),
     }
 
-    setClientes((clientesAtuais) => [...clientesAtuais, novoCliente])
-    fecharModal()
+    try {
+      if (clienteEmEdicaoId) {
+        await atualizarCliente(clienteEmEdicaoId, dadosCliente)
+      } else {
+        await adicionarCliente(dadosCliente)
+      }
+
+      fecharModal()
+    } catch (error) {
+      alert(obterMensagemErro(error))
+    }
   }
 
   return (
@@ -99,12 +138,13 @@ export default function Clientes() {
           marginBottom: '24px',
         }}
       >
-        <div>
-          <h1 style={{ margin: 0 }}>👥 Clientes</h1>
+        <div style={{ display: 'grid', gap: '10px' }}>
+          <h1 style={{ margin: 0, lineHeight: 1.15 }}>👥 Clientes</h1>
 
           <p
             style={{
-              margin: '6px 0 0',
+              margin: 0,
+              lineHeight: 1.5,
               color: 'var(--color-text-muted)',
             }}
           >
@@ -162,8 +202,27 @@ export default function Clientes() {
             marginTop: '24px',
           }}
         >
-          {clientesFiltrados.map((cliente) => (
-            <Card key={cliente.id}>
+          {clientesFiltrados.map((cliente) => {
+            const quantidadePets = contarPetsDoCliente(cliente.id)
+
+            return (
+            <div
+              key={cliente.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => setClienteSelecionadoId(cliente.id)}
+              onKeyDown={(evento) => {
+                if (
+                  evento.target === evento.currentTarget &&
+                  (evento.key === 'Enter' || evento.key === ' ')
+                ) {
+                  evento.preventDefault()
+                  setClienteSelecionadoId(cliente.id)
+                }
+              }}
+              style={{ cursor: 'pointer' }}
+            >
+            <Card>
               <div
                 style={{
                   display: 'flex',
@@ -230,22 +289,32 @@ export default function Clientes() {
                       fontSize: '14px',
                     }}
                   >
-                    🐶 0 pets cadastrados
+                    🐶 {quantidadePets}{' '}
+                    {quantidadePets === 1
+                      ? 'pet cadastrado'
+                      : 'pets cadastrados'}
                   </p>
                 </div>
 
-                <Button variant="secondary">
-                  Ver cliente
-                </Button>
+                <div onClick={(evento) => evento.stopPropagation()}>
+                  <Button
+                    variant="secondary"
+                    onClick={() => abrirEdicaoCliente(cliente)}
+                  >
+                    Editar
+                  </Button>
+                </div>
               </div>
             </Card>
-          ))}
+            </div>
+            )
+          })}
         </div>
       )}
 
       <Modal
         aberto={modalAberto}
-        titulo="Novo cliente"
+        titulo={clienteEmEdicaoId ? 'Editar cliente' : 'Novo cliente'}
         onClose={fecharModal}
       >
         <p
@@ -254,7 +323,9 @@ export default function Clientes() {
             color: 'var(--color-text-muted)',
           }}
         >
-          Cadastre os dados principais do cliente.
+          {clienteEmEdicaoId
+            ? 'Atualize os dados principais do cliente.'
+            : 'Cadastre os dados principais do cliente.'}
         </p>
 
         <form
@@ -384,11 +455,129 @@ export default function Clientes() {
             </Button>
 
             <Button type="submit">
-              Salvar Cliente
+              {clienteEmEdicaoId ? 'Salvar alterações' : 'Salvar Cliente'}
             </Button>
           </div>
         </form>
       </Modal>
+
+      <Modal
+        aberto={Boolean(clienteSelecionado)}
+        titulo="Detalhes do cliente"
+        onClose={() => setClienteSelecionadoId(null)}
+      >
+        {clienteSelecionado && (
+          <div style={{ display: 'grid', gap: '20px' }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                gap: '16px',
+              }}
+            >
+              <Detalhe titulo="Código" valor={clienteSelecionado.id} />
+              <Detalhe titulo="Nome" valor={clienteSelecionado.nome} />
+              <Detalhe
+                titulo="WhatsApp"
+                valor={clienteSelecionado.whatsapp}
+              />
+              <Detalhe
+                titulo="Endereço"
+                valor={clienteSelecionado.endereco}
+              />
+              <Detalhe titulo="Bairro" valor={clienteSelecionado.bairro} />
+              <Detalhe titulo="Cidade" valor={clienteSelecionado.cidade} />
+            </div>
+
+            <Detalhe
+              titulo="Observações"
+              valor={clienteSelecionado.observacoes}
+            />
+
+            <div>
+              <Button onClick={editarCliente}>Editar cliente</Button>
+            </div>
+
+            <div>
+              <strong>
+                {petsDoClienteSelecionado.length}{' '}
+                {petsDoClienteSelecionado.length === 1
+                  ? 'pet vinculado'
+                  : 'pets vinculados'}
+              </strong>
+
+              {petsDoClienteSelecionado.length === 0 ? (
+                <p
+                  style={{
+                    margin: '10px 0 0',
+                    color: 'var(--color-text-muted)',
+                  }}
+                >
+                  Nenhum pet cadastrado para este cliente.
+                </p>
+              ) : (
+                <div
+                  style={{
+                    display: 'grid',
+                    gap: '10px',
+                    marginTop: '12px',
+                  }}
+                >
+                  {petsDoClienteSelecionado.map((pet) => (
+                    <Card key={pet.id} style={{ padding: '16px' }}>
+                      <strong>{pet.nome}</strong>
+                      <p
+                        style={{
+                          margin: '6px 0 0',
+                          color: 'var(--color-text-muted)',
+                        }}
+                      >
+                        {pet.especie === 'cao' ? 'Cão' : 'Gato'} •{' '}
+                        {pet.racaNome}
+                      </p>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
+}
+
+type DetalheProps = {
+  titulo: string
+  valor: string
+}
+
+function Detalhe({ titulo, valor }: DetalheProps) {
+  return (
+    <div>
+      <small
+        style={{
+          display: 'block',
+          marginBottom: '4px',
+          color: 'var(--color-text-muted)',
+        }}
+      >
+        {titulo}
+      </small>
+      <span>{valor || 'Não informado'}</span>
+    </div>
+  )
+}
+
+function obterMensagemErro(error: unknown) {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof error.message === 'string'
+  ) {
+    return error.message
+  }
+
+  return 'Não foi possível salvar o cliente. Tente novamente.'
 }

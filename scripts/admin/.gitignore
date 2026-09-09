@@ -1,0 +1,4 @@
+.env*
+.tmp/
+!.env.admin.example
+!.env.edge-test.example

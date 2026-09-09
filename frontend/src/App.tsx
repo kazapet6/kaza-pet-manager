@@ -1,15 +1,61 @@
 ﻿import { useState, type FormEvent } from 'react'
+import { useEffect } from 'react'
+import type { User } from '@supabase/supabase-js'
 import './App.css'
 import Dashboard from './pages/Dashboard'
 import Agenda from './pages/Agenda'
 import Clientes from './pages/Clientes'
 import Pets from './pages/Pets'
+import Servicos from './pages/Servicos'
+import Funcionarios from './pages/Funcionarios'
+import Equipamentos from './pages/Equipamentos'
+import ConfiguracoesAgenda from './pages/ConfiguracoesAgenda'
+import TesteMotorDisponibilidade from './pages/TesteMotorDisponibilidade'
+import Pacotes from './pages/Pacotes'
+import Contratos from './contratos/Contratos'
+import { supabase } from './lib/supabase'
+import { classificarUsuarioInterno, type EstadoAutenticacao } from './auth/interna'
 
 function App() {
-  const [estaLogado, setEstaLogado] = useState(false)
+  const [estadoAutenticacao, setEstadoAutenticacao] = useState<EstadoAutenticacao>('carregando')
+  const [usuarioAtual, setUsuarioAtual] = useState<User | null>(null)
   const [paginaAtual, setPaginaAtual] = useState('dashboard')
-  const [usuario, setUsuario] = useState('')
+  const [contratoEmFocoId, setContratoEmFocoId] = useState<string | null>(null)
+  const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
+  const [mensagemLogin, setMensagemLogin] = useState('')
+  const [entrando, setEntrando] = useState(false)
+
+  useEffect(() => {
+    let ativo = true
+
+    async function restaurarSessao() {
+      const { data: sessao, error: erroSessao } = await supabase.auth.getSession()
+      if (!ativo) return
+      if (erroSessao || !sessao.session) {
+        setUsuarioAtual(null)
+        setEstadoAutenticacao('nao_autenticado')
+        return
+      }
+      const { data, error } = await supabase.auth.getUser()
+      if (!ativo) return
+      const usuario = error ? null : data.user
+      setUsuarioAtual(usuario)
+      setEstadoAutenticacao(classificarUsuarioInterno(usuario))
+    }
+
+    void restaurarSessao()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((evento, sessao) => {
+      if (!ativo || evento === 'INITIAL_SESSION') return
+      const usuario = sessao?.user ?? null
+      setUsuarioAtual(usuario)
+      setEstadoAutenticacao(classificarUsuarioInterno(usuario))
+    })
+    return () => {
+      ativo = false
+      subscription.unsubscribe()
+    }
+  }, [])
 
   const dataFormatada = new Date().toLocaleDateString('pt-BR', {
     weekday: 'long',
@@ -17,24 +63,39 @@ function App() {
     month: 'long',
   })
 
-  function entrarNoSistema(evento: FormEvent<HTMLFormElement>) {
+  async function entrarNoSistema(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault()
-
-    if (!usuario.trim() || !senha.trim()) {
-      alert('Preencha o usuário e a senha.')
+    setMensagemLogin('')
+    if (!email.trim() || !senha) {
+      setMensagemLogin('Preencha o email e a senha.')
       return
     }
-
-    setEstaLogado(true)
-  }
-
-  function sairDoSistema() {
-    setEstaLogado(false)
+    setEntrando(true)
+    const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password: senha })
+    setEntrando(false)
     setSenha('')
+    if (error || !data.user) {
+      const conexao = error?.message.toLowerCase().includes('fetch')
+      setMensagemLogin(conexao ? 'Não foi possível conectar ao serviço de autenticação.' : 'Email ou senha inválidos.')
+      setEstadoAutenticacao('nao_autenticado')
+      return
+    }
+    setUsuarioAtual(data.user)
+    setEstadoAutenticacao(classificarUsuarioInterno(data.user))
   }
 
-  const avatarLetra = usuario.trim()
-    ? usuario.trim().charAt(0).toUpperCase()
+  async function sairDoSistema() {
+    setEstadoAutenticacao('carregando')
+    await supabase.auth.signOut({ scope: 'local' })
+    setUsuarioAtual(null)
+    setEstadoAutenticacao('nao_autenticado')
+    setSenha('')
+    setPaginaAtual('dashboard')
+  }
+
+  const identidadeUsuario = usuarioAtual?.email ?? 'Usuário interno'
+  const avatarLetra = identidadeUsuario
+    ? identidadeUsuario.charAt(0).toUpperCase()
     : 'A'
 
   const nomePagina =
@@ -44,8 +105,20 @@ function App() {
         ? 'Clientes'
         : paginaAtual === 'pets'
           ? 'Pets'
+          : paginaAtual === 'servicos'
+            ? 'Serviços'
+            : paginaAtual === 'funcionarios'
+              ? 'Funcionários'
+              : paginaAtual === 'equipamentos'
+              ? 'Equipamentos'
+              : paginaAtual === 'configuracoes'
+                ? 'Configurações • Agenda'
+              : paginaAtual === 'teste-motor'
+                ? 'Teste do Motor de Disponibilidade'
           : paginaAtual === 'pacotes'
             ? 'Pacotes'
+          : paginaAtual === 'contratos'
+            ? 'Contratos'
             : paginaAtual === 'financeiro'
               ? 'Financeiro'
               : 'Visão geral'
@@ -53,7 +126,7 @@ function App() {
   function renderizarPagina() {
     switch (paginaAtual) {
       case 'agenda':
-        return <Agenda />
+        return <Agenda onVerContrato={(contratoId) => { setContratoEmFocoId(contratoId); setPaginaAtual('contratos') }} />
 
       case 'clientes':
         return <Clientes />
@@ -61,13 +134,26 @@ function App() {
       case 'pets':
         return <Pets />
 
+      case 'servicos':
+        return <Servicos />
+
+      case 'funcionarios':
+        return <Funcionarios />
+
+      case 'equipamentos':
+        return <Equipamentos />
+
+      case 'configuracoes':
+        return <ConfiguracoesAgenda />
+
+      case 'teste-motor':
+        return <TesteMotorDisponibilidade />
+
       case 'pacotes':
-        return (
-          <section className="panel" style={{ padding: '32px' }}>
-            <h2>Pacotes</h2>
-            <p>Esta página de pacotes está em construção.</p>
-          </section>
-        )
+        return <Pacotes />
+
+      case 'contratos':
+        return <Contratos contratoInicialId={contratoEmFocoId} onContratoInicialAberto={() => setContratoEmFocoId(null)} />
 
       case 'financeiro':
         return (
@@ -83,7 +169,15 @@ function App() {
     }
   }
 
-  if (!estaLogado) {
+  if (estadoAutenticacao === 'carregando') {
+    return <main className="pagina-login"><section className="cartao-login estado-login"><div className="icone-logo">🐾</div><h1>KAZA PET</h1><p>Carregando sessão segura…</p></section></main>
+  }
+
+  if (estadoAutenticacao === 'sem_permissao') {
+    return <main className="pagina-login"><section className="cartao-login estado-login"><div className="icone-logo">🔒</div><h1>Acesso não autorizado</h1><p>A conta {identidadeUsuario} está autenticada, mas não possui permissão interna.</p><button type="button" onClick={() => void sairDoSistema()}>Sair</button></section></main>
+  }
+
+  if (estadoAutenticacao === 'nao_autenticado') {
     return (
       <main className="pagina-login">
         <section className="cartao-login">
@@ -103,15 +197,16 @@ function App() {
             className="formulario-login"
             onSubmit={entrarNoSistema}
           >
-            <label htmlFor="usuario">Usuário</label>
+            <label htmlFor="email">Email</label>
 
             <input
-              id="usuario"
-              type="text"
-              placeholder="Digite seu usuário"
-              value={usuario}
+              id="email"
+              type="email"
+              autoComplete="username"
+              placeholder="Digite seu email"
+              value={email}
               onChange={(evento) =>
-                setUsuario(evento.target.value)
+                setEmail(evento.target.value)
               }
             />
 
@@ -120,6 +215,7 @@ function App() {
             <input
               id="senha"
               type="password"
+              autoComplete="current-password"
               placeholder="Digite sua senha"
               value={senha}
               onChange={(evento) =>
@@ -127,7 +223,9 @@ function App() {
               }
             />
 
-            <button type="submit">Entrar</button>
+            {mensagemLogin && <p className="mensagem-login" role="alert">{mensagemLogin}</p>}
+
+            <button type="submit" disabled={entrando}>{entrando ? 'Entrando…' : 'Entrar'}</button>
           </form>
 
           <p className="versao">
@@ -203,6 +301,30 @@ function App() {
           </button>
 
           <button
+            className={paginaAtual === 'servicos' ? 'nav-item ativo' : 'nav-item'}
+            onClick={() => setPaginaAtual('servicos')}
+          >
+            <span className="nav-icon">🧼</span>
+            <span>Serviços</span>
+          </button>
+
+          <button
+            className={paginaAtual === 'funcionarios' ? 'nav-item ativo' : 'nav-item'}
+            onClick={() => setPaginaAtual('funcionarios')}
+          >
+            <span className="nav-icon">👤</span>
+            <span>Funcionários</span>
+          </button>
+
+          <button
+            className={paginaAtual === 'equipamentos' ? 'nav-item ativo' : 'nav-item'}
+            onClick={() => setPaginaAtual('equipamentos')}
+          >
+            <span className="nav-icon">⚙️</span>
+            <span>Equipamentos</span>
+          </button>
+
+          <button
             className={
               paginaAtual === 'pacotes'
                 ? 'nav-item ativo'
@@ -225,12 +347,36 @@ function App() {
             <span className="nav-icon">💰</span>
             <span>Financeiro</span>
           </button>
+
+          <button
+            className={paginaAtual === 'contratos' ? 'nav-item ativo' : 'nav-item'}
+            onClick={() => setPaginaAtual('contratos')}
+          >
+            <span className="nav-icon">🧾</span>
+            <span>Contratos</span>
+          </button>
+
+          <button
+            className={paginaAtual === 'teste-motor' ? 'nav-item ativo' : 'nav-item'}
+            onClick={() => setPaginaAtual('teste-motor')}
+          >
+            <span className="nav-icon">🧪</span>
+            <span>Teste do Motor</span>
+          </button>
+
+          <button
+            className={paginaAtual === 'configuracoes' ? 'nav-item ativo' : 'nav-item'}
+            onClick={() => setPaginaAtual('configuracoes')}
+          >
+            <span className="nav-icon">🔧</span>
+            <span>Configurações</span>
+          </button>
         </nav>
 
         <div className="sidebar-footer">
           <button
             className="logout"
-            onClick={sairDoSistema}
+            onClick={() => void sairDoSistema()}
           >
             Sair
           </button>
@@ -248,7 +394,7 @@ function App() {
               Painel • {nomePagina}
             </p>
 
-            <h1>Olá, {usuario}!</h1>
+            <h1>Olá, {identidadeUsuario}!</h1>
 
             <p className="date-label">
               {dataFormatada}
@@ -261,8 +407,8 @@ function App() {
             </div>
 
             <div>
-              <strong>{usuario}</strong>
-              <small>Administrador</small>
+              <strong>{identidadeUsuario}</strong>
+              <small>Usuário interno</small>
             </div>
           </div>
         </header>

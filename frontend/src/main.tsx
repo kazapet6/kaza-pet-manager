@@ -4,11 +4,14 @@ import './index.css'
 import './theme.css'
 import App from './App'
 import { SistemaProvider } from './context/SistemaProvider'
+import { AgendaProvider } from './context/AgendaProvider'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <SistemaProvider>
-      <App />
+      <AgendaProvider>
+        <App />
+      </AgendaProvider>
     </SistemaProvider>
   </StrictMode>,
 )

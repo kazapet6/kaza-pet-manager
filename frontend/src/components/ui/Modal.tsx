@@ -2,9 +2,12 @@ import type { ReactNode } from 'react'
 
 type ModalProps = {
   aberto: boolean
-  titulo: string
+  titulo: ReactNode
   children: ReactNode
   onClose: () => void
+  maxWidth?: string
+  className?: string
+  overlayClassName?: string
 }
 
 export default function Modal({
@@ -12,11 +15,15 @@ export default function Modal({
   titulo,
   children,
   onClose,
+  maxWidth = '620px',
+  className,
+  overlayClassName,
 }: ModalProps) {
   if (!aberto) return null
 
   return (
     <div
+      className={overlayClassName}
       onClick={onClose}
       style={{
         position: 'fixed',
@@ -25,21 +32,23 @@ export default function Modal({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '20px',
+        padding: 'clamp(8px, 3vw, 20px)',
         zIndex: 1000,
       }}
     >
       <div
+        className={className}
         onClick={(evento) => evento.stopPropagation()}
         style={{
           width: '100%',
-          maxWidth: '620px',
-          maxHeight: '90vh',
+          minWidth: 0,
+          maxWidth,
+          maxHeight: 'calc(100dvh - 2 * clamp(8px, 3vw, 20px))',
           overflowY: 'auto',
           background: 'var(--color-card)',
           borderRadius: 'var(--radius-lg)',
           boxShadow: 'var(--shadow-lg)',
-          padding: 'var(--space-xl)',
+          padding: 'clamp(16px, 3vw, 32px)',
         }}
       >
         <div

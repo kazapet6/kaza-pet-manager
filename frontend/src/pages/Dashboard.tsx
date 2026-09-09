@@ -10,7 +10,6 @@ export default function Dashboard() {
       <ul>
         <li>🐶 12 atendimentos hoje</li>
         <li>💰 Faturamento: R$ 685,00</li>
-        <li>📦 20 pacotes ativos</li>
       </ul>
     </div>
   )
