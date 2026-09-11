@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.112.2'
+import { criarOrigensPermitidas } from '../_shared/cors.ts'
 import { criarHandlerMaterializacao, criarValidadorMaterializacao } from './handler.ts'
 import { executarMaterializacaoCiclo } from './servico.ts'
 
@@ -9,7 +10,7 @@ if (!url || !anonKey || !serviceRoleKey) throw new Error('Configuração segura 
 const opcoes = { auth: { persistSession: false, autoRefreshToken: false } }
 const auth = createClient(url, anonKey, opcoes)
 const admin = createClient(url, serviceRoleKey, opcoes)
-const origens = new Set((Deno.env.get('ALLOWED_ORIGINS') ?? 'http://localhost:5173,http://127.0.0.1:5173').split(',').map((item) => item.trim()).filter(Boolean))
+const origens = criarOrigensPermitidas(Deno.env.get('ALLOWED_ORIGINS'))
 
 Deno.serve(criarHandlerMaterializacao({
   validarToken: criarValidadorMaterializacao(auth),

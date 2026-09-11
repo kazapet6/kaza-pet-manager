@@ -21,6 +21,7 @@
     "test:contratos": "node --experimental-strip-types src/contratos/testes.ts",
     "test:materializacao": "node --experimental-strip-types src/contratos/testesMaterializacao.ts",
     "test:creditos": "node --experimental-strip-types src/contratos/testesCreditos.ts",
+    "test:cors": "node --experimental-strip-types src/cors/testes.ts",
     "preview": "vite preview"
   },
   "dependencies": {

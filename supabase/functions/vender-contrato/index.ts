@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.112.2'
+import { criarOrigensPermitidas } from '../_shared/cors.ts'
 import { criarHandlerVendaContrato, validadorVenda } from './handler.ts'
 import { executarVendaContrato } from './servico.ts'
 
@@ -10,12 +11,7 @@ if (!url || !anonKey || !serviceRoleKey) throw new Error('Configuração ausente
 const opcoes = { auth: { persistSession: false, autoRefreshToken: false } }
 const auth = createClient(url, anonKey, opcoes)
 const admin = createClient(url, serviceRoleKey, opcoes)
-const origens = new Set(
-  (Deno.env.get('ALLOWED_ORIGINS') ?? 'http://localhost:5173')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean),
-)
+const origens = criarOrigensPermitidas(Deno.env.get('ALLOWED_ORIGINS'))
 
 Deno.serve(criarHandlerVendaContrato({
   validarToken: validadorVenda(auth),
