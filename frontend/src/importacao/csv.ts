@@ -58,6 +58,12 @@ export function lerCSV(texto: string, campos: readonly string[]): LinhaCSV[] {
 export const normalizar = (valor: string) => valor.normalize('NFD').replace(/\p{M}/gu, '')
   .toLowerCase().replace(/[-–—]/g, ' ').replace(/\s+/g, ' ').trim()
 
+// Deve permanecer equivalente a public.importacao_normalizar_duplicidade.
+export const normalizarDuplicidade = (valor: string) => valor.toLowerCase()
+  .replace(/[áàâãä]/g, 'a').replace(/[éèêë]/g, 'e').replace(/[íìîï]/g, 'i')
+  .replace(/[óòôõö]/g, 'o').replace(/[úùûü]/g, 'u').replace(/ç/g, 'c')
+  .replace(/[-–—\s]+/g, ' ').trim()
+
 export function mapearEnum(campo: string, valor: string): string | boolean | null {
   const mapas: Record<string, Record<string, string | boolean>> = {
     especie: { cachorro: 'cao', cao: 'cao', gato: 'gato' },
@@ -96,10 +102,10 @@ export function analisarVinculosDuplicidades(clientes: LinhaCSV[], pets: LinhaCS
       ['cpf', v => (v.cpf ?? '').replace(/\D/g, '')],
       ['telefone', v => (v.telefone ?? '').replace(/\D/g, '')],
       ['email', v => (v.email ?? '').trim().toLowerCase()],
-      ['nome+telefone', v => v.nome && v.telefone ? `${normalizar(v.nome)}|${v.telefone.replace(/\D/g, '')}` : ''])
+      ['nome+telefone', v => v.nome && v.telefone ? `${normalizarDuplicidade(v.nome)}|${v.telefone.replace(/\D/g, '')}` : ''])
     else chaves.push(
-      ['tutor+nome', v => v.clienteId && v.nome ? `${v.clienteId}|${normalizar(v.nome)}` : ''],
-      ['tutor+nome+raca', v => v.clienteId && v.nome && v.raca ? `${v.clienteId}|${normalizar(v.nome)}|${normalizar(v.raca)}` : ''])
+      ['tutor+nome', v => v.clienteId && v.nome ? `${v.clienteId}|${normalizarDuplicidade(v.nome)}` : ''],
+      ['tutor+nome+raca', v => v.clienteId && v.nome && v.raca ? `${v.clienteId}|${normalizarDuplicidade(v.nome)}|${normalizarDuplicidade(v.raca)}` : ''])
     for (const [campo, chave] of chaves) {
       const grupos = new Map<string, LinhaCSV[]>()
       for (const r of linhas) { const k = chave(r.valores); if (k) grupos.set(k, [...(grupos.get(k) ?? []), r]) }

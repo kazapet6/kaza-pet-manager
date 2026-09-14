@@ -50,6 +50,12 @@ teste('duplicidades de cliente e pet são sinalizadas, nunca fundidas', () => {
   }
   assert.equal(c.length, 2); assert.equal(p.length, 2)
 })
+teste('duplicidade de nome usa a mesma chave canônica do staging', () => {
+  const p = lerCSV('id;nome;clienteId;raca\np;Água-Teste;a;São-Bernardo\nq;agua teste;a;sao bernardo', CAMPOS_PETS)
+  const avisos = analisarVinculosDuplicidades(clientes(), p).avisos.filter(a => a.codigo === 'POSSIVEL_DUPLICIDADE')
+  assert.equal(avisos.filter(a => a.campo === 'tutor+nome').length, 2)
+  assert.equal(avisos.filter(a => a.campo === 'tutor+nome+raca').length, 2)
+})
 teste('nome numérico é sinalizado sem corrigir', () => {
   const c = lerCSV('id;nome\na;123456', CAMPOS_CLIENTES)
   assert.ok(analisarVinculosDuplicidades(c, []).avisos.some(a => a.codigo === 'NOME_NUMERICO'))

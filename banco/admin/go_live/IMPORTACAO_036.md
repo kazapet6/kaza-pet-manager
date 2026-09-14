@@ -2,7 +2,27 @@
 
 Migration 035 aplicada pelo usuário, com novo login e acesso a Clientes/Pets confirmados por ele.
 Migration 036 aplicada pelo usuário no Supabase. A consulta pós-aplicação retornou 191 verificações OK, zero falhas e todas as quatro tabelas vazias.
-Nenhum dado real foi salvo em staging, promovido, apagado ou enviado a RPC remota nestes testes.
+
+## Correção de persistência de duplicidades — Migration 037
+
+O preview e o backend precisam usar a mesma chave canônica para nomes presentes nos
+alertas `nome+telefone`, `tutor+nome` e `tutor+nome+raca`. A 036 comparava esses nomes
+no backend apenas com `lower(btrim(...))`, enquanto o preview também normalizava
+acentos portugueses, hífens e espaços. Isso removia do staging duas linhas de pets
+que continuavam corretamente sinalizadas no preview.
+
+A 037 adiciona `importacao_normalizar_duplicidade(text)` e substitui somente
+`importacao_salvar_lote(jsonb)`. O KPI “Linhas com possível duplicidade” significa
+linhas únicas com pelo menos uma categoria `POSSIVEL_DUPLICIDADE`; categorias
+sobrepostas continuam preservadas no array `avisos` de cada linha. No lote real,
+o valor correto é quatro: duas linhas de clientes e duas de pets.
+
+A migration não corrige lotes por UPDATE automático. Depois de aplicá-la, basta
+reabrir e salvar novamente o lote ainda aberto: originais, decisões e resoluções
+persistidos são mantidos, e os avisos são recalculados. Não é necessário descartar
+nem recriar o lote.
+Os CSVs reais foram usados somente na regressão PostgreSQL local em memória. Nenhum dado
+real foi enviado ao staging remoto, promovido, apagado ou transmitido por RPC remota.
 
 ## Infraestrutura
 

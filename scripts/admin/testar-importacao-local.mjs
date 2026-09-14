@@ -1,10 +1,12 @@
 // PostgreSQL embutido, apenas memória: nunca usa URL ou credencial remota.
-// Uso: node --experimental-strip-types scripts/admin/testar-importacao-local.mjs <diretorio-runtime>
+// Uso: node --experimental-strip-types scripts/admin/testar-importacao-local.mjs <diretorio-runtime> [inventario.json] [clientes.csv] [pets.csv]
 import assert from 'node:assert/strict'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { analisarArquivos, resumo } from '../../frontend/src/importacao/modelo.ts'
+import { aplicarInequivocas } from '../../frontend/src/importacao/grupos.ts'
 const require = createRequire(pathToFileURL(resolve(process.argv[2], 'package.json')))
 const { PGlite } = require('@electric-sql/pglite')
 const db = new PGlite()
@@ -35,6 +37,7 @@ await db.exec(readFileSync('banco/035_seguranca_clientes_pets_campos_cadastro.sq
 const snapshotSql="select jsonb_build_object('clientes',(select jsonb_agg(c) from public.clientes c),'pets',(select jsonb_agg(p) from public.pets p),'racas',(select jsonb_agg(r) from public.racas r),'cli_seq',(select jsonb_build_object('last_value',s.last_value,'is_called',s.is_called) from public.clientes_codigo_seq s),'pet_seq',(select jsonb_build_object('last_value',s.last_value,'is_called',s.is_called) from public.pets_codigo_seq s)) as estado"
 const antesMigration=(await db.query(snapshotSql)).rows[0].estado
 await db.exec(readFileSync('banco/036_importacao_clientes_pets_staging.sql','utf8'))
+await db.exec(readFileSync('banco/037_preservar_duplicidades_importacao_staging.sql','utf8'))
 assert.deepEqual((await db.query(snapshotSql)).rows[0].estado,antesMigration)
 if(process.argv[3]){
  const inventory={}
@@ -100,8 +103,8 @@ await test('ACL separa SELECT/INSERT/UPDATE/DELETE e helpers não são API',asyn
  await db.exec('reset role');for(const role of ['anon','authenticated','service_role'])for(const table of ['importacao_lotes','importacao_clientes_staging','importacao_pets_staging','importacao_mapeamentos'])for(const op of ['SELECT','INSERT','UPDATE','DELETE']){
   const r=await db.query('select has_table_privilege($1,$2,$3) as permitido',[role,'public.'+table,op]);assert.equal(r.rows[0].permitido,role==='service_role'||(role==='authenticated'&&op==='SELECT'));
  }
- for(const role of ['anon','authenticated','service_role'])for(const fn of ['importacao_exigir_internal()','importacao_filtrar(jsonb,text[])','importacao_data_valida(text)','importacao_validar(text,jsonb,text)'])assert.equal((await db.query("select has_function_privilege($1,$2,'EXECUTE') as permitido",[role,'public.'+fn])).rows[0].permitido,false);
- const funcs=await db.query("select prosecdef,proconfig from pg_proc where pronamespace='public'::regnamespace and proname like 'importacao_%'");assert.equal(funcs.rows.length,8);assert.equal(funcs.rows.filter(f=>f.prosecdef).length,4);assert(funcs.rows.every(f=>f.proconfig.includes('search_path=pg_catalog, pg_temp')));
+ for(const role of ['anon','authenticated','service_role'])for(const fn of ['importacao_exigir_internal()','importacao_filtrar(jsonb,text[])','importacao_data_valida(text)','importacao_validar(text,jsonb,text)','importacao_normalizar_duplicidade(text)'])assert.equal((await db.query("select has_function_privilege($1,$2,'EXECUTE') as permitido",[role,'public.'+fn])).rows[0].permitido,false);
+ const funcs=await db.query("select prosecdef,proconfig from pg_proc where pronamespace='public'::regnamespace and proname like 'importacao_%'");assert.equal(funcs.rows.length,9);assert.equal(funcs.rows.filter(f=>f.prosecdef).length,4);assert(funcs.rows.every(f=>f.proconfig.includes('search_path=pg_catalog, pg_temp')));
 })
 await test('internal sem uid não lê staging nem executa RPCs',async()=>{
  await perfil('authenticated',true);await db.query("select set_config('request.jwt.claims',$1,false)",[JSON.stringify({role:'authenticated',app_metadata:{role:'internal'}})]);
@@ -120,6 +123,31 @@ await test('falha no meio da migration reverte todos os objetos novos',async()=>
  const isolado=new PGlite();try{await isolado.exec(schemaFixture);await isolado.exec(readFileSync('banco/035_seguranca_clientes_pets_campos_cadastro.sql','utf8'));
  const sql=readFileSync('banco/036_importacao_clientes_pets_staging.sql','utf8').replace('create index importacao_mapeamentos_lote_idx','select 1/0;\ncreate index importacao_mapeamentos_lote_idx');await assert.rejects(isolado.exec(sql));await isolado.exec('rollback');assert.equal((await isolado.query("select count(*)::int as n from pg_class where relnamespace='public'::regnamespace and relname like 'importacao_%'")).rows[0].n,0);
  }finally{await isolado.close()}
+})
+if(process.argv[4]&&process.argv[5])await test('CSVs reais preservam preview, avisos, decisões e resoluções após salvar/reabrir',async()=>{
+ const catalogo=[{id:race,nome:'Sem raça definida (SRD)',especie:'cao',ativo:true,sinonimos:['SRD - Sem Raça Definida']}]
+ let preview=analisarArquivos(readFileSync(process.argv[4],'utf8'),readFileSync(process.argv[5],'utf8'),catalogo,'regressao-real', ['clientes.csv','pets.csv'])
+ preview=aplicarInequivocas(preview,catalogo)
+ const resumoAntes=resumo(preview)
+ assert.equal(resumoAntes.clientes,329);assert.equal(resumoAntes.pets,383);assert.equal(resumoAntes.vinculos,383);assert.equal(resumoAntes.clientesPendentes,1);assert.equal(resumoAntes.petsPendentes,383);assert.equal(resumoAntes.racasPendentes,297);assert.equal(resumoAntes.duplicidades,4)
+ await perfil('authenticated',true);const salvo=await rpc('importacao_salvar_lote',[preview]);const reaberto=await rpc('importacao_obter_lote',[salvo.id])
+ const forma=l=>['clientes','pets'].flatMap(tipo=>l[tipo].map(x=>({tipo,external_id:x.external_id,avisos:[...x.avisos].sort(),decisao:x.decisao_operador,resolvido:x.resolvido})))
+ const canon=v=>Array.isArray(v)?v.map(canon):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,x])=>[k,canon(x)])):v
+ const estatisticas=l=>Object.fromEntries(['clientes','pets'].map(tipo=>[tipo,{linhas:l[tipo].filter(x=>x.avisos.some(a=>a.includes('DUPLICIDADE'))).length,categorias:l[tipo].flatMap(x=>x.avisos.filter(a=>a.includes('DUPLICIDADE'))).reduce((a,x)=>(a[x]=(a[x]||0)+1,a),{})}]))
+ if(JSON.stringify(canon(forma(preview)))!==JSON.stringify(canon(forma(salvo))))throw new Error('Salvar alterou avisos, decisões ou resoluções do preview real: '+JSON.stringify({preview:estatisticas(preview),salvo:estatisticas(salvo)}))
+ if(JSON.stringify(canon(forma(salvo)))!==JSON.stringify(canon(forma(reaberto))))throw new Error('Reabrir alterou avisos, decisões ou resoluções do lote real salvo')
+ assert.deepEqual(resumo(salvo),resumoAntes);assert.deepEqual(resumo(reaberto),resumoAntes);assert.equal(salvo.status,reaberto.status)
+
+ const legado=new PGlite();try{
+  await legado.exec(schemaFixture);await legado.exec(readFileSync('banco/035_seguranca_clientes_pets_campos_cadastro.sql','utf8'));await legado.exec(readFileSync('banco/036_importacao_clientes_pets_staging.sql','utf8'))
+  const claims=JSON.stringify({role:'authenticated',sub:uid,app_metadata:{role:'internal'}});await legado.query("select set_config('request.jwt.claims',$1,false)",[claims]);await legado.exec('set role authenticated')
+  const salvarLegado=async l=>(await legado.query('select public.importacao_salvar_lote($1) as r',[l])).rows[0].r
+  const antigo=await salvarLegado({...preview,id:crypto.randomUUID(),origem:'regressao-lote-ja-salvo'});assert.equal(resumo(antigo).duplicidades,2)
+  await legado.exec('reset role');await legado.exec(readFileSync('banco/037_preservar_duplicidades_importacao_staging.sql','utf8'));await legado.query("select set_config('request.jwt.claims',$1,false)",[claims]);await legado.exec('set role authenticated')
+  const reparado=await salvarLegado(antigo);const reparadoReaberto=(await legado.query('select public.importacao_obter_lote($1) as r',[reparado.id])).rows[0].r
+  assert.equal(resumo(reparado).duplicidades,4);assert.equal(resumo(reparadoReaberto).duplicidades,4)
+  if(JSON.stringify(canon(forma(antigo).map(x=>({...x,avisos:[]}))))!==JSON.stringify(canon(forma(reparado).map(x=>({...x,avisos:[]})))))throw new Error('Ressalvar lote anterior alterou decisões ou resoluções')
+ }finally{await legado.close()}
 })
 await db.close()
 await test('ausência da 035 aborta antes de criar staging',async()=>{
