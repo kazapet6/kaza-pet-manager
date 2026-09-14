@@ -1,0 +1,91 @@
+-- DESTRUTIVO quando executado manualmente com a confirmação abaixo.
+-- NÃO executado pelo desenvolvimento; NÃO colocar em migrations.
+-- Requer psql, manutenção global e restauração ensaiada dos backups.
+\set ON_ERROR_STOP on
+\if :{?backup_validado}
+\else
+  \echo 'Falta -v backup_validado=SIM_APAGAR_TESTES; não executar sem backup restaurado e validado.'
+  \quit 3
+\endif
+begin;
+set local lock_timeout='10s';
+set local statement_timeout='120s';
+select set_config('kaza_go_live.confirmacao', :'backup_validado', true);
+\ir 00_manifesto.psql
+create temp table go_live_preservacao (nome text primary key, conteudo jsonb) on commit drop;
+do $$
+declare t record; nomes text; atual bigint; dados jsonb; v_versao bigint;
+begin
+  if current_setting('kaza_go_live.confirmacao') <> 'SIM_APAGAR_TESTES' then
+    raise exception 'Confirmação explícita e backup validado obrigatórios';
+  end if;
+  -- O inventário deve coincidir exatamente; novas tabelas exigem nova auditoria.
+  if exists ((select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace
+      where n.nspname='public' and c.relkind in ('r','p'))
+      except (select nome from go_live_tabelas))
+    or exists ((select nome from go_live_tabelas) except
+      (select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace
+      where n.nspname='public' and c.relkind in ('r','p'))) then
+    raise exception 'Inventário divergiu: atualizar diagnóstico e revisar manifesto';
+  end if;
+  select string_agg(format('public.%I',nome),', ' order by nome) into nomes from go_live_tabelas;
+  execute 'lock table '||nomes||' in access exclusive mode';
+  -- Não permitir herança/particionamento ampliar o alcance implicitamente.
+  if exists (select 1 from pg_inherits i join go_live_tabelas t
+    on i.inhrelid=format('public.%I',t.nome)::regclass or i.inhparent=format('public.%I',t.nome)::regclass
+    where t.apagar) then raise exception 'Herança exige auditoria específica'; end if;
+  if exists (select 1 from pg_trigger g join go_live_tabelas t
+    on g.tgrelid=format('public.%I',t.nome)::regclass
+    where t.apagar and not g.tgisinternal and (g.tgtype::int & 32)>0) then
+    raise exception 'Novo trigger de TRUNCATE exige auditoria';
+  end if;
+  if exists (select 1 from pg_constraint k join go_live_tabelas t
+    on k.confrelid=format('public.%I',t.nome)::regclass
+    where t.apagar and k.contype='f' and not exists
+      (select 1 from go_live_tabelas filho where filho.apagar
+        and k.conrelid=format('public.%I',filho.nome)::regclass)) then
+    raise exception 'FK de tabela preservada/externa impede limpeza';
+  end if;
+  for t in select * from go_live_tabelas order by nome loop
+    execute format('select count(*) from public.%I',t.nome) into atual;
+    if atual <> t.quantidade_auditada then raise exception 'Contagem divergiu em %. Refazer diagnóstico e backup',t.nome; end if;
+    if not t.apagar then
+      execute format('select coalesce(jsonb_agg(to_jsonb(x) order by to_jsonb(x)::text),''[]''::jsonb) from public.%I x',t.nome) into dados;
+      insert into go_live_preservacao values(t.nome,dados);
+    end if;
+  end loop;
+  select o.versao into strict v_versao from public.agenda_versao_ocupacao o where id;
+  select string_agg(format('public.%I',nome),', ' order by nome) into nomes from go_live_tabelas where apagar;
+  -- RESTRICT: nenhuma tabela fora da lista é alcançada; não há CASCADE.
+  execute 'truncate table '||nomes||' continue identity restrict';
+  for t in select nome from go_live_tabelas where apagar loop
+    execute format('select count(*) from public.%I',t.nome) into atual;
+    if atual <> 0 then raise exception 'Tabela não vazia: %',t.nome; end if;
+  end loop;
+  -- RESTART é transacional (ao contrário de setval), sem executar nextval.
+  if exists(select 1 from public.clientes) or exists(select 1 from public.pets) then
+    raise exception 'Não pode reiniciar sequências com cadastros remanescentes';
+  end if;
+  if pg_get_serial_sequence('public.clientes','id') is distinct from 'public.clientes_codigo_seq'
+    or pg_get_serial_sequence('public.pets','id') is distinct from 'public.pets_codigo_seq' then
+    raise exception 'Associação de sequência divergiu';
+  end if;
+  if exists (select 1 from pg_sequence s
+    where s.seqrelid in ('public.clientes_codigo_seq'::regclass,'public.pets_codigo_seq'::regclass)
+      and (s.seqincrement<>1 or s.seqmin<>1 or s.seqcache<>1 or s.seqcycle)) then
+    raise exception 'Configuração de sequência divergiu; revisar antes do reset';
+  end if;
+  alter sequence public.clientes_codigo_seq restart with 1;
+  alter sequence public.pets_codigo_seq restart with 1;
+  -- TRUNCATE não dispara triggers de DELETE: invalidar consultas antigas uma vez.
+  update public.agenda_versao_ocupacao o set versao=o.versao+1,updated_at=now() where id;
+  for t in select * from go_live_preservacao loop
+    execute format('select coalesce(jsonb_agg(to_jsonb(x) order by to_jsonb(x)::text),''[]''::jsonb) from public.%I x',t.nome) into dados;
+    if t.nome='agenda_versao_ocupacao' then
+      if (dados->0->>'versao')::bigint <> v_versao+1 or jsonb_array_length(dados)<>1 then raise exception 'Versão de ocupação inválida'; end if;
+    elsif dados is distinct from t.conteudo then raise exception 'Conteúdo preservado mudou em %',t.nome;
+    end if;
+  end loop;
+end;
+$$;
+commit;

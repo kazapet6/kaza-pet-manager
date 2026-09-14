@@ -13,6 +13,7 @@ import ConfiguracoesAgenda from './pages/ConfiguracoesAgenda'
 import TesteMotorDisponibilidade from './pages/TesteMotorDisponibilidade'
 import Pacotes from './pages/Pacotes'
 import Contratos from './contratos/Contratos'
+import Importacao from './importacao/Importacao'
 import { supabase } from './lib/supabase'
 import { classificarUsuarioInterno, type EstadoAutenticacao } from './auth/interna'
 
@@ -99,7 +100,7 @@ function App() {
     : 'A'
 
   const nomePagina =
-    paginaAtual === 'agenda'
+    paginaAtual === 'importacao' ? 'Configurações • Importação de dados' : paginaAtual === 'agenda'
       ? 'Agenda'
       : paginaAtual === 'clientes'
         ? 'Clientes'
@@ -125,6 +126,8 @@ function App() {
 
   function renderizarPagina() {
     switch (paginaAtual) {
+      case 'importacao':
+        return <Importacao />
       case 'agenda':
         return <Agenda onVerContrato={(contratoId) => { setContratoEmFocoId(contratoId); setPaginaAtual('contratos') }} />
 
@@ -370,6 +373,10 @@ function App() {
           >
             <span className="nav-icon">🔧</span>
             <span>Configurações</span>
+          </button>
+          <button className={paginaAtual === 'importacao' ? 'nav-item ativo' : 'nav-item'} onClick={() => setPaginaAtual('importacao')}>
+            <span className="nav-icon" aria-hidden="true">↥</span>
+            <span>Importação de dados</span>
           </button>
         </nav>
 

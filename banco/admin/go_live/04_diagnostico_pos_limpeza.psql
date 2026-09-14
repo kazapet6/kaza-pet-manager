@@ -1,0 +1,14 @@
+\set ON_ERROR_STOP on
+-- Somente leitura de tabelas permanentes; manifesto temporário da sessão.
+begin;
+\ir 00_manifesto.psql
+select m.nome,m.apagar,m.quantidade_auditada,
+  x.total as total_atual,
+  case when m.apagar then x.total=0 else x.total=m.quantidade_auditada end as contagem_ok
+from go_live_tabelas m cross join lateral xmltable('/table/row'
+  passing query_to_xml(format('select count(*) as total from public.%I',m.nome),true,false,'')
+  columns total bigint path 'total') x order by m.apagar desc,m.nome;
+select 'clientes_codigo_seq' as sequencia,last_value,is_called from public.clientes_codigo_seq
+union all select 'pets_codigo_seq',last_value,is_called from public.pets_codigo_seq;
+-- Esperado: last_value=1, is_called=false; não chamar nextval para testar.
+rollback;

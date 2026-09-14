@@ -13,3 +13,14 @@ dist/
 
 # Logs
 *.log
+
+# Real exports and database backups
+**/clientes.csv
+**/pets.csv
+*Supabase*Snippet*.csv
+*.dump
+*.backup
+*.sql.gz
+
+# Local pre-flight comparison artifact
+banco/admin/go_live/036_preflight.diff

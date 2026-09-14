@@ -1,0 +1,104 @@
+// Navegador isolado: intercepta TODA requisição externa. Nunca usa login real.
+import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
+import { resolve } from 'node:path'
+import assert from 'node:assert/strict'
+const require=createRequire(pathToFileURL(resolve(process.argv[2],'package.json')))
+const {chromium}=require('playwright')
+const browser=await chromium.launch({headless:true,channel:'chrome'})
+const context=await browser.newContext({viewport:{width:1440,height:1000}})
+const page=await context.newPage();let real=false,writes=0,saved=null;const errors=[]
+page.on('pageerror',e=>errors.push(e.message))
+const user={id:'11111111-1111-4111-8111-111111111111',aud:'authenticated',role:'authenticated',email:'fixture@example.invalid',app_metadata:{role:'internal'},user_metadata:{},created_at:new Date().toISOString()}
+const token=['eyJhbGciOiJIUzI1NiJ9',Buffer.from(JSON.stringify({sub:user.id,role:'authenticated',app_metadata:{role:'internal'},exp:Math.floor(Date.now()/1000)+3600})).toString('base64url'),'fixture'].join('.')
+const racas=[{id:'22222222-2222-4222-8222-222222222222',nome:'Sem raça definida (SRD)',especie:'cao',ativo:true,sinonimos:[]},{id:'33333333-3333-4333-8333-333333333333',nome:'Sem raça definida (SRD)',especie:'gato',ativo:true,sinonimos:[]}]
+await context.route('**/*',async route=>{
+ const req=route.request(),url=new URL(req.url())
+ if(url.hostname==='127.0.0.1')return route.continue()
+ const send=body=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(body)})
+ if(url.pathname==='/auth/v1/token')return send({access_token:token,refresh_token:'fixture-refresh',token_type:'bearer',expires_in:3600,user})
+ if(url.pathname==='/auth/v1/user')return send(user)
+ if(url.pathname==='/rest/v1/racas')return send(racas)
+ if(url.pathname==='/rest/v1/importacao_mapeamentos')return send([])
+ if(url.pathname.startsWith('/rest/v1/rpc/importacao_')){
+  assert(!real,'Gravação proibida durante preview dos CSVs reais')
+  const b=req.postDataJSON()
+  if(url.pathname.endsWith('importacao_obter_lote'))return send(saved)
+  writes++
+  if(url.pathname.endsWith('importacao_criar_raca')){assert.equal(b.p_confirmar,true);const id='44444444-4444-4444-8444-444444444444';racas.push({id,nome:b.p_nome,especie:b.p_especie,ativo:true,sinonimos:[]});saved={...saved,revisao:saved.revisao+1};return send(id)}
+  if(url.pathname.endsWith('importacao_salvar_lote')){saved={...b.p_documento,revisao:1,status:'pronto'};return send(saved)}
+  if(url.pathname.endsWith('importacao_promover_lote')){assert.equal(b.p_confirmar,true);saved={...saved,revisao:2,status:'concluido',resultado:{clientes_criados:1,pets_criados:1},clientes:saved.clientes.map(c=>({...c,internal_id:'CLI-000001'})),pets:saved.pets.map(p=>({...p,internal_id:'PET-000001'}))};return send(saved)}
+  throw new Error('RPC não esperada no teste')
+ }
+ if(req.method()!=='GET'&&req.method()!=='OPTIONS')throw new Error('Gravação externa não simulada')
+ return send([])
+})
+try{
+ await page.goto('http://127.0.0.1:5186/')
+ await page.getByRole('textbox',{name:'Email',exact:true}).fill(user.email)
+ await page.getByLabel('Senha',{exact:true}).fill('fixture-local-only')
+ await page.getByRole('button',{name:'Entrar',exact:true}).click()
+ await page.getByRole('button',{name:'Importação de dados',exact:true}).click()
+ if(process.argv[3]&&process.argv[4]){
+  real=true
+  await page.getByLabel('Clientes CSV').setInputFiles(process.argv[3]);await page.getByLabel('Pets CSV').setInputFiles(process.argv[4])
+  await page.getByRole('button',{name:'Analisar arquivos localmente'}).click()
+  await page.getByRole('button',{name:'Resolver clientes',exact:true}).waitFor()
+  const values=await page.locator('.imp-resumo>div').evaluateAll(ds=>Object.fromEntries(ds.map(d=>[d.querySelector('dt').textContent,d.querySelector('dd').textContent])))
+  assert.equal(values.Clientes,'329');assert.equal(values.Pets,'383');assert.equal(values['Clientes prontos'],'328');assert.equal(values['Pets pendentes'],'383');assert.equal(writes,0)
+  await page.getByRole('button',{name:'Resolver valores em lote',exact:true}).click()
+  assert.equal(await page.locator('.imp-grupo').count(),50)
+  await page.getByRole('button',{name:'Aplicar equivalências inequívocas aos campos ainda não resolvidos',exact:true}).click()
+  assert.equal(writes,0)
+  console.log('OK preview real no navegador: 329/383, 328 clientes prontos, zero escrita')
+  page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'Voltar aos arquivos/lotes'}).click();real=false
+ }
+ await page.getByLabel('Clientes CSV').setInputFiles({name:'clientes.csv',mimeType:'text/csv',buffer:Buffer.from('id;nome;telefone\nc;Cliente Sintético;11999999999')})
+ await page.getByLabel('Pets CSV').setInputFiles({name:'pets.csv',mimeType:'text/csv',buffer:Buffer.from('id;clienteId;nome;especie;raca;genero;tamanho;pelo;comportamento;castrado\np;c;Pet Sintético;Cachorro;Sem raça definida (SRD);Macho;Pequeno;Curto;;f\np2;c;Pet Sintético 2;Cachorro;Sem raça definida (SRD);Macho;Pequeno;Curto;;f')})
+ await page.getByRole('button',{name:'Analisar arquivos localmente'}).click()
+ await page.getByRole('button',{name:'Resolver valores em lote',exact:true}).click()
+ await page.getByRole('button',{name:'Manter pendente / limpar resolução',exact:true}).click()
+ await page.getByLabel('Valor de destino',{exact:true}).selectOption(racas[0].id)
+ await page.getByRole('button',{name:'Confirmar resolução do grupo',exact:true}).click()
+ await page.getByLabel('Campo para agrupar',{exact:true}).selectOption('temperamento')
+ assert.equal(await page.getByRole('button',{name:'Confirmar resolução do grupo',exact:true}).isEnabled(),false)
+ await page.getByRole('button',{name:'Selecionar pets',exact:true}).click()
+ await page.locator('.imp-selecao input[type=checkbox]').first().check()
+ await page.getByLabel('Valor de destino',{exact:true}).selectOption('moderado')
+ await page.getByRole('button',{name:'Confirmar resolução do grupo',exact:true}).click()
+ assert.equal(await page.locator('.imp-resumo>div').filter({has:page.locator('dt',{hasText:/^Pets prontos$/})}).locator('dd').textContent(),'1')
+ assert.equal(writes,0)
+ await page.getByRole('button',{name:'Selecionar todos explicitamente',exact:true}).click()
+ await page.getByRole('button',{name:'Confirmar resolução do grupo',exact:true}).click()
+ assert.equal(await page.locator('.imp-resumo>div').filter({has:page.locator('dt',{hasText:/^Pets prontos$/})}).locator('dd').textContent(),'2')
+ assert.equal(writes,0)
+ await page.screenshot({path:resolve(process.argv[5],'importacao-grupos-desktop.png'),fullPage:true})
+ await page.setViewportSize({width:390,height:844})
+ await page.screenshot({path:resolve(process.argv[5],'importacao-grupos-mobile.png'),fullPage:true})
+ assert.equal(await page.locator('.importacao').evaluate(e=>e.scrollWidth>e.clientWidth+1),false)
+ await page.getByLabel('Campo para agrupar',{exact:true}).selectOption('raca_id')
+ assert.equal(await page.getByRole('button',{name:'Criar nova raça para este grupo…',exact:true}).isEnabled(),false)
+ await page.getByRole('button',{name:'Salvar lote/revisão em staging'}).click()
+ await page.getByRole('button',{name:'Criar nova raça para este grupo…',exact:true}).click()
+ await page.getByRole('dialog').getByLabel('Nome canônico').fill('Raça sintética aprovada')
+ await page.getByRole('button',{name:'Confirmar criação da raça',exact:true}).click()
+ await page.getByRole('dialog').waitFor({state:'hidden'})
+ assert((await page.locator('.imp-grupo').textContent()).includes('Destino atual: Raça sintética aprovada'))
+ await page.getByRole('button',{name:'Resolver pets',exact:true}).click()
+ assert.equal(await page.locator('.imp-editor').count(),0)
+ await page.getByRole('checkbox',{name:'Somente pendentes',exact:true}).uncheck()
+ await page.locator('.imp-editor').waitFor()
+ await page.screenshot({path:resolve(process.argv[5],'importacao-desktop.png'),fullPage:true})
+ await page.setViewportSize({width:390,height:844})
+ await page.screenshot({path:resolve(process.argv[5],'importacao-mobile.png'),fullPage:true})
+ const overflow=await page.locator('.importacao').evaluate(e=>e.scrollWidth>e.clientWidth+1)
+ assert.equal(overflow,false,'overflow na importação')
+ await page.getByRole('button',{name:'Salvar lote/revisão em staging'}).click()
+ await page.getByRole('button',{name:'Ir para confirmação'}).click()
+ assert.equal(await page.getByRole('button',{name:'Confirmar importação',exact:true}).isEnabled(),false)
+ await page.getByRole('checkbox',{name:'Revisei as decisões'}).check()
+ await page.getByRole('button',{name:'Confirmar importação',exact:true}).click()
+ await page.getByRole('heading',{name:'Resultado confirmado pelo backend'}).waitFor()
+ assert.equal(writes,4);assert.deepEqual(errors,[])
+ console.log('OK grupos de raça, seleção explícita de vazios, contadores 0→1→2, revisão individual só pendentes, zero escrita durante revisão, desktop/mobile 390x844 e confirmação final simulada')
+}finally{await browser.close()}
