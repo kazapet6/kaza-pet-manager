@@ -1,10 +1,11 @@
-import { useContext, useMemo, useState, type FormEvent } from 'react'
+import { useContext, useMemo, useRef, useState, type FormEvent } from 'react'
 import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
 import Select from '../components/ui/Select'
 import Card from '../components/ui/Card'
 import Modal from '../components/ui/Modal'
 import { SistemaContext } from '../context/SistemaContext'
+import { criarTravaSubmissaoPet } from '../data/submissaoPet.ts'
 import type { EspeciePet, PelagemPet, Pet, PortePet, SexoPet, TemperamentoPet } from '../types/Pet'
 
 export default function Pets() {
@@ -15,6 +16,8 @@ export default function Pets() {
   const [petSelecionadoId, setPetSelecionadoId] = useState<string | null>(null)
   const [tutorExpandido, setTutorExpandido] = useState(false)
   const [pesquisa, setPesquisa] = useState('')
+  const [salvando, setSalvando] = useState(false)
+  const travaSubmissao = useRef(criarTravaSubmissaoPet())
 
   const [clienteId, setClienteId] = useState('')
   const [nome, setNome] = useState('')
@@ -62,18 +65,27 @@ export default function Pets() {
     : undefined
 
   function abrirModal() {
+    travaSubmissao.current.liberar()
+    setSalvando(false)
     setPetEmEdicaoId(null)
     limparFormulario()
     setModalAberto(true)
   }
 
   function fecharModal() {
+    if (travaSubmissao.current.ativa()) return
+    fecharFormulario()
+  }
+
+  function fecharFormulario() {
     setModalAberto(false)
     setPetEmEdicaoId(null)
     limparFormulario()
   }
 
   function editarPet(pet: Pet) {
+    travaSubmissao.current.liberar()
+    setSalvando(false)
     setClienteId(pet.clienteId)
     setNome(pet.nome)
     setEspecie(pet.especie ?? '')
@@ -123,6 +135,7 @@ export default function Pets() {
 
   async function salvarPet(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault()
+    if (travaSubmissao.current.ativa()) return
 
     if (!clienteId.trim()) {
       alert('Informe o código do cliente responsável.')
@@ -155,15 +168,18 @@ export default function Pets() {
       observacoes: observacoes.trim(),
     }
 
+    setSalvando(true)
     try {
-      if (petEmEdicaoId) {
-        await atualizarPet(petEmEdicaoId, dadosPet)
-      } else {
-        await adicionarPet(dadosPet)
-      }
-
-      fecharModal()
+      const resultado = await travaSubmissao.current.executar(async () => {
+        if (petEmEdicaoId) await atualizarPet(petEmEdicaoId, dadosPet)
+        else await adicionarPet(dadosPet)
+      })
+      if (!resultado.executado) return
+      fecharFormulario()
+      travaSubmissao.current.liberar()
+      setSalvando(false)
     } catch (error) {
+      setSalvando(false)
       alert(obterMensagemErro(error))
     }
   }
@@ -536,12 +552,13 @@ export default function Pets() {
             <Button
               variant="secondary"
               onClick={fecharModal}
+              disabled={salvando}
             >
               Cancelar
             </Button>
 
-            <Button type="submit">
-              {petEmEdicaoId ? 'Salvar alterações' : 'Salvar Pet'}
+            <Button type="submit" disabled={salvando}>
+              {salvando ? 'Salvando...' : petEmEdicaoId ? 'Salvar alterações' : 'Salvar Pet'}
             </Button>
           </div>
         </form>

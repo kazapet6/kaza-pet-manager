@@ -11,7 +11,7 @@
     "test:fase-g": "node --experimental-strip-types src/confirmacao/testesFaseG.ts",
     "test:fase-h": "node --experimental-strip-types src/confirmacao/testesFaseH.ts",
     "test:agenda": "node --experimental-strip-types src/data/testesAgendaDiaria.ts",
-    "test:pets": "node --experimental-strip-types src/data/testesPetsIncompletos.ts",
+    "test:pets": "node --experimental-strip-types src/data/testesPetsIncompletos.ts && node --experimental-strip-types src/data/testesSubmissaoPet.ts",
     "test:acoes-rapidas": "node --experimental-strip-types src/agenda/testesAcoesRapidas.ts",
     "test:novo-agendamento": "node --experimental-strip-types src/agenda/testesNovoAgendamento.ts",
     "test:status-atendimento": "node --experimental-strip-types src/statusAtendimento/testes.ts",
