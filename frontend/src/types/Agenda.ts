@@ -70,8 +70,8 @@ export type ServicoRegraPreco = {
   ativo: boolean
 }
 
-export type ServicoEspecie = { servicoId: string; especie: Pet['especie']; ativo: boolean }
-export type ServicoPorte = { servicoId: string; porte: Pet['porte']; ativo: boolean }
+export type ServicoEspecie = { servicoId: string; especie: NonNullable<Pet['especie']>; ativo: boolean }
+export type ServicoPorte = { servicoId: string; porte: NonNullable<Pet['porte']>; ativo: boolean }
 export type ServicoRacaBloqueada = { servicoId: string; racaId: string; ativo: boolean }
 export type ServicoDependencia = { servicoId: string; dependenciaServicoId: string; ativo: boolean }
 export type ServicoAcoplamento = { servicoId: string; etapaAlvoId: string; ativo: boolean }
@@ -135,7 +135,7 @@ export type EquipamentoPerfilCapacidade = {
 export type EquipamentoPerfilItem = {
   id: string
   perfilId: string
-  porte: Pet['porte']
+  porte: NonNullable<Pet['porte']>
   quantidade: number
   ativo: boolean
 }

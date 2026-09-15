@@ -19,7 +19,7 @@ export type RemarcacaoResposta =
   | { status: 'disponibilidade_alterada'; codigo: 'HORARIO_INDISPONIVEL' | 'CICLO_TAXIDOG_INVALIDO'; mensagem: string; versaoOcupacaoAtual: number }
   | { status: 'configuracao_alterada'; codigo: 'CONFIGURACAO_ALTERADA'; mensagem: string; versaoConfiguracaoAtual: number }
   | { status: 'conflito'; codigo: 'ATENDIMENTO_ALTERADO' | 'IDEMPOTENCIA_CONFLITANTE'; mensagem: string }
-  | { status: 'invalido'; codigo: 'INTENCAO_INVALIDA' | 'STATUS_NAO_PERMITE_REMARCACAO'; mensagem: string }
+  | { status: 'invalido'; codigo: 'INTENCAO_INVALIDA' | 'STATUS_NAO_PERMITE_REMARCACAO' | 'CADASTRO_PET_INCOMPLETO'; mensagem: string; campos?: readonly string[] }
 
 export function lerRemarcacaoIntent(valor: unknown): RemarcacaoIntent | null {
   if (!registro(valor)) return null

@@ -76,8 +76,8 @@ export function validarElegibilidade(pet: PetMotor, servicos: ServicoResolvido[]
   for (const servico of servicos) {
     const especies = dados.elegibilidade.especies.filter((item) => item.servicoId === servico.id && item.ativo).map((item) => item.especie)
     const portes = dados.elegibilidade.portes.filter((item) => item.servicoId === servico.id && item.ativo).map((item) => item.porte)
-    if (!especies.includes(pet.especie)) motivos.push(`${servico.nome} não atende a espécie do pet.`)
-    if (!portes.includes(pet.porte)) motivos.push(`${servico.nome} não atende o porte do pet.`)
+    if (!especies.includes(pet.especie!)) motivos.push(`${servico.nome} não atende a espécie do pet.`)
+    if (!portes.includes(pet.porte!)) motivos.push(`${servico.nome} não atende o porte do pet.`)
     if (dados.elegibilidade.racasBloqueadas.some((item) => item.servicoId === servico.id && item.racaId === pet.racaId && item.ativo)) motivos.push(`${servico.nome} não está disponível para a raça do pet.`)
   }
   return motivos

@@ -9,18 +9,18 @@ import { AgendaContext } from '../context/AgendaContext.tsx'
 import { SistemaContext } from '../context/SistemaContext.tsx'
 import { ciclosAtivosNaData } from '../lib/ciclosTaxidog.ts'
 import { supabase } from '../lib/supabase.ts'
-import { calcularPrecificacao, carregarDadosPrecificacaoComCliente, consultarDisponibilidade, consultarDisponibilidadeDoCiclo, minutosParaHora, rotuloEtapaComAcoplamentos } from '../motorDisponibilidade/index.ts'
+import { calcularPrecificacao, ErroCadastroPetIncompleto, carregarDadosPrecificacaoComCliente, consultarDisponibilidade, consultarDisponibilidadeDoCiclo, minutosParaHora, rotuloEtapaComAcoplamentos } from '../motorDisponibilidade/index.ts'
 import type { OpcaoDisponibilidade, ResultadoDisponibilidade, ResultadoDisponibilidadeCiclo } from '../motorDisponibilidade/tipos.ts'
 import type { Cliente } from '../types/Cliente.ts'
 import type { Pet } from '../types/Pet.ts'
-import { buscarClientes, construirEntradaNovoAgendamento, criarControleConsultas, diasDoCalendario, deslocarMes, pendenciasPet, petsDoCliente } from './novoAgendamento.ts'
+import { buscarClientes, construirEntradaNovoAgendamento, criarControleConsultas, diasDoCalendario, deslocarMes, petsDoCliente } from './novoAgendamento.ts'
 import { horario, type ContextoGrade } from './gradeTemporal.ts'
 
 type Props = { aberto: boolean; dataInicial: string; contextoInicial?: ContextoGrade; onClose: () => void; onConfirmado: (data: string) => Promise<void> }
 type EtapaFluxo = 1 | 2 | 3 | 4 | 5 | 6
 type ModalidadeSelecionada = '' | 'sem_transporte' | 'taxidog'
 type AgendaContextType = ContextType<typeof AgendaContext>
-type EstadoPreco = { status: 'inativo' | 'carregando' } | { status: 'pronto'; valor: number } | { status: 'erro' }
+type EstadoPreco = { status: 'inativo' | 'carregando' } | { status: 'pronto'; valor: number } | { status: 'erro'; mensagem?:string }
 
 export default function NovoAgendamentoModal({ aberto, dataInicial, contextoInicial, onClose, onConfirmado }: Props) {
   const sistema = useContext(SistemaContext)
@@ -63,9 +63,7 @@ export default function NovoAgendamentoModal({ aberto, dataInicial, contextoInic
   function alterarServico(id: string) { setServicoIds((atuais) => atuais.includes(id) ? atuais.filter((item) => item !== id) : [...atuais, id]); invalidarResultado() }
 
   async function consultar(dataConsulta = data, modalidadeConsulta = modalidade, cicloConsulta = cicloTaxidogId) {
-    const pendencias = pendenciasPet(pet)
-    if (pendencias.length) return setErro(`Cadastro do pet incompleto: ${pendencias.join(', ')}.`)
-    if (!servicoIds.length || !dataConsulta) return setErro('Revise pet, serviços e data antes de consultar.')
+    if (!pet || !servicoIds.length || !dataConsulta) return setErro('Revise pet, serviços e data antes de consultar.')
     if (!modalidadeConsulta) return setErro('Escolha como o pet chegará até nós.')
     if (!funcionarioResponsavelId) return setErro('Escolha o funcionário responsável.')
     if (modalidadeConsulta === 'taxidog' && !cicloConsulta) return setErro('Selecione um ciclo TaxiDog.')
@@ -143,8 +141,8 @@ export default function NovoAgendamentoModal({ aberto, dataInicial, contextoInic
       const dadosPreco = await carregarDadosPrecificacaoComCliente(petId, supabase)
       const calculada = calcularPrecificacao(dadosPreco.pet, opcaoAtual.servicos, dadosPreco.dados)
       if (consultaPreco.current === token) setPreco({ status: 'pronto', valor: calculada.valorCalculadoAtendimento })
-    } catch {
-      if (consultaPreco.current === token) setPreco({ status: 'erro' })
+    } catch(error) {
+      if (consultaPreco.current === token) setPreco({ status: 'erro',mensagem:error instanceof ErroCadastroPetIncompleto?error.message:undefined })
     }
   }
   function voltar() { if (etapa > 1) setEtapa((etapa - 1) as EtapaFluxo) }
@@ -198,7 +196,7 @@ function EtapaCliente({ busca, alterarBusca, encontrados, cliente, selecionar }:
 }
 
 function EtapaPet({ cliente, pets, petId, selecionar }: { cliente: Cliente; pets: Pet[]; petId: string; selecionar: (id: string) => void }) {
-  return <EtapaCabecalho numero="02" titulo="Qual pet será atendido?" texto={`Pets cadastrados para ${cliente.nome}.`}>{pets.length ? <div className="novo-pets-visuais">{pets.map((pet) => <button type="button" className={petId === pet.id ? 'selecionada' : ''} key={pet.id} onClick={() => selecionar(pet.id)}><span>{inicial(pet.nome)}</span><div><strong>{pet.nome}</strong><small>{rotuloEspecie(pet.especie)} · {pet.racaNome || 'Raça não informada'}</small><small>Porte {pet.porte}</small></div>{petId === pet.id && <i>✓</i>}</button>)}</div> : <p className="novo-agendamento-vazio">Este cliente não possui pets cadastrados.</p>}</EtapaCabecalho>
+  return <EtapaCabecalho numero="02" titulo="Qual pet será atendido?" texto={`Pets cadastrados para ${cliente.nome}.`}>{pets.length ? <div className="novo-pets-visuais">{pets.map((pet) => <button type="button" className={petId === pet.id ? 'selecionada' : ''} key={pet.id} onClick={() => selecionar(pet.id)}><span>{inicial(pet.nome)}</span><div><strong>{pet.nome}</strong><small>{rotuloEspecie(pet.especie)} · {pet.racaNome || 'Raça não informada'}</small><small>{pet.porte ? `Porte ${pet.porte}` : 'Porte não informado'}{cadastroIncompleto(pet) ? ' · Cadastro incompleto' : ''}</small></div>{petId === pet.id && <i>✓</i>}</button>)}</div> : <p className="novo-agendamento-vazio">Este cliente não possui pets cadastrados.</p>}</EtapaCabecalho>
 }
 
 function EtapaServicos(props: { servicos: AgendaContextType['servicos']; selecionados: string[]; alterar: (id: string) => void }) {
@@ -247,7 +245,7 @@ function EtapaRevisao({ cliente, pet, funcionarioNome, data, modalidade, cicloNo
 }
 
 function BlocoValor({ preco, tentar }: { preco: EstadoPreco; tentar: () => void }) {
-  return <div className={`novo-revisao-valor ${preco.status}`}><span>Valor do atendimento</span>{preco.status === 'pronto' ? <strong>{moeda(preco.valor)}</strong> : preco.status === 'erro' ? <><strong>Não foi possível calcular o valor do atendimento.</strong><Button variant="secondary" onClick={tentar}>Tentar novamente</Button></> : <strong>Calculando valor...</strong>}</div>
+  return <div className={`novo-revisao-valor ${preco.status}`}><span>Valor do atendimento</span>{preco.status === 'pronto' ? <strong>{moeda(preco.valor)}</strong> : preco.status === 'erro' ? <><strong>{preco.mensagem??'Não foi possível calcular o valor do atendimento.'}</strong><Button variant="secondary" onClick={tentar}>Tentar novamente</Button></> : <strong>Calculando valor...</strong>}</div>
 }
 
 function RodapeConfirmacao({ pet, servicos, data, voltar, confirmando, podeConfirmar, confirmar }: { pet?: Pet; servicos: string[]; data: string; voltar: () => void; confirmando: boolean; podeConfirmar: boolean; confirmar: () => void }) {
@@ -262,7 +260,8 @@ function Rodape({ etapa, mostrarAvisoValor, cliente, pet, servicos, data, opcao,
 function EtapaCabecalho({ numero, titulo, texto, children }: { numero: string; titulo: string; texto: string; children: ReactNode }) { return <section className="novo-agendamento-conteudo"><header><span>Etapa {numero}</span><h3>{titulo}</h3><p>{texto}</p></header>{children}</section> }
 function Estado({ titulo, texto }: { titulo: string; texto: string }) { return <div className="novo-agendamento-estado"><span>🐾</span><strong>{titulo}</strong><p>{texto}</p></div> }
 function inicial(nome: string) { return nome.trim().charAt(0).toUpperCase() || 'P' }
-function rotuloEspecie(especie: Pet['especie']) { return especie === 'cao' ? 'Cão' : 'Gato' }
+function rotuloEspecie(especie: Pet['especie']) { return especie === 'cao' ? 'Cão' : especie === 'gato' ? 'Gato' : 'Espécie não informada' }
+function cadastroIncompleto(pet:Pet){return [pet.especie,pet.racaId,pet.sexo,pet.porte,pet.pelagem,pet.temperamento,pet.castrado].some((v)=>v===null)}
 function horaSimples(valor: string) { return valor.slice(0, 5) }
 function moeda(valor: number) { return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
 function dataCurta(data: string) { const [ano, mes, dia] = data.split('-').map(Number); return new Intl.DateTimeFormat('pt-BR').format(new Date(ano, mes - 1, dia)) }
@@ -270,4 +269,4 @@ function hojeLocal() { const agora = new Date(); const deslocamento = agora.getT
 function nomeMes(ano: number, mes: number) { return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(ano, mes, 1))) }
 function mensagemErro(error: unknown) { return typeof error === 'object' && error && 'message' in error ? String(error.message) : 'Não foi possível consultar a disponibilidade.' }
 function mensagemConfirmacao(resposta: Exclude<ConfirmacaoAgendamentoResposta, { status: 'confirmado' }>) { return resposta.status === 'configuracao_alterada' ? 'A configuração da agenda mudou. Consulte novamente.' : resposta.status === 'disponibilidade_alterada' ? 'A disponibilidade mudou. Consulte novamente.' : resposta.mensagem }
-function rotuloEstado(estado: ResultadoDisponibilidade['estado']) { return { AGENDA_NAO_CONFIGURADA: 'Agenda ainda não configurada', LOJA_FECHADA: 'Estabelecimento fechado', PET_INELEGIVEL: 'Serviço incompatível com o pet', SERVICO_INVALIDO: 'Configuração do serviço inválida', SEM_DISPONIBILIDADE: 'Nenhum horário disponível para esta data.', OK: 'Disponível' }[estado] }
+function rotuloEstado(estado: ResultadoDisponibilidade['estado']) { return { AGENDA_NAO_CONFIGURADA: 'Agenda ainda não configurada', LOJA_FECHADA: 'Estabelecimento fechado', CADASTRO_PET_INCOMPLETO:'Complete os dados necessários do pet', PET_INELEGIVEL: 'Serviço incompatível com o pet', SERVICO_INVALIDO: 'Configuração do serviço inválida', SEM_DISPONIBILIDADE: 'Nenhum horário disponível para esta data.', OK: 'Disponível' }[estado] }

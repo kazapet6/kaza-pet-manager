@@ -532,8 +532,8 @@ export default function Clientes() {
                           color: 'var(--color-text-muted)',
                         }}
                       >
-                        {pet.especie === 'cao' ? 'Cão' : 'Gato'} •{' '}
-                        {pet.racaNome}
+                        {pet.especie === 'cao' ? 'Cão' : pet.especie === 'gato' ? 'Gato' : 'Espécie não informada'} •{' '}
+                        {pet.racaNome ?? 'Raça não informada'}
                       </p>
                     </Card>
                   ))}

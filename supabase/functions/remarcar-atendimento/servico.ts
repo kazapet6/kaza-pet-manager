@@ -46,6 +46,9 @@ export async function remarcarComBackendConfiavel(intencao: RemarcacaoIntent, ad
     tipoPlanejamento: 'normal' as const, modalidade: intencao.modalidade, cicloTaxidogId: intencao.cicloTaxidogId }
   const dados = await carregarDadosDisponibilidadeComCliente(entrada, admin, undefined, intencao.atendimentoId)
   const resultado = intencao.modalidade === 'taxidog' ? calcularDisponibilidade(entrada, dados) : calcularDisponibilidadeNoHorario(entrada, dados, intencao.horarioEscolhido!)
+  if (resultado.erro?.codigo === 'CADASTRO_PET_INCOMPLETO') {
+    return { status: 'invalido', codigo: resultado.erro.codigo, mensagem: resultado.motivos[0], campos: resultado.erro.campos }
+  }
   const opcao = resultado.opcoes[0]
   if (!opcao) return { status: 'disponibilidade_alterada', codigo: intencao.modalidade === 'taxidog' ? 'CICLO_TAXIDOG_INVALIDO' : 'HORARIO_INDISPONIVEL', mensagem: resultado.motivos[0] ?? 'A nova programacao nao esta mais disponivel.', versaoOcupacaoAtual: versaoOcupacao }
   const mapa = new Map(servicos.map((item) => [String(item.servico_id), String(item.id)]))

@@ -5,7 +5,7 @@ import Select from '../components/ui/Select'
 import Card from '../components/ui/Card'
 import Modal from '../components/ui/Modal'
 import { SistemaContext } from '../context/SistemaContext'
-import type { Pet } from '../types/Pet'
+import type { EspeciePet, PelagemPet, Pet, PortePet, SexoPet, TemperamentoPet } from '../types/Pet'
 
 export default function Pets() {
   const { clientes, pets, racas, adicionarPet, atualizarPet } =
@@ -18,19 +18,17 @@ export default function Pets() {
 
   const [clienteId, setClienteId] = useState('')
   const [nome, setNome] = useState('')
-  const [especie, setEspecie] = useState<'cao' | 'gato'>('cao')
+  const [especie, setEspecie] = useState<EspeciePet | ''>('')
   const [racaId, setRacaId] = useState('')
   const [racaBusca, setRacaBusca] = useState('')
-  const [sexo, setSexo] = useState<'macho' | 'femea'>('macho')
-  const [porte, setPorte] = useState<
-    'mini' | 'pequeno' | 'medio' | 'grande' | 'gigante'
-  >('pequeno')
-  const [pelagem, setPelagem] = useState<Pet['pelagem']>('curta')
+  const [sexo, setSexo] = useState<SexoPet | ''>('')
+  const [porte, setPorte] = useState<PortePet | ''>('')
+  const [pelagem, setPelagem] = useState<PelagemPet | ''>('')
   const [peso, setPeso] = useState('')
   const [cor, setCor] = useState('')
   const [dataNascimento, setDataNascimento] = useState('')
-  const [castrado, setCastrado] = useState(false)
-  const [temperamento, setTemperamento] = useState<Pet['temperamento']>('calmo')
+  const [castrado, setCastrado] = useState<boolean | null>(null)
+  const [temperamento, setTemperamento] = useState<TemperamentoPet | ''>('')
   const [observacoes, setObservacoes] = useState('')
 
   const petsFiltrados = useMemo(() => {
@@ -43,7 +41,7 @@ export default function Pets() {
     return pets.filter((pet) => {
       return (
         pet.nome.toLowerCase().includes(termo) ||
-        pet.racaNome.toLowerCase().includes(termo) ||
+        (pet.racaNome ?? '').toLowerCase().includes(termo) ||
         pet.id.toLowerCase().includes(termo) ||
         pet.clienteId.toLowerCase().includes(termo)
       )
@@ -78,17 +76,17 @@ export default function Pets() {
   function editarPet(pet: Pet) {
     setClienteId(pet.clienteId)
     setNome(pet.nome)
-    setEspecie(pet.especie)
-    setRacaId(pet.racaId)
-    setRacaBusca(pet.racaNome)
-    setSexo(pet.sexo)
-    setPorte(pet.porte)
-    setPelagem(pet.pelagem)
+    setEspecie(pet.especie ?? '')
+    setRacaId(pet.racaId ?? '')
+    setRacaBusca(pet.racaNome ?? '')
+    setSexo(pet.sexo ?? '')
+    setPorte(pet.porte ?? '')
+    setPelagem(pet.pelagem ?? '')
     setPeso(pet.peso === null ? '' : String(pet.peso))
     setCor(pet.cor)
     setDataNascimento(pet.dataNascimento)
     setCastrado(pet.castrado)
-    setTemperamento(pet.temperamento)
+    setTemperamento(pet.temperamento ?? '')
     setObservacoes(pet.observacoes)
     setPetEmEdicaoId(pet.id)
     setPetSelecionadoId(null)
@@ -109,17 +107,17 @@ export default function Pets() {
   function limparFormulario() {
     setClienteId('')
     setNome('')
-    setEspecie('cao')
+    setEspecie('')
     setRacaId('')
     setRacaBusca('')
-    setSexo('macho')
-    setPorte('pequeno')
-    setPelagem('curta')
+    setSexo('')
+    setPorte('')
+    setPelagem('')
     setPeso('')
     setCor('')
     setDataNascimento('')
-    setCastrado(false)
-    setTemperamento('calmo')
+    setCastrado(null)
+    setTemperamento('')
     setObservacoes('')
   }
 
@@ -136,24 +134,24 @@ export default function Pets() {
       return
     }
 
-    if (!racaId) {
-      alert('Selecione uma raça válida do catálogo.')
+    if (racaId && !especie) {
+      alert('Informe a espécie para a raça selecionada.')
       return
     }
 
     const dadosPet = {
       clienteId,
       nome: nome.trim(),
-      especie,
-      racaId,
-      sexo,
-      porte,
-      pelagem,
+      especie: especie || null,
+      racaId: racaId || null,
+      sexo: sexo || null,
+      porte: porte || null,
+      pelagem: pelagem || null,
       peso: peso ? Number(peso) : null,
       cor: cor.trim(),
       dataNascimento: dataNascimento.trim(),
       castrado,
-      temperamento,
+      temperamento: temperamento || null,
       observacoes: observacoes.trim(),
     }
 
@@ -275,12 +273,14 @@ export default function Pets() {
               </span>
 
               <h2 style={{ margin: '10px 0 6px' }}>
-                {pet.especie === 'cao' ? '🐶' : '🐱'} {pet.nome}
+                {pet.especie === 'cao' ? '🐶' : pet.especie === 'gato' ? '🐱' : '🐾'} {pet.nome}
               </h2>
 
               <p style={{ margin: '4px 0' }}>
-                {pet.racaNome} • {pet.porte}
+                {pet.racaNome ?? 'Raça não informada'} • {formatarPorte(pet.porte)}
               </p>
+
+              {cadastroIncompleto(pet) && <p style={{ margin: '8px 0', color: 'var(--color-warning, #9a6700)', fontWeight: 700 }}>Cadastro incompleto</p>}
 
               <p
                 style={{
@@ -360,13 +360,14 @@ export default function Pets() {
                   setRacaBusca('')
                 }}
                 options={[
+                  { value: '', label: 'Não informado' },
                   { value: 'cao', label: 'Cão' },
                   { value: 'gato', label: 'Gato' },
                 ]}
               />
             </Campo>
 
-            <Campo titulo="Raça *">
+            <Campo titulo="Raça">
               <div style={{ position: 'relative' }}>
                 <Input
                   placeholder="Busque uma raça"
@@ -408,6 +409,7 @@ export default function Pets() {
                   setSexo(evento.target.value as 'macho' | 'femea')
                 }
                 options={[
+                  { value: '', label: 'Não informado' },
                   { value: 'macho', label: 'Macho' },
                   { value: 'femea', label: 'Fêmea' },
                 ]}
@@ -428,6 +430,7 @@ export default function Pets() {
                   )
                 }
                 options={[
+                  { value: '', label: 'Não informado' },
                   { value: 'mini', label: 'Mini' },
                   { value: 'pequeno', label: 'Pequeno' },
                   { value: 'medio', label: 'Médio' },
@@ -441,8 +444,9 @@ export default function Pets() {
           <Campo titulo="Pelagem">
             <Select
               value={pelagem}
-              onChange={(evento) => setPelagem(evento.target.value as Pet['pelagem'])}
+              onChange={(evento) => setPelagem(evento.target.value as PelagemPet | '')}
               options={[
+                { value: '', label: 'Não informado' },
                 { value: 'curta', label: 'Curta' },
                 { value: 'media', label: 'Média' },
                 { value: 'longa', label: 'Longa' },
@@ -483,9 +487,10 @@ export default function Pets() {
             <Select
               value={temperamento}
               onChange={(evento) =>
-                setTemperamento(evento.target.value as Pet['temperamento'])
+                setTemperamento(evento.target.value as TemperamentoPet | '')
               }
               options={[
+                { value: '', label: 'Não informado' },
                 { value: 'calmo', label: 'Calmo' },
                 { value: 'moderado', label: 'Moderado' },
                 { value: 'dificil', label: 'Difícil' },
@@ -493,22 +498,9 @@ export default function Pets() {
             />
           </Campo>
 
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              cursor: 'pointer',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={castrado}
-              onChange={(evento) => setCastrado(evento.target.checked)}
-            />
-
-            Pet castrado
-          </label>
+          <Campo titulo="Castrado">
+            <Select value={castrado === null ? '' : castrado ? 'sim' : 'nao'} onChange={(evento) => setCastrado(evento.target.value === '' ? null : evento.target.value === 'sim')} options={[{ value: '', label: 'Não informado' }, { value: 'sim', label: 'Sim' }, { value: 'nao', label: 'Não' }]} />
+          </Campo>
 
           <Campo titulo="Observações">
             <textarea
@@ -573,12 +565,12 @@ export default function Pets() {
               <Detalhe titulo="Nome" valor={petSelecionado.nome} />
               <Detalhe
                 titulo="Espécie"
-                valor={petSelecionado.especie === 'cao' ? 'Cão' : 'Gato'}
+                valor={petSelecionado.especie === 'cao' ? 'Cão' : petSelecionado.especie === 'gato' ? 'Gato' : 'Não informado'}
               />
-              <Detalhe titulo="Raça" valor={petSelecionado.racaNome} />
+              <Detalhe titulo="Raça" valor={petSelecionado.racaNome ?? 'Não informado'} />
               <Detalhe
                 titulo="Sexo"
-                valor={petSelecionado.sexo === 'macho' ? 'Macho' : 'Fêmea'}
+                valor={petSelecionado.sexo === 'macho' ? 'Macho' : petSelecionado.sexo === 'femea' ? 'Fêmea' : 'Não informado'}
               />
               <Detalhe
                 titulo="Porte"
@@ -600,7 +592,7 @@ export default function Pets() {
               />
               <Detalhe
                 titulo="Castrado"
-                valor={petSelecionado.castrado ? 'Sim' : 'Não'}
+                valor={petSelecionado.castrado === null ? 'Não informado' : petSelecionado.castrado ? 'Sim' : 'Não'}
               />
               <Detalhe
                 titulo="Temperamento"
@@ -721,6 +713,7 @@ function Detalhe({ titulo, valor }: DetalheProps) {
 }
 
 function formatarPorte(porte: Pet['porte']) {
+  if (!porte) return 'Não informado'
   const nomes = {
     mini: 'Mini',
     pequeno: 'Pequeno',
@@ -733,6 +726,7 @@ function formatarPorte(porte: Pet['porte']) {
 }
 
 function formatarTemperamento(temperamento: Pet['temperamento']) {
+  if (!temperamento) return 'Não informado'
   const nomes = {
     calmo: 'Calmo',
     moderado: 'Moderado',
@@ -743,7 +737,12 @@ function formatarTemperamento(temperamento: Pet['temperamento']) {
 }
 
 function formatarPelagem(pelagem: Pet['pelagem']) {
+  if (!pelagem) return 'Não informado'
   return { curta: 'Curta', media: 'Média', longa: 'Longa' }[pelagem]
+}
+
+function cadastroIncompleto(pet: Pet) {
+  return [pet.especie, pet.racaId, pet.sexo, pet.porte, pet.pelagem, pet.temperamento, pet.castrado].some((valor) => valor === null)
 }
 
 function formatarDataCadastro(valor: string) {

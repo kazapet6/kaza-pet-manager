@@ -1,9 +1,14 @@
-export type PetMotorBase={id:string;clienteId:string;nome:string;especie:'cao'|'gato';racaId:string;racaNome:string;sexo:'macho'|'femea';porte:'mini'|'pequeno'|'medio'|'grande'|'gigante';pelagem:'curta'|'media'|'longa';peso:number|null;temperamento:'calmo'|'moderado'|'dificil'}
-type Pet=PetMotorBase
+export type EspeciePetMotor='cao'|'gato'
+export type SexoPetMotor='macho'|'femea'
+export type PortePetMotor='mini'|'pequeno'|'medio'|'grande'|'gigante'
+export type PelagemPetMotor='curta'|'media'|'longa'
+export type TemperamentoPetMotor='calmo'|'moderado'|'dificil'
+export type CampoCadastroPet='especie'|'raca'|'sexo'|'porte'|'pelagem'|'temperamento'|'peso'
+export type PetMotorBase={id:string;clienteId:string;nome:string;especie:EspeciePetMotor|null;racaId:string|null;racaNome:string|null;sexo:SexoPetMotor|null;porte:PortePetMotor|null;pelagem:PelagemPetMotor|null;peso:number|null;temperamento:TemperamentoPetMotor|null}
 export type PoliticaEsperaEtapa='padrao'|'personalizada'|'sem_limite_operacional'
 
 export type PreferenciaFuncionario = 'automatico' | 'preferencial' | 'obrigatorio'
-export type EstadoDisponibilidade = 'OK' | 'AGENDA_NAO_CONFIGURADA' | 'LOJA_FECHADA' | 'PET_INELEGIVEL' | 'SERVICO_INVALIDO' | 'SEM_DISPONIBILIDADE'
+export type EstadoDisponibilidade = 'OK' | 'AGENDA_NAO_CONFIGURADA' | 'LOJA_FECHADA' | 'CADASTRO_PET_INCOMPLETO' | 'PET_INELEGIVEL' | 'SERVICO_INVALIDO' | 'SEM_DISPONIBILIDADE'
 
 export type EntradaDisponibilidade = {
   petId: string
@@ -25,18 +30,18 @@ export type RegraPrecoMotor = {
   id: string
   servicoId: string
   criterio: 'porte' | 'pelagem' | 'raca' | 'peso' | 'temperamento'
-  porte: Pet['porte'] | null
-  pelagem: Pet['pelagem'] | null
+  porte: PortePetMotor | null
+  pelagem: PelagemPetMotor | null
   racaId: string | null
   pesoMin: number | null
   pesoMax: number | null
-  temperamento: Pet['temperamento'] | null
+  temperamento: TemperamentoPetMotor | null
   acrescimoValor: number
   ativo: boolean
 }
 export type ElegibilidadeMotor = {
-  especies: { servicoId: string; especie: Pet['especie']; ativo: boolean }[]
-  portes: { servicoId: string; porte: Pet['porte']; ativo: boolean }[]
+  especies: { servicoId: string; especie: EspeciePetMotor; ativo: boolean }[]
+  portes: { servicoId: string; porte: PortePetMotor; ativo: boolean }[]
   racasBloqueadas: { servicoId: string; racaId: string; ativo: boolean }[]
 }
 export type EtapaMotor = {
@@ -58,9 +63,9 @@ export type ModificadorDuracaoMotor = {
   acrescimoMinutos: number
   ativo: boolean
   racaId: string | null
-  porte: Pet['porte'] | null
-  pelagem: Pet['pelagem'] | null
-  temperamento: Pet['temperamento'] | null
+  porte: PortePetMotor | null
+  pelagem: PelagemPetMotor | null
+  temperamento: TemperamentoPetMotor | null
   pesoMin: number | null
   pesoMax: number | null
 }
@@ -74,9 +79,9 @@ export type HabilitacoesMotor = {
 export type EquipamentoMotor = { id: string; nome: string; ativo: boolean; separarPorSexo: boolean; exigeSupervisaoHumana: boolean }
 export type UnidadeEquipamentoMotor = { id: string; equipamentoId: string; numero: number; nome: string; ativo: boolean }
 export type PerfilCapacidadeMotor = { id: string; equipamentoId: string; ativo: boolean }
-export type ItemPerfilCapacidadeMotor = { perfilId: string; porte: Pet['porte']; quantidade: number; ativo: boolean }
+export type ItemPerfilCapacidadeMotor = { perfilId: string; porte: PortePetMotor; quantidade: number; ativo: boolean }
 export type ReservaFuncionarioMotor = { id: string; funcionarioId: string; inicio: number; fim: number }
-export type ReservaEquipamentoMotor = { id: string; unidadeId: string; inicio: number; fim: number; porte: Pet['porte']; sexo: Pet['sexo'] }
+export type ReservaEquipamentoMotor = { id: string; unidadeId: string; inicio: number; fim: number; porte: PortePetMotor; sexo: SexoPetMotor }
 export type ExcecaoEstabelecimentoMotor = { data: string; fechado: boolean; blocos: IntervaloMinutos[] }
 export type CicloTaxidogMotor = { id: string; nome: string; ordem: number; coletaInicio: number; coletaFim: number; conclusaoLimite: number; ativo: boolean; diasSemana: number[] }
 
@@ -163,8 +168,8 @@ export type AlocacaoEquipamento = { equipamentoId: string; equipamentoNome: stri
 export type EtapaPlanejada = { etapaId: string; servicoId: string; servicoNome: string; nome: string; inicio: number; fim: number; duracaoBaseMinutos: number; duracaoMinutos: number; funcionarios: AlocacaoFuncionario[]; equipamentos: AlocacaoEquipamento[]; modificadoresAplicados: string[]; contribuicoesAcopladas: ContribuicaoAcoplada[] }
 export type EsperaPlanejada = { antesDaEtapaId: string; inicio: number; fim: number; duracaoMinutos: number; politica: PoliticaEsperaEtapa }
 export type OpcaoDisponibilidade = { horarioApresentado: number; inicioOperacional: number; conclusaoPrevista: number; cicloTaxidog: CicloTaxidogMotor | null; servicos: ServicoResolvido[]; etapas: EtapaPlanejada[]; esperas: EsperaPlanejada[]; duracaoProcessamento: number; tempoEspera: number; duracaoTotal: number; trocasFuncionario: number; trocasRecurso: number }
-export type ResultadoDisponibilidade = { estado: EstadoDisponibilidade; data: string; opcoes: OpcaoDisponibilidade[]; motivos: string[] }
-export type ResultadoDisponibilidadeCiclo = { estado: EstadoDisponibilidade; data: string; disponivel: boolean; opcao: OpcaoDisponibilidade | null; motivos: string[] }
+export type ResultadoDisponibilidade = { estado: EstadoDisponibilidade; data: string; opcoes: OpcaoDisponibilidade[]; motivos: string[]; erro?: { codigo:'CADASTRO_PET_INCOMPLETO'; campos:CampoCadastroPet[] } }
+export type ResultadoDisponibilidadeCiclo = { estado: EstadoDisponibilidade; data: string; disponivel: boolean; opcao: OpcaoDisponibilidade | null; motivos: string[]; erro?: ResultadoDisponibilidade['erro'] }
 
 export type SolicitacaoPlanejamentoLote = { id: string; entrada: EntradaDisponibilidade }
 export type LimitesPlanejamentoLote = { maximoPets: number; maximoOpcoesPorPet: number; maximoEstados: number }

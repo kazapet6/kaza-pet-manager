@@ -14,7 +14,7 @@ import type {
 } from '../types/Agenda'
 import type { Pet } from '../types/Pet'
 
-const portes: Pet['porte'][] = ['mini', 'pequeno', 'medio', 'grande', 'gigante']
+const portes: NonNullable<Pet['porte']>[] = ['mini', 'pequeno', 'medio', 'grande', 'gigante']
 
 export default function Equipamentos() {
   const { equipamentos, equipamentoPerfis, equipamentoPerfilItens, recarregarAgenda } =
@@ -31,7 +31,7 @@ export default function Equipamentos() {
   const [ativo, setAtivo] = useState(true)
   const [nomePerfil, setNomePerfil] = useState('')
   const [perfilAtivo, setPerfilAtivo] = useState(true)
-  const [capacidades, setCapacidades] = useState<Record<Pet['porte'], number>>({
+  const [capacidades, setCapacidades] = useState<Record<NonNullable<Pet['porte']>, number>>({
     mini: 0, pequeno: 0, medio: 0, grande: 0, gigante: 0,
   })
 

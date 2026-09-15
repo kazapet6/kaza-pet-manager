@@ -304,7 +304,7 @@ function Venda({
   onCreated,
 }: {
   clientes: { id: string; nome: string }[];
-  pets: { id: string; clienteId: string; nome: string; porte: string }[];
+  pets: { id: string; clienteId: string; nome: string; porte: string | null }[];
   pacotes: Pacote[];
   onClose: () => void;
   onCreated: (c: ContratoResumo) => void;

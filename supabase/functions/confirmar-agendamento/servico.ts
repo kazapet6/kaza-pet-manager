@@ -11,6 +11,7 @@ import { calcularPrecificacao } from '../_shared/motor/precificacao.ts'
 import { carregarDadosPrecificacaoComCliente } from '../_shared/motor/precificacaoSupabase.ts'
 import { carregarDadosDisponibilidadeComCliente } from '../_shared/motor/supabase.ts'
 import { executarRpcConfirmacao } from '../_shared/confirmacao/observabilidade.ts'
+import { ErroCadastroPetIncompleto } from '../_shared/motor/cadastroPet.ts'
 
 type Versoes = { configuracao: number; ocupacao: number }
 
@@ -45,9 +46,11 @@ export async function confirmarComBackendConfiavel(
     ? calcularDisponibilidade(entrada, dados)
     : calcularDisponibilidadeNoHorario(entrada, dados, intencao.horarioEscolhido!)
   const opcao = resultado.opcoes[0]
+  if(resultado.erro?.codigo==='CADASTRO_PET_INCOMPLETO')return{status:'invalido',codigo:'CADASTRO_PET_INCOMPLETO',mensagem:resultado.motivos[0],campos:resultado.erro.campos}
   if (!opcao) return indisponivel(intencao, resultado.motivos[0], versoes.ocupacao)
 
-  const precificacao = calcularPrecificacao(precos.pet, opcao.servicos, precos.dados)
+  let precificacao:ReturnType<typeof calcularPrecificacao>
+  try{precificacao=calcularPrecificacao(precos.pet, opcao.servicos, precos.dados)}catch(erro){if(erro instanceof ErroCadastroPetIncompleto)return{status:'invalido',codigo:'CADASTRO_PET_INCOMPLETO',mensagem:erro.message,campos:erro.campos};throw erro}
   const hash = await calcularHashIntencao(intencao)
   const plano = montarPlanoConfirmacaoRpc(intencao, dados, opcao, precificacao, hash)
   const data = await executarRpcConfirmacao(admin, plano, intencao)

@@ -106,13 +106,13 @@ function subtrairIntervalos(base: IntervaloMinutos, intervalos: IntervaloMinutos
 function capacidadeValida(unidadeId: string, equipamentoId: string, separarPorSexo: boolean, periodo: IntervaloMinutos, pet: PetMotor, dados: DadosDisponibilidade, planejados: RecursosPlanejados) {
   const existentes: ReservaEquipamentoMotor[] = [
     ...dados.reservasEquipamentos.filter((item) => item.unidadeId === unidadeId && sobrepoe(item, periodo)),
-    ...planejados.flatMap((item, indice) => item.equipamentos.filter((alocacao) => alocacao.unidadeId === unidadeId && sobrepoe(item, periodo)).map((alocacao) => ({ id: `planejado-${indice}-${alocacao.unidadeId}`, unidadeId, inicio: item.inicio, fim: item.fim, porte: pet.porte, sexo: pet.sexo }))),
+    ...planejados.flatMap((item, indice) => item.equipamentos.filter((alocacao) => alocacao.unidadeId === unidadeId && sobrepoe(item, periodo)).map((alocacao) => ({ id: `planejado-${indice}-${alocacao.unidadeId}`, unidadeId, inicio: item.inicio, fim: item.fim, porte: pet.porte!, sexo: pet.sexo! }))),
   ]
   const pontos = [...new Set([periodo.inicio, ...existentes.map((item) => Math.max(item.inicio, periodo.inicio))])]
   return pontos.every((ponto) => {
     const simultaneos = existentes.filter((item) => item.inicio <= ponto && item.fim > ponto)
     if (separarPorSexo && simultaneos.some((item) => item.sexo !== pet.sexo)) return false
-    const consumo = new Map<PetMotor['porte'], number>([[pet.porte, 1]])
+    const consumo = new Map<NonNullable<PetMotor['porte']>, number>([[pet.porte!, 1]])
     for (const reserva of simultaneos) consumo.set(reserva.porte, (consumo.get(reserva.porte) ?? 0) + 1)
     return dados.perfisCapacidade.filter((item) => item.equipamentoId === equipamentoId && item.ativo).some((perfil) => {
       const itens = dados.itensPerfisCapacidade.filter((item) => item.perfilId === perfil.id && item.ativo)

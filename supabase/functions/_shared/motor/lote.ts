@@ -85,7 +85,7 @@ function materializarOpcao(dados: DadosDisponibilidade, pet: DadosDisponibilidad
     ],
     reservasEquipamentos: [
       ...dados.reservasEquipamentos,
-      ...opcao.etapas.flatMap((etapa, etapaIndice) => etapa.equipamentos.map((equipamento) => ({ id: `${prefixo}-e-${etapaIndice}-${equipamento.unidadeId}`, unidadeId: equipamento.unidadeId, inicio: etapa.inicio, fim: etapa.fim, porte: pet.porte, sexo: pet.sexo }))),
+      ...opcao.etapas.flatMap((etapa, etapaIndice) => etapa.equipamentos.map((equipamento) => ({ id: `${prefixo}-e-${etapaIndice}-${equipamento.unidadeId}`, unidadeId: equipamento.unidadeId, inicio: etapa.inicio, fim: etapa.fim, porte: pet.porte!, sexo: pet.sexo! }))),
     ],
   }
 }

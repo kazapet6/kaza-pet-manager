@@ -7,6 +7,7 @@ import {
 } from './confirmacao/plano.ts'
 import { calcularDisponibilidade, calcularDisponibilidadeNoHorario } from './motor/motor.ts'
 import { calcularPrecificacao } from './motor/precificacao.ts'
+import { ErroCadastroPetIncompleto } from './motor/cadastroPet.ts'
 import { carregarDadosPrecificacaoComCliente } from './motor/precificacaoSupabase.ts'
 import { carregarDadosDisponibilidadeComCliente } from './motor/supabase.ts'
 import type { ResultadoMaterializacaoCiclo } from './materializacao-contrato.ts'
@@ -98,9 +99,18 @@ export async function materializarCiclo(
     const resultado = modalidade === 'taxidog'
       ? calcularDisponibilidade(entrada, dados)
       : calcularDisponibilidadeNoHorario(entrada, dados, ocorrencia.horarioApresentado)
+    if (resultado.erro?.codigo === 'CADASTRO_PET_INCOMPLETO') {
+      return falha('invalido', resultado.erro.codigo, resultado.motivos[0], cicloId, resultado.erro.campos)
+    }
     const opcao = resultado.opcoes.find((item) => item.inicioOperacional === ocorrencia.inicioOperacional && (modalidade !== 'taxidog' || item.cicloTaxidog?.id === ocorrencia.taxidogCicloId))
     if (!opcao) return falha('conflito', 'DISPONIBILIDADE_ALTERADA', `A ocorrência ${ocorrencia.ordem} deixou de possuir o plano reservado.`, cicloId)
-    const precificacao = calcularPrecificacao(precos.pet, opcao.servicos, precos.dados)
+    let precificacao: ReturnType<typeof calcularPrecificacao>
+    try {
+      precificacao = calcularPrecificacao(precos.pet, opcao.servicos, precos.dados)
+    } catch (erro) {
+      if (erro instanceof ErroCadastroPetIncompleto) return falha('invalido', erro.codigo, erro.message, cicloId, erro.campos)
+      throw erro
+    }
     const plano = montarPlanoConfirmacaoRpc(intencao, dados, opcao, precificacao, await calcularHashIntencao(intencao))
     const invariantes = diagnosticarInvariantesPlanoConfirmacao(plano)
     if (invariantes.length) {
@@ -139,7 +149,7 @@ async function uuidMaterializacao(ocorrenciaId: string) {
   const hex = [...bytes].map((item) => item.toString(16).padStart(2, '0')).join('')
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
-function falha(status: 'invalido' | 'conflito', codigo: string, mensagem: string, cicloId: string): ResultadoMaterializacaoCiclo { return { status, codigo, mensagem, cicloId } }
+function falha(status: 'invalido' | 'conflito', codigo: string, mensagem: string, cicloId: string, campos?: readonly string[]): ResultadoMaterializacaoCiclo { return { status, codigo, mensagem, cicloId, ...(campos ? { campos } : {}) } }
 function relacao(valor: unknown): Linha { return Array.isArray(valor) ? registro(valor[0]) : registro(valor) }
 function registro(valor: unknown): Linha { return valor && typeof valor === 'object' && !Array.isArray(valor) ? valor as Linha : {} }
 function texto(valor: unknown) { return valor === null || valor === undefined ? '' : String(valor) }

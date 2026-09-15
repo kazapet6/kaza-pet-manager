@@ -19,7 +19,7 @@ export type DadosPerfilCapacidade = {
   equipamentoId: string
   nome: string
   ativo: boolean
-  capacidades: Record<Pet['porte'], number>
+  capacidades: Record<NonNullable<Pet['porte']>, number>
 }
 
 export type DadosFuncionario = {
@@ -70,22 +70,22 @@ export type DadosModificador = {
   acrescimoMinutos: number
   ativo: boolean
   racaId?: string | null
-  porte?: Pet['porte'] | null
-  temperamento?: Pet['temperamento'] | null
+  porte?: NonNullable<Pet['porte']> | null
+  temperamento?: NonNullable<Pet['temperamento']> | null
   pesoMin?: number | null
   pesoMax?: number | null
-  pelagem?: Pet['pelagem'] | null
+  pelagem?: NonNullable<Pet['pelagem']> | null
 }
 
 export type DadosRegraPreco = {
   servicoId: string
   criterio: 'porte' | 'pelagem' | 'raca' | 'peso' | 'temperamento'
-  porte?: Pet['porte'] | null
-  pelagem?: Pet['pelagem'] | null
+  porte?: NonNullable<Pet['porte']> | null
+  pelagem?: NonNullable<Pet['pelagem']> | null
   racaId?: string | null
   pesoMin?: number | null
   pesoMax?: number | null
-  temperamento?: Pet['temperamento'] | null
+  temperamento?: NonNullable<Pet['temperamento']> | null
   acrescimoValor: string
   ativo: boolean
 }
@@ -288,8 +288,8 @@ export async function salvarEtapa(dados: DadosEtapa, id?: string) {
 }
 
 export type ElegibilidadeServico = {
-  especies: Pet['especie'][]
-  portes: Pet['porte'][]
+  especies: NonNullable<Pet['especie']>[]
+  portes: NonNullable<Pet['porte']>[]
   racasBloqueadas: string[]
   dependencias: string[]
   funcionarios: string[]
@@ -459,9 +459,9 @@ export async function salvarAjustePrecoFixo(
   await salvarRegraPreco({
     servicoId,
     criterio,
-    porte: criterio === 'porte' ? valor as Pet['porte'] : null,
-    pelagem: criterio === 'pelagem' ? valor as Pet['pelagem'] : null,
-    temperamento: criterio === 'temperamento' ? valor as Pet['temperamento'] : null,
+    porte: criterio === 'porte' ? valor as NonNullable<Pet['porte']> : null,
+    pelagem: criterio === 'pelagem' ? valor as NonNullable<Pet['pelagem']> : null,
+    temperamento: criterio === 'temperamento' ? valor as NonNullable<Pet['temperamento']> : null,
     acrescimoValor,
     ativo: true,
   })

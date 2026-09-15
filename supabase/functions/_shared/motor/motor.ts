@@ -2,6 +2,7 @@ import { alocacoesPossiveis } from './recursos.ts'
 import { calcularEtapas, resolverServicos, validarElegibilidade } from './regras.ts'
 import { diaSemana } from './tempo.ts'
 import { ciclosAtivosNaData } from './ciclosTaxidog.ts'
+import { camposNecessariosDisponibilidade, CODIGO_CADASTRO_PET_INCOMPLETO } from './cadastroPet.ts'
 import type { CicloTaxidogMotor, DadosDisponibilidade, EntradaDisponibilidade, EsperaPlanejada, EtapaCalculada, EtapaPlanejada, IntervaloMinutos, OpcaoDisponibilidade, ResultadoDisponibilidade, ServicoResolvido } from './tipos.ts'
 
 type PlanoParcial = { etapas: EtapaPlanejada[]; esperas: EsperaPlanejada[] }
@@ -36,6 +37,8 @@ function calcularDisponibilidadeInterna(entrada: EntradaDisponibilidade, dados: 
   let etapas: EtapaCalculada[]
   try {
     servicos = resolverServicos(entrada, dados)
+    const camposAusentes=camposNecessariosDisponibilidade(pet,servicos,dados)
+    if(camposAusentes.length)return resultadoCadastroIncompleto(entrada,camposAusentes)
     const inelegibilidades = validarElegibilidade(pet, servicos, dados)
     if (inelegibilidades.length) return resultado('PET_INELEGIVEL', entrada, [], inelegibilidades)
     etapas = calcularEtapas(pet, servicos, dados)
@@ -214,4 +217,8 @@ function alinharInicio(inicio: number, granularidade: number) {
 
 function resultado(estado: ResultadoDisponibilidade['estado'], entrada: EntradaDisponibilidade, opcoes: OpcaoDisponibilidade[], motivos: string[]): ResultadoDisponibilidade {
   return { estado, data: entrada.data, opcoes, motivos }
+}
+
+function resultadoCadastroIncompleto(entrada:EntradaDisponibilidade,campos:import('./tipos.ts').CampoCadastroPet[]):ResultadoDisponibilidade{
+  return {estado:CODIGO_CADASTRO_PET_INCOMPLETO,data:entrada.data,opcoes:[],motivos:[`Complete o cadastro do pet: ${campos.join(', ')}.`],erro:{codigo:CODIGO_CADASTRO_PET_INCOMPLETO,campos}}
 }

@@ -22,7 +22,7 @@ export type RespostaGerenciarPacote =
   | { readonly status: 'invalido'; readonly codigo: string; readonly mensagem: string }
 export type LinhaSimulacaoPacote = { readonly pacoteServicoId: string; readonly servicoId: string; readonly servicoNome: string; readonly quantidadePorCiclo: number; readonly descontoPercentual:number; readonly precoAvulsoUnitario: number; readonly precoPacoteUnitario: number; readonly totalAvulso: number; readonly totalPacote: number; readonly economia: number }
 export type SimulacaoPacote = { readonly pacoteId: string; readonly pacoteVersao: number; readonly linhas: LinhaSimulacaoPacote[]; readonly totalAvulso: number; readonly totalPacote: number; readonly economiaAbsoluta: number; readonly percentualEconomia: number | null }
-export type RespostaSimulacaoPacote = { readonly status: 'calculado'; readonly simulacao: SimulacaoPacote } | { readonly status: 'conflito' | 'invalido'; readonly codigo: string; readonly mensagem: string }
+export type RespostaSimulacaoPacote = { readonly status: 'calculado'; readonly simulacao: SimulacaoPacote } | { readonly status: 'conflito' | 'invalido'; readonly codigo: string; readonly mensagem: string; readonly campos?: readonly string[] }
 
 export function rotuloUnidade(unidade: UnidadePeriodo, quantidade: number) {
   const plural: Record<UnidadePeriodo,string> = { dia:'dias',semana:'semanas',mes:'meses',ano:'anos' }

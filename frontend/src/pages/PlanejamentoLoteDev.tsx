@@ -67,7 +67,7 @@ function ResultadoLote({ resultado }: { resultado: ResultadoPlanejamentoLote }) 
 }
 
 function materializarOcupacoes(itens: OcupacaoDev[], pets: SistemaContextShape['pets']): Partial<OcupacoesSimuladas> {
-  return { funcionarios: itens.filter((item) => item.tipo === 'funcionario' && item.recursoId && item.fim > item.inicio).map((item) => ({ id: item.id, funcionarioId: item.recursoId, inicio: minutos(item.inicio), fim: minutos(item.fim) })), equipamentos: itens.filter((item) => item.tipo === 'equipamento' && item.recursoId && item.petId && item.fim > item.inicio).map((item) => { const pet = pets.find((p) => p.id === item.petId)!; return { id: item.id, unidadeId: item.recursoId, inicio: minutos(item.inicio), fim: minutos(item.fim), porte: pet.porte, sexo: pet.sexo } }) }
+  return { funcionarios: itens.filter((item) => item.tipo === 'funcionario' && item.recursoId && item.fim > item.inicio).map((item) => ({ id: item.id, funcionarioId: item.recursoId, inicio: minutos(item.inicio), fim: minutos(item.fim) })), equipamentos: itens.filter((item) => item.tipo === 'equipamento' && item.recursoId && item.petId && item.fim > item.inicio).map((item) => { const pet = pets.find((p) => p.id === item.petId)!; if(!pet.porte||!pet.sexo)throw new Error('Cadastro do pet incompleto para reservar equipamento.'); return { id: item.id, unidadeId: item.recursoId, inicio: minutos(item.inicio), fim: minutos(item.fim), porte: pet.porte, sexo: pet.sexo } }) }
 }
 
 type SistemaContextShape = React.ContextType<typeof SistemaContext>

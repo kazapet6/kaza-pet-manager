@@ -22,9 +22,9 @@ import type { PoliticaEsperaEtapa, RecursoEtapa, Servico, ServicoEtapa, ServicoE
 type Aba = 'geral' | 'preco' | 'regras' | 'operacao'
 type Criterio = 'porte' | 'pelagem' | 'raca' | 'peso' | 'temperamento'
 type ModoExecucao = 'proprio' | 'acoplado'
-const todosPortes: Pet['porte'][] = ['mini', 'pequeno', 'medio', 'grande', 'gigante']
-const nomesPorte: Record<Pet['porte'], string> = { mini: 'Mini', pequeno: 'Pequeno', medio: 'Médio', grande: 'Grande', gigante: 'Gigante' }
-const nomesPelagem: Record<Pet['pelagem'], string> = { curta: 'Curta', media: 'Média', longa: 'Longa' }
+const todosPortes: NonNullable<Pet['porte']>[] = ['mini', 'pequeno', 'medio', 'grande', 'gigante']
+const nomesPorte: Record<NonNullable<Pet['porte']>, string> = { mini: 'Mini', pequeno: 'Pequeno', medio: 'Médio', grande: 'Grande', gigante: 'Gigante' }
+const nomesPelagem: Record<NonNullable<Pet['pelagem']>, string> = { curta: 'Curta', media: 'Média', longa: 'Longa' }
 
 export default function Servicos() {
   const agenda = useContext(AgendaContext)
@@ -37,8 +37,8 @@ export default function Servicos() {
   const [precoBaseCentavos, setPrecoBaseCentavos] = useState(0)
   const [ativo, setAtivo] = useState(true)
   const [agendamentoCliente, setAgendamentoCliente] = useState(false)
-  const [especies, setEspecies] = useState<Pet['especie'][]>(['cao', 'gato'])
-  const [portes, setPortes] = useState<Pet['porte'][]>(todosPortes)
+  const [especies, setEspecies] = useState<NonNullable<Pet['especie']>[]>(['cao', 'gato'])
+  const [portes, setPortes] = useState<NonNullable<Pet['porte']>[]>(todosPortes)
   const [racasBloqueadas, setRacasBloqueadas] = useState<string[]>([])
   const [dependencias, setDependencias] = useState<string[]>([])
   const [funcionarios, setFuncionarios] = useState<string[]>([])
@@ -68,9 +68,9 @@ export default function Servicos() {
   const [duracaoAtiva, setDuracaoAtiva] = useState(true)
   const [duracaoRacaBusca, setDuracaoRacaBusca] = useState('')
 
-  const [ajustesPorte, setAjustesPorte] = useState<Record<Pet['porte'], number>>(ajustesPorteVazios())
-  const [ajustesPelagem, setAjustesPelagem] = useState<Record<Pet['pelagem'], number>>(ajustesPelagemVazios())
-  const [ajustesTemperamento, setAjustesTemperamento] = useState<Record<Pet['temperamento'], number>>(ajustesTemperamentoVazios())
+  const [ajustesPorte, setAjustesPorte] = useState<Record<NonNullable<Pet['porte']>, number>>(ajustesPorteVazios())
+  const [ajustesPelagem, setAjustesPelagem] = useState<Record<NonNullable<Pet['pelagem']>, number>>(ajustesPelagemVazios())
+  const [ajustesTemperamento, setAjustesTemperamento] = useState<Record<NonNullable<Pet['temperamento']>, number>>(ajustesTemperamentoVazios())
   const [adicionandoRacaPreco, setAdicionandoRacaPreco] = useState(false)
   const [precoRacaId, setPrecoRacaId] = useState('')
   const [precoRacaCentavos, setPrecoRacaCentavos] = useState(0)
@@ -97,9 +97,9 @@ export default function Servicos() {
   function editarServico(servico: Servico) {
     const regrasDoServico = agenda.servicoRegrasPreco.filter((item) => item.servicoId === servico.id && item.ativo)
     setServicoId(servico.id); setNome(servico.nome); setDescricao(servico.descricao); setPrecoBaseCentavos(decimalParaCentavos(servico.precoBase))
-    setAjustesPorte(carregarAjustes(todosPortes, regrasDoServico, 'porte') as Record<Pet['porte'], number>)
-    setAjustesPelagem(carregarAjustes(['curta', 'media', 'longa'], regrasDoServico, 'pelagem') as Record<Pet['pelagem'], number>)
-    setAjustesTemperamento(carregarAjustes(['calmo', 'moderado', 'dificil'], regrasDoServico, 'temperamento') as Record<Pet['temperamento'], number>)
+    setAjustesPorte(carregarAjustes(todosPortes, regrasDoServico, 'porte') as Record<NonNullable<Pet['porte']>, number>)
+    setAjustesPelagem(carregarAjustes(['curta', 'media', 'longa'], regrasDoServico, 'pelagem') as Record<NonNullable<Pet['pelagem']>, number>)
+    setAjustesTemperamento(carregarAjustes(['calmo', 'moderado', 'dificil'], regrasDoServico, 'temperamento') as Record<NonNullable<Pet['temperamento']>, number>)
     setAtivo(servico.ativo); setAgendamentoCliente(servico.agendamentoCliente); setAba('geral')
     setEspecies(agenda.servicoEspecies.filter((item) => item.servicoId === servico.id && item.ativo).map((item) => item.especie))
     setPortes(agenda.servicoPortes.filter((item) => item.servicoId === servico.id && item.ativo).map((item) => item.porte))
@@ -129,8 +129,8 @@ export default function Servicos() {
       if (modoExecucao === 'acoplado') await salvarAcoplamentoServico(id, etapaAlvoId)
       await Promise.all([
         ...todosPortes.map((item) => salvarAjustePrecoFixo(id, 'porte', item, centavosParaDecimal(ajustesPorte[item]))),
-        ...(['curta', 'media', 'longa'] as Pet['pelagem'][]).map((item) => salvarAjustePrecoFixo(id, 'pelagem', item, centavosParaDecimal(ajustesPelagem[item]))),
-        ...(['calmo', 'moderado', 'dificil'] as Pet['temperamento'][]).map((item) => salvarAjustePrecoFixo(id, 'temperamento', item, centavosParaDecimal(ajustesTemperamento[item]))),
+        ...(['curta', 'media', 'longa'] as NonNullable<Pet['pelagem']>[]).map((item) => salvarAjustePrecoFixo(id, 'pelagem', item, centavosParaDecimal(ajustesPelagem[item]))),
+        ...(['calmo', 'moderado', 'dificil'] as NonNullable<Pet['temperamento']>[]).map((item) => salvarAjustePrecoFixo(id, 'temperamento', item, centavosParaDecimal(ajustesTemperamento[item]))),
       ])
       await agenda.recarregarAgenda(); setModalAberto(false)
     } catch (error) { alert(mensagemErro(error)) }
@@ -180,8 +180,8 @@ export default function Servicos() {
     if (!servicoId || !duracaoEtapa || !etapasAtivas.some((item) => item.id === duracaoEtapa) || !duracaoValor) return alert('Selecione uma etapa ativa e preencha a condição da regra.')
     try {
       await salvarModificador({ servicoId, servicoEtapaId: duracaoEtapa, criterio: duracaoCriterio, valor: valorLegado(duracaoCriterio, duracaoValor, racas), acrescimoMinutos: Number(duracaoAcrescimo), ativo: duracaoAtiva,
-        racaId: duracaoCriterio === 'raca' ? duracaoValor : null, porte: duracaoCriterio === 'porte' ? duracaoValor as Pet['porte'] : null,
-        pelagem: duracaoCriterio === 'pelagem' ? duracaoValor as Pet['pelagem'] : null, temperamento: duracaoCriterio === 'temperamento' ? duracaoValor as Pet['temperamento'] : null,
+        racaId: duracaoCriterio === 'raca' ? duracaoValor : null, porte: duracaoCriterio === 'porte' ? duracaoValor as NonNullable<Pet['porte']> : null,
+        pelagem: duracaoCriterio === 'pelagem' ? duracaoValor as NonNullable<Pet['pelagem']> : null, temperamento: duracaoCriterio === 'temperamento' ? duracaoValor as NonNullable<Pet['temperamento']> : null,
         pesoMin: duracaoCriterio === 'peso' ? Number(duracaoValor) : null, pesoMax: null }, editandoDuracao?.id)
       await agenda.recarregarAgenda(); setEditandoDuracao(undefined)
     } catch (error) { alert(mensagemErro(error)) }
@@ -248,9 +248,9 @@ function Geral(props: { nome: string; setNome: (v: string) => void; descricao: s
 
 function Precificacao(props: {
   precoBase: number; setPrecoBase: (v: number) => void
-  ajustesPorte: Record<Pet['porte'], number>; setAjustesPorte: (v: Record<Pet['porte'], number>) => void
-  ajustesPelagem: Record<Pet['pelagem'], number>; setAjustesPelagem: (v: Record<Pet['pelagem'], number>) => void
-  ajustesTemperamento: Record<Pet['temperamento'], number>; setAjustesTemperamento: (v: Record<Pet['temperamento'], number>) => void
+  ajustesPorte: Record<NonNullable<Pet['porte']>, number>; setAjustesPorte: (v: Record<NonNullable<Pet['porte']>, number>) => void
+  ajustesPelagem: Record<NonNullable<Pet['pelagem']>, number>; setAjustesPelagem: (v: Record<NonNullable<Pet['pelagem']>, number>) => void
+  ajustesTemperamento: Record<NonNullable<Pet['temperamento']>, number>; setAjustesTemperamento: (v: Record<NonNullable<Pet['temperamento']>, number>) => void
   regrasRaca: ServicoRegraPreco[]; racas: Raca[]; adicionandoRaca: boolean; setAdicionandoRaca: (v: boolean) => void
   racaId: string; setRacaId: (v: string) => void; buscaRaca: string; setBuscaRaca: (v: string) => void
   racaCentavos: number; setRacaCentavos: (v: number) => void; salvarRaca: () => void; removerRaca: (id: string) => void; servicoSalvo: boolean
@@ -276,8 +276,8 @@ function Precificacao(props: {
       {props.adicionandoPeso ? <div className="editor-peso-preco"><Campo titulo="Peso inicial (kg)"><Input value={props.pesoMin} placeholder="5,01" onChange={(e) => props.setPesoMin(e.target.value)} /></Campo><Campo titulo="Peso final (kg)"><Input value={props.pesoMax} placeholder="10" onChange={(e) => props.setPesoMax(e.target.value)} /></Campo><Campo titulo="Acréscimo"><CampoMoeda valor={props.pesoCentavos} alterar={props.setPesoCentavos} /></Campo><div className="editor-acoes"><Button variant="secondary" onClick={() => props.setAdicionandoPeso(false)}>Cancelar</Button><Button onClick={props.salvarPeso}>Adicionar faixa</Button></div></div> : props.servicoSalvo ? <Button variant="secondary" onClick={() => props.setAdicionandoPeso(true)}>+ Adicionar faixa</Button> : <AvisoSalvar />}
     </section>
 
-    <TabelaAjustes titulo="Ajustes por pelagem" colunas={['Pelagem', 'Acréscimo']} linhas={( ['curta', 'media', 'longa'] as Pet['pelagem'][]).map((item) => ({ id: item, nome: nomesPelagem[item], valor: props.ajustesPelagem[item] }))} alterar={(id, valor) => props.setAjustesPelagem({ ...props.ajustesPelagem, [id]: valor })} />
-    <TabelaAjustes titulo="Ajustes por temperamento" colunas={['Temperamento', 'Acréscimo']} linhas={( ['calmo', 'moderado', 'dificil'] as Pet['temperamento'][]).map((item) => ({ id: item, nome: { calmo: 'Calmo', moderado: 'Moderado', dificil: 'Difícil' }[item], valor: props.ajustesTemperamento[item] }))} alterar={(id, valor) => props.setAjustesTemperamento({ ...props.ajustesTemperamento, [id]: valor })} />
+    <TabelaAjustes titulo="Ajustes por pelagem" colunas={['Pelagem', 'Acréscimo']} linhas={( ['curta', 'media', 'longa'] as NonNullable<Pet['pelagem']>[]).map((item) => ({ id: item, nome: nomesPelagem[item], valor: props.ajustesPelagem[item] }))} alterar={(id, valor) => props.setAjustesPelagem({ ...props.ajustesPelagem, [id]: valor })} />
+    <TabelaAjustes titulo="Ajustes por temperamento" colunas={['Temperamento', 'Acréscimo']} linhas={( ['calmo', 'moderado', 'dificil'] as NonNullable<Pet['temperamento']>[]).map((item) => ({ id: item, nome: { calmo: 'Calmo', moderado: 'Moderado', dificil: 'Difícil' }[item], valor: props.ajustesTemperamento[item] }))} alterar={(id, valor) => props.setAjustesTemperamento({ ...props.ajustesTemperamento, [id]: valor })} />
     <p className="texto-suave">Os ajustes aplicáveis são cumulativos e serão somados ao preço base.</p>
   </div>
 }
@@ -302,20 +302,20 @@ function EditorEtapa(props: { nome: string; setNome: (v: string) => void; ordem:
 }
 
 function EditorRegra(props: { criterio: Criterio; setCriterio: (v: Criterio) => void; valor: string; setValor: (v: string) => void; acrescimo: string; setAcrescimo: (v: string) => void; ativa: boolean; setAtiva: (v: boolean) => void; racas: Raca[]; buscaRaca: string; setBuscaRaca: (v: string) => void; cancelar: () => void; salvar: () => void; monetaria?: boolean; etapas?: ServicoEtapa[]; etapa?: string; setEtapa?: (v: string) => void }) { const encontradas = filtrarRacas(props.racas, props.buscaRaca, ['cao', 'gato'], []); return <div className="editor-inline">{props.etapas && <Campo titulo="Etapa afetada"><Select value={props.etapa} onChange={(e) => props.setEtapa?.(e.target.value)} options={props.etapas.map((item) => ({ value: item.id, label: item.nome }))} /></Campo>}<div className="form-grid"><Campo titulo="Critério"><Select value={props.criterio} onChange={(e) => { props.setCriterio(e.target.value as Criterio); props.setValor(''); props.setBuscaRaca('') }} options={[{ value: 'porte', label: 'Porte' }, { value: 'pelagem', label: 'Pelagem' }, { value: 'peso', label: 'Peso mínimo' }, { value: 'raca', label: 'Raça' }, { value: 'temperamento', label: 'Temperamento' }]} /></Campo><Campo titulo={props.monetaria ? 'Acréscimo em R$' : 'Acréscimo em minutos'}><Input type="number" value={props.acrescimo} onChange={(e) => props.setAcrescimo(e.target.value)} /></Campo></div><Campo titulo="Condição"><ValorCriterio criterio={props.criterio} valor={props.valor} setValor={props.setValor} racas={encontradas} busca={props.buscaRaca} setBusca={props.setBuscaRaca} /></Campo><Switch texto="Regra ativa" apoio="Será considerada nos cálculos futuros." marcado={props.ativa} alterar={props.setAtiva} /><AcoesEditor cancelar={props.cancelar} salvar={props.salvar} /></div> }
-function ValorCriterio({ criterio, valor, setValor, racas, busca, setBusca }: { criterio: Criterio; valor: string; setValor: (v: string) => void; racas: Raca[]; busca: string; setBusca: (v: string) => void }) { if (criterio === 'porte') return <Select value={valor} onChange={(e) => setValor(e.target.value)} options={[{ value: '', label: 'Selecione' }, ...todosPortes.map((item) => ({ value: item, label: nomesPorte[item] }))]} />; if (criterio === 'pelagem') return <Select value={valor} onChange={(e) => setValor(e.target.value)} options={[{ value: '', label: 'Selecione' }, ...(['curta', 'media', 'longa'] as Pet['pelagem'][]).map((item) => ({ value: item, label: nomesPelagem[item] }))]} />; if (criterio === 'temperamento') return <Select value={valor} onChange={(e) => setValor(e.target.value)} options={[{ value: '', label: 'Selecione' }, { value: 'calmo', label: 'Calmo' }, { value: 'moderado', label: 'Moderado' }, { value: 'dificil', label: 'Difícil' }]} />; if (criterio === 'peso') return <Input type="number" value={valor} placeholder="Peso em kg" onChange={(e) => setValor(e.target.value)} />; return <div><Input value={busca} placeholder="Busque uma raça" onChange={(e) => { setBusca(e.target.value); setValor('') }} />{busca && !valor && <ResultadosRaca racas={racas} selecionar={(raca) => { setValor(raca.id); setBusca(raca.nome) }} />}</div> }
+function ValorCriterio({ criterio, valor, setValor, racas, busca, setBusca }: { criterio: Criterio; valor: string; setValor: (v: string) => void; racas: Raca[]; busca: string; setBusca: (v: string) => void }) { if (criterio === 'porte') return <Select value={valor} onChange={(e) => setValor(e.target.value)} options={[{ value: '', label: 'Selecione' }, ...todosPortes.map((item) => ({ value: item, label: nomesPorte[item] }))]} />; if (criterio === 'pelagem') return <Select value={valor} onChange={(e) => setValor(e.target.value)} options={[{ value: '', label: 'Selecione' }, ...(['curta', 'media', 'longa'] as NonNullable<Pet['pelagem']>[]).map((item) => ({ value: item, label: nomesPelagem[item] }))]} />; if (criterio === 'temperamento') return <Select value={valor} onChange={(e) => setValor(e.target.value)} options={[{ value: '', label: 'Selecione' }, { value: 'calmo', label: 'Calmo' }, { value: 'moderado', label: 'Moderado' }, { value: 'dificil', label: 'Difícil' }]} />; if (criterio === 'peso') return <Input type="number" value={valor} placeholder="Peso em kg" onChange={(e) => setValor(e.target.value)} />; return <div><Input value={busca} placeholder="Busque uma raça" onChange={(e) => { setBusca(e.target.value); setValor('') }} />{busca && !valor && <ResultadosRaca racas={racas} selecionar={(raca) => { setValor(raca.id); setBusca(raca.nome) }} />}</div> }
 function AcoesEditor({ cancelar, salvar, rotuloSalvar = 'Salvar regra' }: { cancelar: () => void; salvar: () => void; rotuloSalvar?: string }) { return <div className="editor-acoes"><Button variant="secondary" onClick={cancelar}>Cancelar</Button><Button onClick={salvar}>{rotuloSalvar}</Button></div> }
 function ListaRegras({ regras, racas, monetaria = false, aoEditar }: { regras: (ServicoModificador | ServicoRegraPreco)[]; racas: Raca[]; monetaria?: boolean; aoEditar: (item: ServicoModificador | ServicoRegraPreco) => void }) { return regras.length ? <div className="config-lista">{regras.map((item) => <button type="button" key={item.id} onClick={() => aoEditar(item)}><span>{rotuloRegra(item, racas)}</span><small>+{monetaria ? moeda(Number((item as ServicoRegraPreco).acrescimoValor)) : `${(item as ServicoModificador).acrescimoMinutos} min`}</small></button>)}</div> : <p className="aviso-suave">Nenhuma regra configurada.</p> }
 
 function valorDaRegra(item?: ServicoModificador | ServicoRegraPreco) { return item?.racaId ?? item?.porte ?? item?.pelagem ?? item?.temperamento ?? item?.pesoMin?.toString() ?? ('valor' in (item ?? {}) ? (item as ServicoModificador).valor : '') }
 function valorLegado(criterio: Criterio, valor: string, racas: Raca[]) { return criterio === 'raca' ? nomeRaca(racas, valor) : valor }
 function nomeRaca(racas: Raca[], id: string) { return racas.find((item) => item.id === id)?.nome ?? '' }
-function filtrarRacas(racas: Raca[], busca: string, especies: Pet['especie'][], excluidas: string[]) { const termo = busca.trim().toLocaleLowerCase('pt-BR'); if (!termo) return []; return racas.filter((raca) => raca.ativo && especies.includes(raca.especie) && !excluidas.includes(raca.id)).filter((raca) => raca.nome.toLocaleLowerCase('pt-BR').includes(termo) || raca.sinonimos.some((item) => item.ativo && item.nome.toLocaleLowerCase('pt-BR').includes(termo))).slice(0, 8) }
+function filtrarRacas(racas: Raca[], busca: string, especies: NonNullable<Pet['especie']>[], excluidas: string[]) { const termo = busca.trim().toLocaleLowerCase('pt-BR'); if (!termo) return []; return racas.filter((raca) => raca.ativo && especies.includes(raca.especie) && !excluidas.includes(raca.id)).filter((raca) => raca.nome.toLocaleLowerCase('pt-BR').includes(termo) || raca.sinonimos.some((item) => item.ativo && item.nome.toLocaleLowerCase('pt-BR').includes(termo))).slice(0, 8) }
 function rotuloRegra(item: ServicoModificador | ServicoRegraPreco, racas: Raca[]) { const criterio = item.criterio; const valor = criterio === 'raca' ? nomeRaca(racas, item.racaId ?? '') : criterio === 'porte' ? nomesPorte[item.porte!] : criterio === 'pelagem' ? nomesPelagem[item.pelagem!] : criterio === 'temperamento' ? item.temperamento : `${item.pesoMin} kg`; return `${nomeCriterio(criterio)}: ${valor}` }
 function nomeCriterio(criterio: Criterio) { return { porte: 'Porte', pelagem: 'Pelagem', raca: 'Raça', peso: 'Peso mínimo', temperamento: 'Temperamento' }[criterio] }
 function rotuloRecursosEtapa(etapa: ServicoEtapa, recursos: ServicoEtapaRecurso[]) { const oficiais = recursos.filter((item) => item.servicoEtapaId === etapa.id && item.ativo); if (!oficiais.length) return etapa.recurso === 'funcionario' ? '1 funcionário' : etapa.recurso === 'equipamento' ? '1 equipamento' : 'sem recurso reservado'; return oficiais.map((item) => item.tipo === 'funcionario' ? `${item.quantidade} ${item.quantidade === 1 ? 'funcionário' : 'funcionários'}` : `${item.quantidade} ${item.quantidade === 1 ? 'equipamento' : 'equipamentos'}`).join(' + ') }
-function ajustesPorteVazios(): Record<Pet['porte'], number> { return { mini: 0, pequeno: 0, medio: 0, grande: 0, gigante: 0 } }
-function ajustesPelagemVazios(): Record<Pet['pelagem'], number> { return { curta: 0, media: 0, longa: 0 } }
-function ajustesTemperamentoVazios(): Record<Pet['temperamento'], number> { return { calmo: 0, moderado: 0, dificil: 0 } }
+function ajustesPorteVazios(): Record<NonNullable<Pet['porte']>, number> { return { mini: 0, pequeno: 0, medio: 0, grande: 0, gigante: 0 } }
+function ajustesPelagemVazios(): Record<NonNullable<Pet['pelagem']>, number> { return { curta: 0, media: 0, longa: 0 } }
+function ajustesTemperamentoVazios(): Record<NonNullable<Pet['temperamento']>, number> { return { calmo: 0, moderado: 0, dificil: 0 } }
 function carregarAjustes(chaves: string[], regras: ServicoRegraPreco[], criterio: 'porte' | 'pelagem' | 'temperamento') { return Object.fromEntries(chaves.map((chave) => { const regra = regras.find((item) => item.criterio === criterio && item[criterio] === chave); return [chave, regra ? decimalParaCentavos(regra.acrescimoValor) : 0] })) }
 function decimalParaCentavos(valor: number | string | null | undefined) { const numero = typeof valor === 'number' ? valor : Number(valor ?? 0); return Number.isFinite(numero) ? Math.round(numero * 100) : 0 }
 function centavosParaDecimal(centavos: number) { return `${Math.floor(Math.max(0, centavos) / 100)}.${String(Math.max(0, centavos) % 100).padStart(2, '0')}` }

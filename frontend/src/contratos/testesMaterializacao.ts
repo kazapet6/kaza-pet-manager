@@ -147,6 +147,7 @@ await teste('M24 erro estrutural não é mascarado nem repetido',async()=>{
   assert.deepEqual(logs[0].error,{code:'PGRST204',message:'Column not found',details:'campo inexistente',hint:'revise o select'})
 })
 await teste('M25 materialização exige e revalida o responsável padrão do Ciclo',()=>{assert.match(materializador,/funcionario_responsavel_padrao_id/);assert.match(materializador,/preferenciaFuncionario: 'obrigatorio'/);assert.match(materializador,/funcionarioResponsavelId/)})
+await teste('M26 materialização preserva cadastro incompleto do Motor e da precificação',()=>{assert.match(materializador,/CADASTRO_PET_INCOMPLETO/);assert.match(materializador,/ErroCadastroPetIncompleto/);assert.match(materializador,/resultado\.erro\.campos/);assert.match(materializador,/erro\.campos/)})
 console.log(`${total} testes de materialização passaram.`)
 
 function resolverE2E(servicoIds:string[]){

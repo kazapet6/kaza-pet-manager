@@ -26,6 +26,7 @@ export type IntencaoConfirmacaoNormalizada = Omit<
 
 export type CodigoDominioConfirmacao =
   | 'PET_INATIVO'
+  | 'CADASTRO_PET_INCOMPLETO'
   | 'SERVICO_INATIVO'
   | 'SERVICO_INELEGIVEL'
   | 'CICLO_TAXIDOG_INVALIDO'
@@ -73,6 +74,7 @@ export type ConfirmacaoAgendamentoResposta =
       readonly status: 'invalido'
       readonly codigo: CodigoDominioConfirmacao
       readonly mensagem: string
+      readonly campos?: readonly string[]
     }
 
 export type ErroValidacaoIntencao = {
@@ -214,7 +216,7 @@ export function respostaConfirmacaoValida(
 }
 
 const CODIGOS_DOMINIO = new Set<CodigoDominioConfirmacao>([
-  'PET_INATIVO', 'SERVICO_INATIVO', 'SERVICO_INELEGIVEL',
+  'PET_INATIVO', 'CADASTRO_PET_INCOMPLETO', 'SERVICO_INATIVO', 'SERVICO_INELEGIVEL',
   'CICLO_TAXIDOG_INVALIDO', 'HORARIO_INDISPONIVEL',
   'FUNCIONARIO_OBRIGATORIO_INDISPONIVEL', 'CONFIGURACAO_ALTERADA',
   'PRECO_ALTERADO', 'IDEMPOTENCIA_CONFLITANTE', 'INTENCAO_INVALIDA',

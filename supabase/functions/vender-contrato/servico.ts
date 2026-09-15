@@ -47,6 +47,23 @@ export async function executarVendaContrato(
   ]);
   if (ep || !pet) return invalido("PET_NAO_ENCONTRADO", "Pet não encontrado.");
   const p = pet as unknown as Linha;
+  const camposContrato = [
+    ["especie", p.especie],
+    ["raca_id", p.raca_id],
+    ["porte", p.porte],
+    ["pelagem", p.pelagem],
+    ["temperamento", p.temperamento],
+  ].filter(([, valor]) => valor === null || valor === undefined || valor === "")
+    .map(([campo]) => String(campo));
+  if (camposContrato.length) {
+    const rotulos: Record<string, string> = { especie: "espécie", raca_id: "raça" };
+    return {
+      status: "invalido",
+      codigo: "CADASTRO_PET_INCOMPLETO",
+      mensagem: `Complete o cadastro do pet: ${camposContrato.map((campo) => rotulos[campo] ?? campo).join(", ")}.`,
+      campos: camposContrato,
+    };
+  }
   if (String(p.cliente_id) !== i.clienteId)
     return invalido(
       "CLIENTE_PET_INCOMPATIVEL",
@@ -124,6 +141,14 @@ export async function executarVendaContrato(
     const resultado = i.modalidadeTransporte === "taxidog"
       ? calcularDisponibilidade(entrada, dados)
       : calcularDisponibilidadeNoHorario(entrada, dados, horaMinutos(i.horarioFixo));
+    if (resultado.erro?.codigo === "CADASTRO_PET_INCOMPLETO") {
+      return {
+        status: "invalido",
+        codigo: resultado.erro.codigo,
+        mensagem: resultado.motivos[0],
+        campos: resultado.erro.campos,
+      };
+    }
     const opcao = resultado.opcoes[0];
     if (!opcao) return conflito("ROTINA_SEM_CAPACIDADE", `Não há capacidade para a ocorrência de ${ocorrencia.data}. Escolha outra rotina.`);
     if (i.modalidadeTransporte === "taxidog" && opcao.horarioApresentado !== horaMinutos(i.horarioFixo))

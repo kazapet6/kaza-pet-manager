@@ -62,7 +62,7 @@ function ConfigServico({item,onChange,onRemove,onClose}:{item:PacoteServico;onCh
  <div className="ux-modal-footer split"><Button variant="danger" onClick={onRemove}>Remover serviço</Button><Button onClick={onClose}>Concluir configuração</Button></div></Modal>
 }
 
-function Simulador({pacote,clientes,pets,onClose}:{pacote:Pacote;clientes:{id:string;nome:string}[];pets:{id:string;clienteId:string;nome:string;porte:string}[];onClose:()=>void}){
+function Simulador({pacote,clientes,pets,onClose}:{pacote:Pacote;clientes:{id:string;nome:string}[];pets:{id:string;clienteId:string;nome:string;porte:string|null}[];onClose:()=>void}){
  const [clienteId,setClienteId]=useState(''),[petId,setPetId]=useState(''),[resultado,setResultado]=useState<SimulacaoPacote|null>(null),[estado,setEstado]=useState<'idle'|'loading'|'erro'>('idle'),[erro,setErro]=useState(''),[detalhes,setDetalhes]=useState(false)
  const disponiveis=clienteId?pets.filter(p=>p.clienteId===clienteId):pets
  async function calcular(){setEstado('loading');setResultado(null);try{const r=await simularPacote(pacote.id,pacote.versao,petId);if(r.status==='calculado'){setResultado(r.simulacao);setEstado('idle')}else{setErro(r.mensagem);setEstado('erro')}}catch(e){setErro(e instanceof Error?e.message:'Não foi possível calcular.');setEstado('erro')}}

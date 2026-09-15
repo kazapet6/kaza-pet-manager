@@ -78,8 +78,8 @@ export async function carregarDadosDisponibilidadeComCliente(
     dependencias: dependencias.map((item) => ({ servicoId: texto(item.servico_id), dependenciaServicoId: texto(item.dependencia_servico_id), ativo: Boolean(item.ativo) })),
     acoplamentos: acoplamentos.map((item) => ({ servicoId: texto(item.servico_id), etapaAlvoId: texto(item.etapa_alvo_id), ativo: Boolean(item.ativo) })),
     elegibilidade: {
-      especies: especies.map((item) => ({ servicoId: texto(item.servico_id), especie: texto(item.especie) as PetMotor['especie'], ativo: Boolean(item.ativo) })),
-      portes: portes.map((item) => ({ servicoId: texto(item.servico_id), porte: texto(item.porte) as PetMotor['porte'], ativo: Boolean(item.ativo) })),
+      especies: especies.map((item) => ({ servicoId: texto(item.servico_id), especie: texto(item.especie) as NonNullable<PetMotor['especie']>, ativo: Boolean(item.ativo) })),
+      portes: portes.map((item) => ({ servicoId: texto(item.servico_id), porte: texto(item.porte) as NonNullable<PetMotor['porte']>, ativo: Boolean(item.ativo) })),
       racasBloqueadas: racasBloqueadas.map((item) => ({ servicoId: texto(item.servico_id), racaId: texto(item.raca_id), ativo: Boolean(item.ativo) })),
     },
     etapas: etapas.map((item) => ({ id: texto(item.id), servicoId: texto(item.servico_id), nome: texto(item.nome), ordem: numero(item.ordem), duracaoMinutos: numero(item.duracao_minutos), ativo: Boolean(item.ativo), politicaEsperaAntes: texto(item.politica_espera_antes) as DadosDisponibilidade['etapas'][number]['politicaEsperaAntes'], esperaAntesMinutos: nuloOuNumero(item.espera_antes_minutos) })),
@@ -98,9 +98,9 @@ export async function carregarDadosDisponibilidadeComCliente(
     equipamentos: equipamentos.map((item) => ({ id: texto(item.id), nome: texto(item.nome), ativo: Boolean(item.ativo), separarPorSexo: Boolean(item.separar_por_sexo), exigeSupervisaoHumana: Boolean(item.exige_supervisao_humana) })),
     unidadesEquipamentos: unidades.map((item) => ({ id: texto(item.id), equipamentoId: texto(item.equipamento_id), numero: numero(item.numero), nome: texto(item.nome), ativo: Boolean(item.ativo) })),
     perfisCapacidade: perfis.map((item) => ({ id: texto(item.id), equipamentoId: texto(item.equipamento_id), ativo: Boolean(item.ativo) })),
-    itensPerfisCapacidade: itensPerfis.map((item) => ({ perfilId: texto(item.perfil_id), porte: texto(item.porte) as PetMotor['porte'], quantidade: numero(item.quantidade), ativo: Boolean(item.ativo) })),
+    itensPerfisCapacidade: itensPerfis.map((item) => ({ perfilId: texto(item.perfil_id), porte: texto(item.porte) as NonNullable<PetMotor['porte']>, quantidade: numero(item.quantidade), ativo: Boolean(item.ativo) })),
     reservasFuncionarios: [...reservasFuncionarios.filter((item) => etapasAtivas.has(texto(item.atendimento_etapa_id))).flatMap((item) => periodoNaData(item, entrada.data, timezone) ? [{ id: texto(item.id), funcionarioId: texto(item.funcionario_id), ...periodoNaData(item, entrada.data, timezone)! }] : []),...reservasPlanoFuncionarios(reservasCiclos)],
-    reservasEquipamentos: [...reservasEquipamentos.filter((item) => etapasAtivas.has(texto(item.atendimento_etapa_id))).flatMap((item) => periodoNaData(item, entrada.data, timezone) ? [{ id: texto(item.id), unidadeId: texto(item.equipamento_unidade_id), porte: texto(item.porte_snapshot) as PetMotor['porte'], sexo: texto(item.sexo_snapshot) as PetMotor['sexo'], ...periodoNaData(item, entrada.data, timezone)! }] : []),...reservasPlanoEquipamentos(reservasCiclos)],
+    reservasEquipamentos: [...reservasEquipamentos.filter((item) => etapasAtivas.has(texto(item.atendimento_etapa_id))).flatMap((item) => periodoNaData(item, entrada.data, timezone) ? [{ id: texto(item.id), unidadeId: texto(item.equipamento_unidade_id), porte: texto(item.porte_snapshot) as NonNullable<PetMotor['porte']>, sexo: texto(item.sexo_snapshot) as NonNullable<PetMotor['sexo']>, ...periodoNaData(item, entrada.data, timezone)! }] : []),...reservasPlanoEquipamentos(reservasCiclos)],
     ciclosTaxidog: ciclosTaxidog.map((item) => ({
       id: texto(item.id), nome: texto(item.nome), ordem: numero(item.ordem),
       coletaInicio: horaParaMinutos(texto(item.coleta_inicio)),
@@ -114,7 +114,7 @@ export async function carregarDadosDisponibilidadeComCliente(
 
 function paraPet(item: Linha): PetMotor {
   const raca = Array.isArray(item.raca) ? item.raca[0] as Linha | undefined : item.raca as Linha | undefined
-  return { id: texto(item.id), clienteId: texto(item.cliente_id), nome: texto(item.nome), especie: texto(item.especie) as PetMotor['especie'], racaId: texto(item.raca_id), racaNome: texto(raca?.nome), sexo: texto(item.sexo) as PetMotor['sexo'], porte: texto(item.porte) as PetMotor['porte'], pelagem: texto(item.pelagem) as PetMotor['pelagem'], peso: nuloOuNumero(item.peso), temperamento: texto(item.temperamento) as PetMotor['temperamento'] }
+  return { id: texto(item.id), clienteId: texto(item.cliente_id), nome: texto(item.nome), especie: nuloOuTexto(item.especie) as PetMotor['especie'], racaId: nuloOuTexto(item.raca_id), racaNome: nuloOuTexto(raca?.nome), sexo: nuloOuTexto(item.sexo) as PetMotor['sexo'], porte: nuloOuTexto(item.porte) as PetMotor['porte'], pelagem: nuloOuTexto(item.pelagem) as PetMotor['pelagem'], peso: nuloOuNumero(item.peso), temperamento: nuloOuTexto(item.temperamento) as PetMotor['temperamento'] }
 }
 
 function montarExcecoes(excecoes: Linha[], blocos: Linha[]): ExcecaoEstabelecimentoMotor[] {
@@ -156,7 +156,7 @@ function reservasPlanoEquipamentos(ocorrencias: Linha[]) {
         return {
           id: `ciclo:${texto(ocorrencia.id)}:e:${etapaIndice}:${indice}`,
           unidadeId: texto(item.unidadeId), inicio: numero(etapa.inicio), fim: numero(etapa.fim),
-          porte: texto(plano.petPorte) as PetMotor['porte'], sexo: texto(plano.petSexo) as PetMotor['sexo'],
+          porte: texto(plano.petPorte) as NonNullable<PetMotor['porte']>, sexo: texto(plano.petSexo) as NonNullable<PetMotor['sexo']>,
         }
       })
     })

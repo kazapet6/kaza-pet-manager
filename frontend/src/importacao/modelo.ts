@@ -10,6 +10,10 @@ export type Lote = { id: string; origem: string; revisao: number; status: string
 export const CAMPOS_CADASTRO = ['nome','whatsapp','email','cpf','cep','endereco','numero','bairro','complemento','cidade','estado','data_nascimento','observacoes']
 export const CAMPOS_PERFIL = ['nome','especie','raca_id','sexo','porte','pelagem','temperamento','castrado','data_nascimento','peso','cor','observacoes']
 export const OPCOES: Record<string,string[]> = { especie:['cao','gato'],sexo:['macho','femea'],porte:['mini','pequeno','medio','grande','gigante'],pelagem:['curta','media','longa'],temperamento:['calmo','moderado','dificil'] }
+export const CAMPOS_PET_PENDENTES = ['especie','raca_id','sexo','porte','pelagem','temperamento','castrado'] as const
+export function camposPendentesPet(valores:Valores) {
+  return CAMPOS_PET_PENDENTES.filter((campo)=>valores[campo]===null||valores[campo]===undefined||valores[campo]==='')
+}
 export function dataValida(v: string) { return /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v)) && new Date(v).toISOString().slice(0,10)===v }
 function dataOriginal(v: string) { if (!v) return ''; if(dataValida(v)) return v; if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/.test(v) && dataValida(v.slice(0,10))) return v.slice(0,10); return v }
 export function analisarArquivos(clientesTexto:string,petsTexto:string,racas:RacaImportacao[],origem:string,arquivos:string[]):Lote {
@@ -43,10 +47,10 @@ export function validarLote(lote:Lote,racas:RacaImportacao[]):Lote {
     if(!String(r.nome||'').trim()) erros.push('Nome obrigatório')
     if(tipo==='cliente') { if(!String(r.whatsapp||'').replace(/\D/g,'')) erros.push('WhatsApp pendente') }
     else {
-      for(const [k,vs] of Object.entries(OPCOES)) if(!vs.includes(String(r[k]||''))) erros.push(`${k} pendente`)
-      if(typeof r.castrado!=='boolean') erros.push('castrado pendente')
-      if(!racas.some(x=>x.id===r.raca_id&&x.ativo&&x.especie===r.especie&&x.nome.trim()!=='2')) erros.push('raça pendente')
-      if(r.peso && (!/^\d+(\.\d{1,2})?$/.test(String(r.peso))||Number(r.peso)>99999.99)) erros.push('Peso inválido')
+      for(const [k,vs] of Object.entries(OPCOES)) if(r[k]!==null&&r[k]!==undefined&&r[k]!==''&&!vs.includes(String(r[k]))) erros.push(`${k} inválido`)
+      if(r.castrado!==null&&r.castrado!==undefined&&typeof r.castrado!=='boolean') erros.push('castrado inválido')
+      if(r.raca_id&&!r.especie) erros.push('espécie obrigatória quando a raça é informada')
+      else if(r.raca_id&&!racas.some(x=>x.id===r.raca_id&&x.ativo&&x.especie===r.especie&&x.nome.trim()!=='2')) erros.push('raça inválida')
     }
     if(r.data_nascimento&&!dataValida(String(r.data_nascimento))) erros.push('Nascimento inválido: use AAAA-MM-DD')
     return {...l,erros}
@@ -65,7 +69,7 @@ export function resumo(l:Lote) {
   const pronto=(a:Linha[])=>a.filter(x=>x.decisao_operador!=='ignorar'&&!x.internal_id&&!x.erros.length).length
   return {clientes:l.clientes.length,pets:l.pets.length,vinculos:l.pets.filter(p=>l.clientes.filter(c=>c.external_id===p.original.clienteId).length===1).length,
     clientesPendentes:pend(l.clientes),petsPendentes:pend(l.pets),clientesProntos:pronto(l.clientes),petsProntos:pronto(l.pets),
-    racasPendentes:l.pets.filter(p=>p.erros.includes('raça pendente')).length,duplicidades:[...l.clientes,...l.pets].filter(x=>x.avisos.some(a=>a.includes('DUPLICIDADE'))).length,
+    racasPendentes:l.pets.filter(p=>p.decisao_operador==='importar'&&!p.internal_id&&!p.resolvido.raca_id).length,duplicidades:[...l.clientes,...l.pets].filter(x=>x.avisos.some(a=>a.includes('DUPLICIDADE'))).length,
     jaImportados:[...l.clientes,...l.pets].filter(x=>x.internal_id).length}
 }
 export function exportarPendencias(l:Lote) {
