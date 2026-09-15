@@ -1,263 +1,360 @@
 {
-  "fonte": "Export Supabase 2026-09-12",
+  "versao": "migrations_001_039",
+  "fonte": "Export real do Supabase em 2026-09-12, acrescido das quatro tabelas da Migration 036; migrations 037-039 não criam tabelas",
+  "total_tabelas_public": 68,
   "transacionais": [
     {
       "nome": "atendimento_esperas",
-      "contagem": 0
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "atendimento_etapa_contribuicoes",
-      "contagem": 4
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "atendimento_etapa_equipamento_supervisoes",
-      "contagem": 19
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "atendimento_etapa_equipamentos",
-      "contagem": 19
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "atendimento_etapa_funcionarios",
-      "contagem": 38
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "atendimento_etapas",
-      "contagem": 57
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "atendimento_financeiro",
-      "contagem": 2
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "atendimento_ocorrencias",
-      "contagem": 5
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "atendimento_recebimentos",
-      "contagem": 2
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "atendimento_recomendacoes_retorno",
-      "contagem": 2
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "atendimento_remarcacoes",
-      "contagem": 1
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "atendimento_servico_acrescimos",
-      "contagem": 108
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "atendimento_servico_origens",
-      "contagem": 4
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "atendimento_servicos",
-      "contagem": 23
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "atendimento_status_eventos",
-      "contagem": 5
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "atendimentos",
-      "contagem": 19
-    },
-    {
-      "nome": "clientes",
-      "contagem": 5
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "contrato_ciclo_ocorrencia_itens",
-      "contagem": 30
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "contrato_ciclo_ocorrencias",
-      "contagem": 20
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "contrato_ciclos",
-      "contagem": 5
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "contrato_credito_eventos",
-      "contagem": 32
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "contrato_credito_operacoes_idempotentes",
-      "contagem": 0
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "contrato_eventos",
-      "contagem": 9
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "contrato_item_regras_aplicadas",
-      "contagem": 42
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "contrato_itens",
-      "contagem": 14
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "contrato_operacoes_idempotentes",
-      "contagem": 7
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "contratos",
-      "contagem": 7
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "grupos_agendamento",
-      "contagem": 19
+      "acao": "truncar",
+      "classe": "operacional"
     },
     {
       "nome": "pets",
-      "contagem": 5
+      "acao": "apagar",
+      "classe": "cadastro_operacional"
+    },
+    {
+      "nome": "clientes",
+      "acao": "apagar",
+      "classe": "cadastro_operacional"
     }
   ],
   "preservadas": [
     {
       "nome": "agenda_versao_configuracao",
-      "contagem": 1
+      "acao": "preservar",
+      "classe": "configuracao"
     },
     {
       "nome": "agenda_versao_ocupacao",
-      "contagem": 1
+      "acao": "preservar",
+      "classe": "configuracao"
     },
     {
       "nome": "configuracao_agenda",
-      "contagem": 1
+      "acao": "preservar",
+      "classe": "configuracao"
     },
     {
       "nome": "equipamento_perfil_itens",
-      "contagem": 10
+      "acao": "preservar",
+      "classe": "equipamento"
     },
     {
       "nome": "equipamento_perfis_capacidade",
-      "contagem": 7
+      "acao": "preservar",
+      "classe": "equipamento"
     },
     {
       "nome": "equipamento_unidades",
-      "contagem": 2
+      "acao": "preservar",
+      "classe": "equipamento"
     },
     {
       "nome": "equipamentos",
-      "contagem": 1
+      "acao": "preservar",
+      "classe": "equipamento"
     },
     {
       "nome": "estabelecimento_blocos",
-      "contagem": 5
+      "acao": "preservar",
+      "classe": "agenda_configuracao"
     },
     {
       "nome": "estabelecimento_excecao_blocos",
-      "contagem": 0
+      "acao": "preservar",
+      "classe": "agenda_configuracao"
     },
     {
       "nome": "estabelecimento_excecoes",
-      "contagem": 0
+      "acao": "preservar",
+      "classe": "agenda_configuracao"
     },
     {
       "nome": "funcionario_etapas",
-      "contagem": 10
+      "acao": "preservar",
+      "classe": "funcionario"
     },
     {
       "nome": "funcionario_intervalos",
-      "contagem": 5
+      "acao": "preservar",
+      "classe": "funcionario"
     },
     {
       "nome": "funcionario_jornadas",
-      "contagem": 7
+      "acao": "preservar",
+      "classe": "funcionario"
     },
     {
       "nome": "funcionario_servicos",
-      "contagem": 5
+      "acao": "preservar",
+      "classe": "funcionario"
     },
     {
       "nome": "funcionarios",
-      "contagem": 2
+      "acao": "preservar",
+      "classe": "funcionario"
     },
     {
       "nome": "janelas_transporte",
-      "contagem": 2
+      "acao": "preservar",
+      "classe": "taxidog"
     },
     {
       "nome": "pacote_operacoes_idempotentes",
-      "contagem": 6
+      "acao": "preservar",
+      "classe": "pacote_configuracao"
     },
     {
       "nome": "pacote_servico_regras_preco",
-      "contagem": 1
+      "acao": "preservar",
+      "classe": "pacote_configuracao"
     },
     {
       "nome": "pacote_servicos",
-      "contagem": 4
+      "acao": "preservar",
+      "classe": "pacote_configuracao"
     },
     {
       "nome": "pacotes",
-      "contagem": 3
+      "acao": "preservar",
+      "classe": "pacote_configuracao"
     },
     {
       "nome": "raca_sinonimos",
-      "contagem": 0
+      "acao": "preservar",
+      "classe": "catalogo"
     },
     {
       "nome": "racas",
-      "contagem": 3
+      "acao": "preservar",
+      "classe": "catalogo"
     },
     {
       "nome": "servico_acoplamentos",
-      "contagem": 1
+      "acao": "preservar",
+      "classe": "servico"
     },
     {
       "nome": "servico_dependencias",
-      "contagem": 1
+      "acao": "preservar",
+      "classe": "servico"
     },
     {
       "nome": "servico_especies",
-      "contagem": 10
+      "acao": "preservar",
+      "classe": "servico"
     },
     {
       "nome": "servico_etapa_recursos",
-      "contagem": 8
+      "acao": "preservar",
+      "classe": "servico"
     },
     {
       "nome": "servico_etapas",
-      "contagem": 8
+      "acao": "preservar",
+      "classe": "servico"
     },
     {
       "nome": "servico_modificadores",
-      "contagem": 0
+      "acao": "preservar",
+      "classe": "servico"
     },
     {
       "nome": "servico_portes",
-      "contagem": 25
+      "acao": "preservar",
+      "classe": "servico"
     },
     {
       "nome": "servico_racas_bloqueadas",
-      "contagem": 0
+      "acao": "preservar",
+      "classe": "servico"
     },
     {
       "nome": "servico_regras_preco",
-      "contagem": 42
+      "acao": "preservar",
+      "classe": "preco"
     },
     {
       "nome": "servicos",
-      "contagem": 5
+      "acao": "preservar",
+      "classe": "servico"
     },
     {
       "nome": "taxidog_ciclo_dias",
-      "contagem": 14
+      "acao": "preservar",
+      "classe": "taxidog"
     },
     {
       "nome": "taxidog_ciclos",
-      "contagem": 2
+      "acao": "preservar",
+      "classe": "taxidog"
     },
     {
       "nome": "unidades_periodo",
-      "contagem": 4
+      "acao": "preservar",
+      "classe": "configuracao"
+    },
+    {
+      "nome": "importacao_lotes",
+      "acao": "preservar",
+      "classe": "importacao_staging"
+    },
+    {
+      "nome": "importacao_clientes_staging",
+      "acao": "preservar",
+      "classe": "importacao_staging"
+    },
+    {
+      "nome": "importacao_pets_staging",
+      "acao": "preservar",
+      "classe": "importacao_staging"
+    },
+    {
+      "nome": "importacao_mapeamentos",
+      "acao": "preservar",
+      "classe": "importacao_staging"
     }
-  ]
+  ],
+  "expectativas_staging": {
+    "lotes": 1,
+    "clientes_total": 329,
+    "clientes_importar": 328,
+    "clientes_ignorar": 1,
+    "pets_total": 383,
+    "pets_importar": 381,
+    "pets_ignorar": 2,
+    "mapeamentos": 0,
+    "linhas_promovidas": 0
+  }
 }

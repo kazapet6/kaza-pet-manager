@@ -1,14 +1,142 @@
 \set ON_ERROR_STOP on
--- Somente leitura de tabelas permanentes; manifesto temporário da sessão.
-begin;
+-- Somente leitura de tabelas permanentes. Escritas abaixo são apenas temporárias.
+begin transaction isolation level repeatable read read only;
 \ir 00_manifesto.psql
-select m.nome,m.apagar,m.quantidade_auditada,
-  x.total as total_atual,
-  case when m.apagar then x.total=0 else x.total=m.quantidade_auditada end as contagem_ok
-from go_live_tabelas m cross join lateral xmltable('/table/row'
-  passing query_to_xml(format('select count(*) as total from public.%I',m.nome),true,false,'')
-  columns total bigint path 'total') x order by m.apagar desc,m.nome;
-select 'clientes_codigo_seq' as sequencia,last_value,is_called from public.clientes_codigo_seq
-union all select 'pets_codigo_seq',last_value,is_called from public.pets_codigo_seq;
--- Esperado: last_value=1, is_called=false; não chamar nextval para testar.
+
+create temp table go_live_validacoes (
+  secao text not null,
+  objeto text not null,
+  esperado text not null,
+  encontrado text not null,
+  ok boolean not null
+) on commit drop;
+
+create temp table go_live_assinaturas_preservadas (
+  tabela text primary key,
+  total bigint not null,
+  assinatura text not null
+) on commit drop;
+
+do $$
+declare
+  t record;
+  atual bigint;
+  assinatura_atual text;
+begin
+  for t in select nome from go_live_tabelas where acao <> 'preservar' order by nome loop
+    execute format('select count(*) from public.%I', t.nome) into atual;
+    insert into go_live_validacoes
+    values ('operacional_zero', t.nome, '0', atual::text, atual = 0);
+  end loop;
+
+  for t in select nome from go_live_tabelas where acao = 'preservar' order by nome loop
+    execute format(
+      'select count(*), md5(coalesce(jsonb_agg(to_jsonb(x) order by to_jsonb(x)::text), ''[]''::jsonb)::text) from public.%I x',
+      t.nome
+    ) into atual, assinatura_atual;
+    insert into go_live_assinaturas_preservadas values (t.nome, atual, assinatura_atual);
+  end loop;
+end;
+$$;
+
+insert into go_live_validacoes values
+('staging', 'importacao_lotes', '1',
+ (select count(*)::text from public.importacao_lotes),
+ (select count(*) = 1 from public.importacao_lotes)),
+('staging', 'importacao_clientes_staging', '329',
+ (select count(*)::text from public.importacao_clientes_staging),
+ (select count(*) = 329 from public.importacao_clientes_staging)),
+('staging', 'clientes_importar', '328',
+ (select count(*)::text from public.importacao_clientes_staging where decisao_operador = 'importar'),
+ (select count(*) = 328 from public.importacao_clientes_staging where decisao_operador = 'importar')),
+('staging', 'clientes_ignorar', '1',
+ (select count(*)::text from public.importacao_clientes_staging where decisao_operador = 'ignorar'),
+ (select count(*) = 1 from public.importacao_clientes_staging where decisao_operador = 'ignorar')),
+('staging', 'importacao_pets_staging', '383',
+ (select count(*)::text from public.importacao_pets_staging),
+ (select count(*) = 383 from public.importacao_pets_staging)),
+('staging', 'pets_importar', '381',
+ (select count(*)::text from public.importacao_pets_staging where decisao_operador = 'importar'),
+ (select count(*) = 381 from public.importacao_pets_staging where decisao_operador = 'importar')),
+('staging', 'pets_ignorar', '2',
+ (select count(*)::text from public.importacao_pets_staging where decisao_operador = 'ignorar'),
+ (select count(*) = 2 from public.importacao_pets_staging where decisao_operador = 'ignorar')),
+('staging', 'importacao_mapeamentos', '0',
+ (select count(*)::text from public.importacao_mapeamentos),
+ (select count(*) = 0 from public.importacao_mapeamentos)),
+('staging', 'linhas_promovidas', '0',
+ (
+   (select count(*) from public.importacao_clientes_staging
+     where cliente_id_criado is not null or status_validacao = 'ja_importado')
+   +
+   (select count(*) from public.importacao_pets_staging
+     where cliente_id_resolvido is not null
+        or pet_id_criado is not null
+        or status_validacao = 'ja_importado')
+ )::text,
+ (
+   (select count(*) from public.importacao_clientes_staging
+     where cliente_id_criado is not null or status_validacao = 'ja_importado')
+   +
+   (select count(*) from public.importacao_pets_staging
+     where cliente_id_resolvido is not null
+        or pet_id_criado is not null
+        or status_validacao = 'ja_importado')
+ ) = 0),
+('staging', 'lotes_concluidos', '0',
+ (select count(*)::text from public.importacao_lotes
+   where completed_at is not null or status = 'concluido'),
+ (select count(*) = 0 from public.importacao_lotes
+   where completed_at is not null or status = 'concluido')),
+('sequencia', 'clientes_codigo_seq', 'last_value=1,is_called=false',
+ (select format('last_value=%s,is_called=%s', last_value, is_called) from public.clientes_codigo_seq),
+ (select last_value = 1 and not is_called from public.clientes_codigo_seq)),
+('sequencia', 'pets_codigo_seq', 'last_value=1,is_called=false',
+ (select format('last_value=%s,is_called=%s', last_value, is_called) from public.pets_codigo_seq),
+ (select last_value = 1 and not is_called from public.pets_codigo_seq)),
+('estrutura', 'funcionarios', '>0',
+ (select count(*)::text from public.funcionarios),
+ (select count(*) > 0 from public.funcionarios)),
+('estrutura', 'funcionario_jornadas', '>0',
+ (select count(*)::text from public.funcionario_jornadas),
+ (select count(*) > 0 from public.funcionario_jornadas)),
+('estrutura', 'funcionario_servicos', '>0',
+ (select count(*)::text from public.funcionario_servicos),
+ (select count(*) > 0 from public.funcionario_servicos)),
+('estrutura', 'servicos', '>0',
+ (select count(*)::text from public.servicos),
+ (select count(*) > 0 from public.servicos)),
+('estrutura', 'servico_regras_preco', '>0',
+ (select count(*)::text from public.servico_regras_preco),
+ (select count(*) > 0 from public.servico_regras_preco)),
+('estrutura', 'racas', '>0 e conteúdo preservado pela transação de limpeza',
+ (select count(*)::text from public.racas),
+ (select count(*) > 0 from public.racas)),
+('estrutura', 'equipamentos', '>0',
+ (select count(*)::text from public.equipamentos),
+ (select count(*) > 0 from public.equipamentos)),
+('estrutura', 'janelas_transporte', '>0',
+ (select count(*)::text from public.janelas_transporte),
+ (select count(*) > 0 from public.janelas_transporte)),
+('estrutura', 'pacotes', '>0',
+ (select count(*)::text from public.pacotes),
+ (select count(*) > 0 from public.pacotes)),
+('estrutura', 'configuracao_agenda', '>0',
+ (select count(*)::text from public.configuracao_agenda),
+ (select count(*) > 0 from public.configuracao_agenda));
+
+select secao, objeto, esperado, encontrado, ok
+from go_live_validacoes
+order by ok, secao, objeto;
+
+select count(*) as verificacoes,
+       count(*) filter (where ok) as aprovadas,
+       count(*) filter (where not ok) as falhas
+from go_live_validacoes;
+
+-- Comparar com assinaturas_preservadas.csv gerado no backup pré-limpeza.
+select tabela, total, assinatura
+from go_live_assinaturas_preservadas
+order by tabela;
+
 rollback;
