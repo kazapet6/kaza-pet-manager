@@ -63,8 +63,9 @@ chamar `nextval`. O primeiro INSERT futuro deverá gerar `CLI-000001` e
 
 - `00_manifesto.psql`: inventário fechado e expectativas do staging.
 - `manifesto_tabelas.json`: versão exportável do mesmo inventário.
-- `01_diagnostico_pre_limpeza.sql`: inventário, contagens, FKs, triggers,
-  staging, assinaturas e sequências, somente leitura.
+- `01_diagnostico_pre_limpeza.sql`: um único result set exportável com
+  inventário, contagens, FKs, triggers, staging, assinaturas e sequências;
+  estritamente somente leitura.
 - `02_backup_pre_go_live.ps1`: dump completo de public, dump operacional,
   dump dedicado do staging, contagens, assinaturas e hashes em diretório privado.
 - `03_limpar_dados_teste.psql`: limpeza transacional e reset condicional.
