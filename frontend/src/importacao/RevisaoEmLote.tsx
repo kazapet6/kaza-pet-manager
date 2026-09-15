@@ -3,9 +3,11 @@ import type { Lote } from './modelo.ts'
 import { OPCOES } from './modelo.ts'
 import { normalizar, type RacaImportacao } from './csv.ts'
 import { agruparValores, aplicarGrupo, aplicarInequivocas, CAMPOS_GRUPO, contarCampos, sugestaoGrupo, type CampoGrupo, type Grupo } from './grupos.ts'
+import ResolucaoRacasEmLote from './ResolucaoRacasEmLote.tsx'
+import type { ResolucaoRacaLote } from './sugestoesRacas.ts'
 import revisaoRacas from '../../../banco/admin/go_live/revisao_racas.csv?raw'
 const sugestoes=revisaoRacas.split(/\r?\n/).slice(1).map(l=>(l.match(/"(?:[^"]|"")*"/g)||[]).map(v=>v.slice(1,-1).replaceAll('""','"')))
-type Props={lote:Lote;racas:RacaImportacao[];podeCriar:boolean;onChange:(l:Lote)=>void;onCriar:(g:Grupo,ids:string[],nome:string,especie:string)=>void}
+type Props={lote:Lote;racas:RacaImportacao[];podeCriar:boolean;onChange:(l:Lote)=>void;onCriar:(g:Grupo,ids:string[],nome:string,especie:string)=>void;onResolverRacas:(itens:ResolucaoRacaLote[])=>Promise<boolean>}
 export default function RevisaoEmLote(props:Props){
   const {lote,racas}=props,[campo,setCampo]=useState<CampoGrupo>('raca_id'),[somentePendentes,setSomentePendentes]=useState(false)
   const grupos=agruparValores(lote,campo,racas),contadores=contarCampos(lote,racas)
@@ -15,6 +17,7 @@ export default function RevisaoEmLote(props:Props){
     <button onClick={()=>props.onChange(aplicarInequivocas(lote,racas))}>Aplicar equivalências inequívocas aos campos ainda não resolvidos</button>
     <p>Não preenche vazios originais, não altera decisões já resolvidas e não aprova sugestões de raça.</p>
     <div className="imp-acoes"><label>Campo para agrupar<select aria-label="Campo para agrupar" value={campo} onChange={e=>setCampo(e.target.value as CampoGrupo)}>{Object.entries(CAMPOS_GRUPO).map(([k,n])=><option value={k} key={k}>{n}</option>)}</select></label><label><input type="checkbox" checked={somentePendentes} onChange={e=>setSomentePendentes(e.target.checked)}/> Somente grupos com pendências</label></div>
+    {campo==='raca_id'&&<ResolucaoRacasEmLote lote={lote} racas={racas} podeExecutar={props.podeCriar} onConfirmar={props.onResolverRacas}/>}
     <p>{grupos.length} grupos normalizados · {grupos.reduce((s,g)=>s+g.pets.length,0)} pets editáveis. Importados, ignorados e associados a existentes ficam fora das alterações em lote.</p>
     <div className="imp-grupos-lista">{grupos.filter(g=>!somentePendentes||g.resolvidos<g.pets.length).map(g=><GrupoEditor key={g.chave} {...props} grupo={g}/>)}</div>
   </section>

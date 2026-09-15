@@ -27,6 +27,7 @@ await context.route('**/*',async route=>{
   writes++
   if(url.pathname.endsWith('importacao_criar_raca')){assert.equal(b.p_confirmar,true);const id='44444444-4444-4444-8444-444444444444';racas.push({id,nome:b.p_nome,especie:b.p_especie,ativo:true,sinonimos:[]});saved={...saved,revisao:saved.revisao+1};return send(id)}
   if(url.pathname.endsWith('importacao_salvar_lote')){saved={...b.p_documento,revisao:1,status:'pronto'};return send(saved)}
+  if(url.pathname.endsWith('importacao_resolver_racas_lote')){assert.equal(b.p_confirmar,true);assert.equal(b.p_grupos.length,1);const id='55555555-5555-4555-8555-555555555555';if(!racas.some(r=>r.id===id))racas.push({id,nome:b.p_grupos[0].nome_canonico,especie:b.p_grupos[0].especie,ativo:true,sinonimos:[]});saved={...saved,revisao:saved.revisao+1,pets:saved.pets.map(p=>p.original.raca==='Pug'?{...p,resolvido:{...p.resolvido,raca_id:id},erros:[],status_validacao:'pronto'}:p)};return send(saved)}
   if(url.pathname.endsWith('importacao_promover_lote')){assert.equal(b.p_confirmar,true);saved={...saved,revisao:2,status:'concluido',resultado:{clientes_criados:1,pets_criados:1},clientes:saved.clientes.map(c=>({...c,internal_id:'CLI-000001'})),pets:saved.pets.map(p=>({...p,internal_id:'PET-000001'}))};return send(saved)}
   throw new Error('RPC não esperada no teste')
  }
@@ -48,6 +49,12 @@ try{
   assert.equal(values.Clientes,'329');assert.equal(values.Pets,'383');assert.equal(values['Clientes prontos'],'328');assert.equal(values['Pets pendentes'],'383');assert.equal(writes,0)
   await page.getByRole('button',{name:'Resolver valores em lote',exact:true}).click()
   assert.equal(await page.locator('.imp-grupo').count(),50)
+  await page.getByRole('button',{name:'Resolver sugestões de raça em lote',exact:true}).click()
+  assert((await page.locator('.imp-aprovacao-racas tbody tr').count())>20)
+  assert((await page.locator('.imp-aprovacao-racas tbody tr.imp-bloqueado').count())>0)
+  await page.getByRole('button',{name:'Selecionar sugestões seguras',exact:true}).click()
+  assert.equal(await page.getByRole('button',{name:/^Confirmar \d+ resoluções$/}).isEnabled(),false)
+  await page.screenshot({path:resolve(process.argv[5],'importacao-racas-lote-real-desktop.png'),fullPage:true});await page.setViewportSize({width:390,height:844});await page.screenshot({path:resolve(process.argv[5],'importacao-racas-lote-real-mobile.png'),fullPage:true});assert.equal(await page.locator('.importacao').evaluate(e=>e.scrollWidth>e.clientWidth+1),false);await page.setViewportSize({width:1440,height:1000})
   await page.getByRole('button',{name:'Aplicar equivalências inequívocas aos campos ainda não resolvidos',exact:true}).click()
   assert.equal(writes,0)
   console.log('OK preview real no navegador: 329/383, 328 clientes prontos, zero escrita')
@@ -100,5 +107,10 @@ try{
  await page.getByRole('button',{name:'Confirmar importação',exact:true}).click()
  await page.getByRole('heading',{name:'Resultado confirmado pelo backend'}).waitFor()
  assert.equal(writes,4);assert.deepEqual(errors,[])
+ await page.getByRole('button',{name:'Voltar aos arquivos/lotes'}).click()
+ await page.getByLabel('Clientes CSV').setInputFiles({name:'clientes.csv',mimeType:'text/csv',buffer:Buffer.from('id;nome;telefone\nc;Cliente Sintético;11999999999')})
+ await page.getByLabel('Pets CSV').setInputFiles({name:'pets.csv',mimeType:'text/csv',buffer:Buffer.from('id;clienteId;nome;especie;raca;genero;tamanho;pelo;comportamento;castrado\np;c;Pet Sintético;Cachorro;Pug;Macho;Pequeno;Curto;calmo;f')})
+ await page.getByRole('button',{name:'Analisar arquivos localmente'}).click();await page.getByRole('button',{name:'Salvar lote/revisão em staging'}).click();await page.getByRole('button',{name:'Resolver valores em lote',exact:true}).click();await page.getByRole('button',{name:'Resolver sugestões de raça em lote',exact:true}).click();await page.getByRole('button',{name:'Selecionar sugestões seguras',exact:true}).click();await page.getByRole('button',{name:'Confirmar 1 resolução',exact:true}).click()
+ const dialogo=page.getByRole('dialog',{name:'Confirmar resoluções de raça'});assert.match(await dialogo.textContent(),/1 raça nova será criada; 0 grupos usarão raças já existentes; 1 pet terá/);assert.match(await dialogo.textContent(),/Nenhum pet será importado/);await dialogo.getByRole('button',{name:'Confirmar 1 resolução',exact:true}).click();await dialogo.waitFor({state:'hidden'});assert.equal(writes,6);assert.deepEqual(errors,[])
  console.log('OK grupos de raça, seleção explícita de vazios, contadores 0→1→2, revisão individual só pendentes, zero escrita durante revisão, desktop/mobile 390x844 e confirmação final simulada')
 }finally{await browser.close()}

@@ -22,7 +22,7 @@
     "test:materializacao": "node --experimental-strip-types src/contratos/testesMaterializacao.ts",
     "test:creditos": "node --experimental-strip-types src/contratos/testesCreditos.ts",
     "test:cors": "node --experimental-strip-types src/cors/testes.ts",
-    "test:importacao": "node --experimental-strip-types src/importacao/testes.ts && node --experimental-strip-types src/importacao/testesStaging.ts && node --experimental-strip-types src/importacao/testesGrupos.ts",
+    "test:importacao": "node --experimental-strip-types src/importacao/testes.ts && node --experimental-strip-types src/importacao/testesStaging.ts && node --experimental-strip-types src/importacao/testesGrupos.ts && node --experimental-strip-types src/importacao/testesSugestoesRacas.ts",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -6,6 +6,7 @@ import revisaoRacas from '../../../banco/admin/go_live/revisao_racas.csv?raw'
 import './importacao.css'
 import RevisaoEmLote from './RevisaoEmLote.tsx'
 import { aplicarGrupo } from './grupos.ts'
+import type { ResolucaoRacaLote } from './sugestoesRacas.ts'
 
 const etapas=['Selecionar arquivos','Analisar','Resumo','Resolver valores em lote','Resolver clientes','Resolver pets','Revisar','Confirmar','Resultado']
 const idsEtapas=[0,1,2,9,3,4,5,6,7]
@@ -36,6 +37,17 @@ export default function Importacao() {
   function editar(l:Linha,campo:string,valor:string|boolean|null){if(!lote)return;setLote(validarLote({...lote,[tipo]:lote[tipo].map(x=>x.external_id===l.external_id?{...x,resolvido:{...x.resolvido,[campo]:valor,...(campo==='especie'?{raca_id:null}:{})}}:x)},racas));setSujo(true)}
   function decisao(l:Linha,d:Linha['decisao_operador']){if(!lote)return;setLote(validarLote({...lote,[tipo]:lote[tipo].map(x=>x.external_id===l.external_id?{...x,decisao_operador:d}:x)},racas));setSujo(true)}
   async function salvar(){if(lote)await executar(async()=>{setLote(await api.salvarLote(lote));setSujo(false)})}
+  async function resolverRacas(itens:ResolucaoRacaLote[]){
+    if(!lote)return false
+    setOcupado(true);setErro('')
+    try{
+      const atualizado=await api.resolverRacasLote(lote.id,lote.revisao,itens)
+      const catalogo=await api.catalogoImportacao()
+      setRacas(catalogo);setLote(validarLote(atualizado,catalogo));setSujo(false);setConfirmar(false)
+      return true
+    }catch(e){setErro(e instanceof Error?e.message:'Não foi possível resolver as raças em lote.');return false}
+    finally{setOcupado(false)}
+  }
   function baixar(){if(!lote)return;const url=URL.createObjectURL(new Blob([exportarPendencias(lote)],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='pendencias-importacao.csv';a.click();URL.revokeObjectURL(url)}
   const sugestao=linha&&sugestões.find(s=>s[0]===linha.original.raca&&s[1]===linha.original.especie)
   return <section className="importacao panel" aria-label="Importação de dados">
@@ -55,7 +67,7 @@ export default function Importacao() {
       <dl className="imp-resumo">{Object.entries({Clientes:r.clientes,Pets:r.pets,'Vínculos encontrados':r.vinculos,'Clientes pendentes':r.clientesPendentes,'Pets pendentes':r.petsPendentes,'Raças pendentes':r.racasPendentes,'Linhas com possível duplicidade':r.duplicidades,'Já importados':r.jaImportados,'Clientes prontos':r.clientesProntos,'Pets prontos':r.petsProntos}).map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
       <nav className="imp-acoes" aria-label="Revisão"><button onClick={()=>mudarEtapa(9)}>Resolver valores em lote</button><button onClick={()=>mudarEtapa(3)}>Resolver clientes</button><button onClick={()=>mudarEtapa(4)}>Resolver pets</button><button onClick={()=>mudarEtapa(5)}>Revisar</button><button onClick={baixar}>Exportar pendências/avisos</button></nav>
       {r.petsPendentes===0&&r.clientesPendentes===0&&!encerrado&&<p role="status">Pronto para importar: salve a revisão e confira a confirmação final.</p>}
-      {etapa===9&&!encerrado&&<RevisaoEmLote lote={lote} racas={racas} podeCriar={!!lote.revisao&&!sujo} onChange={l=>{setLote(l);setSujo(true);setConfirmar(false)}} onCriar={(g,ids,nome,especie)=>{setAlvoGrupoRaca({chave:g.chave,ids});setNomeRaca(nome);setEspecieRaca(especie);setNovaRaca(true)}}/>}
+      {etapa===9&&!encerrado&&<RevisaoEmLote lote={lote} racas={racas} podeCriar={!!lote.revisao&&!sujo} onChange={l=>{setLote(l);setSujo(true);setConfirmar(false)}} onCriar={(g,ids,nome,especie)=>{setAlvoGrupoRaca({chave:g.chave,ids});setNomeRaca(nome);setEspecieRaca(especie);setNovaRaca(true)}} onResolverRacas={resolverRacas}/>}
       {(etapa===3||etapa===4)&&<>
         <div className="imp-acoes"><label>Buscar nome/ID<input value={filtro} onChange={e=>{setFiltro(e.target.value);setIndice(0)}}/></label><label><input type="checkbox" checked={soPendentes} onChange={e=>{setSoPendentes(e.target.checked);setIndice(0)}}/> Somente pendentes</label></div>
         <div className="imp-acoes"><button disabled={indice===0} onClick={()=>setIndice(i=>i-1)}>Anterior</button><span>{filtradas.length?Math.min(indice+1,filtradas.length):0} de {filtradas.length}</span><button disabled={indice>=filtradas.length-1} onClick={()=>setIndice(i=>i+1)}>Próximo</button></div>

@@ -7,6 +7,8 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { analisarArquivos, resumo } from '../../frontend/src/importacao/modelo.ts'
 import { aplicarInequivocas } from '../../frontend/src/importacao/grupos.ts'
+import { classificarSugestoesRacas, payloadResolucoesRacas } from '../../frontend/src/importacao/sugestoesRacas.ts'
+import { normalizarDuplicidade } from '../../frontend/src/importacao/csv.ts'
 const require = createRequire(pathToFileURL(resolve(process.argv[2], 'package.json')))
 const { PGlite } = require('@electric-sql/pglite')
 const db = new PGlite()
@@ -27,7 +29,7 @@ alter sequence public.clientes_codigo_seq owned by public.clientes.id;
 create table public.racas(id uuid primary key default gen_random_uuid(),nome text not null,especie text not null check(especie in ('cao','gato')),ativo boolean not null default true,fonte_referencia text,unique(id,especie));
 create unique index racas_nome on public.racas(especie,lower(btrim(nome)));
 create table public.raca_sinonimos(id uuid primary key default gen_random_uuid(),raca_id uuid references public.racas(id),nome text not null,especie text not null,ativo boolean not null default true);
-insert into public.racas(id,nome,especie) values('${race}','SRD','cao');
+insert into public.racas(id,nome,especie) values('${race}','Sem raça definida (SRD)','cao');
 create sequence public.pets_codigo_seq;
 create table public.pets(id text primary key default ('PET-'||lpad(nextval('public.pets_codigo_seq')::text,6,'0')),cliente_id text not null references public.clientes(id),nome text not null check(length(btrim(nome))>0),especie text not null check(especie in ('cao','gato')),raca_id uuid not null,sexo text not null check(sexo in ('macho','femea')),porte text not null check(porte in ('mini','pequeno','medio','grande','gigante')),pelagem text not null default 'curta' check(pelagem in ('curta','media','longa')),temperamento text not null default 'calmo' check(temperamento in ('calmo','moderado','dificil')),castrado boolean not null default false,data_nascimento text not null default '',peso numeric(7,2) check(peso>=0),cor text not null default '',observacoes text not null default '',created_at timestamptz not null default now(),foreign key(raca_id,especie) references public.racas(id,especie));
 alter sequence public.pets_codigo_seq owned by public.pets.id;
@@ -38,6 +40,7 @@ const snapshotSql="select jsonb_build_object('clientes',(select jsonb_agg(c) fro
 const antesMigration=(await db.query(snapshotSql)).rows[0].estado
 await db.exec(readFileSync('banco/036_importacao_clientes_pets_staging.sql','utf8'))
 await db.exec(readFileSync('banco/037_preservar_duplicidades_importacao_staging.sql','utf8'))
+await db.exec(readFileSync('banco/038_resolucao_racas_staging_em_lote.sql','utf8'))
 assert.deepEqual((await db.query(snapshotSql)).rows[0].estado,antesMigration)
 if(process.argv[3]){
  const inventory={}
@@ -56,8 +59,9 @@ async function rpc(name,args){const ph=args.map((_,i)=>'$'+(i+1)).join(',');retu
 const linha=(id,resolvido,pet=false)=>({external_id:id,linha_original:2,original:pet?{id,nome:'Pet sintético',clienteId:'c'}:{id,nome:'Cliente sintético',telefone:'11999999999',senha:'NAO_PERSISTIR',tenantId:'NAO_PERSISTIR'},resolvido,decisao_operador:'importar',erros:[],avisos:['NAO_PERSISTIR']})
 const perfilPet={nome:'Pet sintético',especie:'cao',raca_id:race,sexo:'macho',porte:'pequeno',pelagem:'curta',temperamento:'calmo',castrado:false,data_nascimento:'',peso:'',cor:'',observacoes:''}
 const doc=(origem='teste')=>({id:crypto.randomUUID(),origem,revisao:0,arquivos:['clientes.csv','pets.csv'],clientes:[linha('c',{nome:'Cliente sintético',whatsapp:'11999999999'})],pets:[linha('p',{...perfilPet},true)]})
+const petRaca=(id,raca,especieOriginal='Cachorro',especie='cao')=>({...linha(id,{...perfilPet,especie,raca_id:null},true),original:{id,nome:'Pet sintético',clienteId:'c',raca,especie:especieOriginal}})
 await test('migration executa e todas as 4 tabelas possuem RLS',async()=>{const r=await db.query("select count(*)::int as n from pg_class where relnamespace='public'::regnamespace and relname in ('importacao_lotes','importacao_clientes_staging','importacao_pets_staging','importacao_mapeamentos') and relrowsecurity");assert.equal(r.rows[0].n,4)})
-await test('aplicar 036 preserva dados e estado das sequences CLI/PET',async()=>{assert.deepEqual((await db.query(snapshotSql)).rows[0].estado,antesMigration)})
+await test('aplicar 035–038 preserva dados operacionais e sequences CLI/PET',async()=>{assert.deepEqual((await db.query(snapshotSql)).rows[0].estado,antesMigration)})
 await test('anon bloqueado em tabelas e RPC',async()=>{await perfil('anon');await assert.rejects(db.query('select * from public.importacao_lotes'));await assert.rejects(rpc('importacao_salvar_lote',[doc()]));await db.exec('reset role')})
 await test('authenticated sem internal não lê linhas nem chama promoção',async()=>{await perfil('authenticated');assert.equal((await db.query('select * from public.importacao_lotes')).rows.length,0);await assert.rejects(rpc('importacao_salvar_lote',[doc()]));await db.exec('reset role')})
 let saved
@@ -95,6 +99,25 @@ await test('criar raça exige confirmação e bloqueia nome 2',async()=>{
  const id=await rpc('importacao_criar_raca',[s.id,'Raça sintética','cao',true]);assert.match(id,/^[a-f0-9-]{36}$/);await assert.rejects(rpc('importacao_criar_raca',[s.id,'Raça sintética','cao',true]));
  const l=await rpc('importacao_obter_lote',[s.id]);assert.equal(l.revisao,s.revisao+1);
 })
+await test('038 resolve vários grupos, reutiliza catálogo e preserva decisões anteriores',async()=>{
+ const d=doc('racas-em-lote');d.pets=[petRaca('pug1','Pug'),petRaca('pug2','Pug'),petRaca('lhasa','Lhasa Apso'),petRaca('srd','SRD'),petRaca('bulldog','Bulldog Francês'),petRaca('buldogue','Buldogue Francês'),petRaca('mix','Shitzu com Yorkshire'),petRaca('poodle','Poodle Médio'),petRaca('vazio','')]
+ const preservado=petRaca('preservado','Shih Tzu');preservado.resolvido.raca_id=race;const ignorado=petRaca('ignorado','Pug');ignorado.decisao_operador='ignorar';d.pets.push(preservado,ignorado)
+ const s=await rpc('importacao_salvar_lote',[d]);await db.exec('reset role');const antesRacas=(await db.query('select count(*)::int n from public.racas')).rows[0].n,antesPets=(await db.query('select count(*)::int n from public.pets')).rows[0].n;await perfil('authenticated',true)
+ const grupos=[['pug','cachorro','cao','Pug',2],['lhasa apso','cachorro','cao','Lhasa Apso',1],['srd','cachorro','cao','Sem raça definida (SRD)',1],['bulldog frances','cachorro','cao','Buldogue Francês',1],['buldogue frances','cachorro','cao','Buldogue Francês',1]].map(([chave,origem,especie,nome,quantidade])=>({chave_original:chave,chave_especie_original:origem,especie,nome_canonico:nome,quantidade}))
+ const resolvido=await rpc('importacao_resolver_racas_lote',[s.id,s.revisao,grupos,true]);assert.equal(resolvido.revisao,s.revisao+1);await db.exec('reset role');assert.equal((await db.query('select count(*)::int n from public.racas')).rows[0].n,antesRacas+3);assert.equal((await db.query("select count(*)::int n from public.racas where nome='Buldogue Francês' and especie='cao'")).rows[0].n,1);assert.equal((await db.query('select count(*)::int n from public.pets')).rows[0].n,antesPets);await perfil('authenticated',true)
+ for(const id of ['pug1','pug2','lhasa','srd','bulldog','buldogue'])assert(resolvido.pets.find(p=>p.external_id===id).resolvido.raca_id)
+ for(const id of ['mix','poodle','vazio'])assert.equal(resolvido.pets.find(p=>p.external_id===id).resolvido.raca_id,null)
+ assert.equal(resolvido.pets.find(p=>p.external_id==='preservado').resolvido.raca_id,race);assert.equal(resolvido.pets.find(p=>p.external_id==='ignorado').decisao_operador,'ignorar')
+})
+await test('038 bloqueia grupo manual e reverte integralmente a seleção',async()=>{
+ const d=doc('rollback-racas');d.pets=[petRaca('golden','Golden Retriever'),petRaca('poodle','Poodle Mini')];const s=await rpc('importacao_salvar_lote',[d]);await db.exec('reset role');const antesRacas=(await db.query('select count(*)::int n from public.racas')).rows[0].n;await perfil('authenticated',true)
+ const grupos=[{chave_original:'golden retriever',chave_especie_original:'cachorro',especie:'cao',nome_canonico:'Golden Retriever',quantidade:1},{chave_original:'poodle mini',chave_especie_original:'cachorro',especie:'cao',nome_canonico:'Poodle Mini',quantidade:1}]
+ await assert.rejects(rpc('importacao_resolver_racas_lote',[s.id,s.revisao,grupos,true]));await db.exec('reset role');assert.equal((await db.query('select count(*)::int n from public.racas')).rows[0].n,antesRacas);await perfil('authenticated',true);const reaberto=await rpc('importacao_obter_lote',[s.id]);assert.equal(reaberto.revisao,s.revisao);assert(reaberto.pets.every(p=>p.resolvido.raca_id===null))
+})
+await test('038 exige internal, confirmação e revisão atual',async()=>{
+ await perfil('authenticated',true);const d=doc('seguranca-racas');d.pets=[petRaca('pug','Pug')];const s=await rpc('importacao_salvar_lote',[d]),grupo=[{chave_original:'pug',chave_especie_original:'cachorro',especie:'cao',nome_canonico:'Pug',quantidade:1}]
+ await assert.rejects(rpc('importacao_resolver_racas_lote',[s.id,s.revisao,grupo,false]));await assert.rejects(rpc('importacao_resolver_racas_lote',[s.id,s.revisao-1,grupo,true]));await perfil('authenticated');await assert.rejects(rpc('importacao_resolver_racas_lote',[s.id,s.revisao,grupo,true]));await perfil('anon');await assert.rejects(rpc('importacao_resolver_racas_lote',[s.id,s.revisao,grupo,true]));await perfil('authenticated',true)
+})
 await test('RLS mantém dados existentes invisíveis para não interno',async()=>{
  await perfil('authenticated');for(const t of ['importacao_lotes','importacao_clientes_staging','importacao_pets_staging','importacao_mapeamentos'])assert.equal((await db.query('select * from public.'+t)).rows.length,0);
  await assert.rejects(rpc('importacao_obter_lote',[saved.id]));await perfil('anon');for(const t of ['importacao_lotes','importacao_clientes_staging','importacao_pets_staging','importacao_mapeamentos'])await assert.rejects(db.query('select * from public.'+t));
@@ -103,12 +126,13 @@ await test('ACL separa SELECT/INSERT/UPDATE/DELETE e helpers não são API',asyn
  await db.exec('reset role');for(const role of ['anon','authenticated','service_role'])for(const table of ['importacao_lotes','importacao_clientes_staging','importacao_pets_staging','importacao_mapeamentos'])for(const op of ['SELECT','INSERT','UPDATE','DELETE']){
   const r=await db.query('select has_table_privilege($1,$2,$3) as permitido',[role,'public.'+table,op]);assert.equal(r.rows[0].permitido,role==='service_role'||(role==='authenticated'&&op==='SELECT'));
  }
- for(const role of ['anon','authenticated','service_role'])for(const fn of ['importacao_exigir_internal()','importacao_filtrar(jsonb,text[])','importacao_data_valida(text)','importacao_validar(text,jsonb,text)','importacao_normalizar_duplicidade(text)'])assert.equal((await db.query("select has_function_privilege($1,$2,'EXECUTE') as permitido",[role,'public.'+fn])).rows[0].permitido,false);
- const funcs=await db.query("select prosecdef,proconfig from pg_proc where pronamespace='public'::regnamespace and proname like 'importacao_%'");assert.equal(funcs.rows.length,9);assert.equal(funcs.rows.filter(f=>f.prosecdef).length,4);assert(funcs.rows.every(f=>f.proconfig.includes('search_path=pg_catalog, pg_temp')));
+ for(const role of ['anon','authenticated','service_role'])for(const fn of ['importacao_exigir_internal()','importacao_filtrar(jsonb,text[])','importacao_data_valida(text)','importacao_validar(text,jsonb,text)','importacao_normalizar_duplicidade(text)','importacao_sugestoes_racas_seguras()'])assert.equal((await db.query("select has_function_privilege($1,$2,'EXECUTE') as permitido",[role,'public.'+fn])).rows[0].permitido,false);
+ for(const role of ['anon','authenticated','service_role'])assert.equal((await db.query("select has_function_privilege($1,'public.importacao_resolver_racas_lote(uuid,integer,jsonb,boolean)','EXECUTE') as permitido",[role])).rows[0].permitido,role!=='anon')
+ const funcs=await db.query("select prosecdef,proconfig from pg_proc where pronamespace='public'::regnamespace and proname like 'importacao_%'");assert.equal(funcs.rows.length,11);assert.equal(funcs.rows.filter(f=>f.prosecdef).length,5);assert(funcs.rows.every(f=>f.proconfig.includes('search_path=pg_catalog, pg_temp')));
 })
 await test('internal sem uid não lê staging nem executa RPCs',async()=>{
  await perfil('authenticated',true);await db.query("select set_config('request.jwt.claims',$1,false)",[JSON.stringify({role:'authenticated',app_metadata:{role:'internal'}})]);
- assert.equal((await db.query('select * from public.importacao_lotes')).rows.length,0);await assert.rejects(rpc('importacao_obter_lote',[saved.id]));await assert.rejects(rpc('importacao_salvar_lote',[doc('sem-uid')]));await assert.rejects(rpc('importacao_promover_lote',[saved.id,1,true]));await assert.rejects(rpc('importacao_criar_raca',[saved.id,'Nome','cao',true]));
+ assert.equal((await db.query('select * from public.importacao_lotes')).rows.length,0);await assert.rejects(rpc('importacao_obter_lote',[saved.id]));await assert.rejects(rpc('importacao_salvar_lote',[doc('sem-uid')]));await assert.rejects(rpc('importacao_promover_lote',[saved.id,1,true]));await assert.rejects(rpc('importacao_criar_raca',[saved.id,'Nome','cao',true]));await assert.rejects(rpc('importacao_resolver_racas_lote',[saved.id,1,[],true]));
 })
 await test('raça rejeita null, variações óbvias e sinônimo aprovado',async()=>{
  await perfil('authenticated',true);const s=await rpc('importacao_salvar_lote',[doc('raca-canonica')]);await assert.rejects(rpc('importacao_criar_raca',[s.id,null,'cao',true]));await assert.rejects(rpc('importacao_criar_raca',[s.id,'Nome',null,true]));
@@ -138,6 +162,17 @@ if(process.argv[4]&&process.argv[5])await test('CSVs reais preservam preview, av
  if(JSON.stringify(canon(forma(salvo)))!==JSON.stringify(canon(forma(reaberto))))throw new Error('Reabrir alterou avisos, decisões ou resoluções do lote real salvo')
  assert.deepEqual(resumo(salvo),resumoAntes);assert.deepEqual(resumo(reaberto),resumoAntes);assert.equal(salvo.status,reaberto.status)
 
+ await db.exec('reset role');const shih='33333333-3333-4333-8333-333333333333',srdGato='44444444-4444-4444-8444-444444444444',york='55555555-5555-4555-8555-555555555555';await db.query("insert into public.racas(id,nome,especie) values($1,'Shih Tzu','cao'),($2,'Sem raça definida (SRD)','gato'),($3,'Yorkshire Terrier','cao')",[shih,srdGato,york]);await perfil('authenticated',true)
+ const idsConhecidos={'shih tzu':shih,'yorkshire terrier':york,'srd':race,'srd sem raca definida':race,'sem raca definida srd':race}
+ let loteReal={...reaberto,clientes:reaberto.clientes.map(c=>({...c})),pets:reaberto.pets.map(p=>({...p,resolvido:{...p.resolvido}}))}
+ loteReal.pets=loteReal.pets.map(p=>{const id=idsConhecidos[normalizarDuplicidade(p.original.raca||'')];return id&&['cao','gato'].includes(String(p.resolvido.especie))?{...p,resolvido:{...p.resolvido,raca_id:p.resolvido.especie==='gato'?srdGato:id}}:p})
+ const candidatosIgnorados=loteReal.clientes.filter(c=>{const pets=loteReal.pets.filter(p=>p.original.clienteId===c.external_id);return !c.original.cep&&!c.original.endereco&&pets.length===2&&pets.every(p=>!p.original.especie&&!p.original.raca)});assert.equal(candidatosIgnorados.length,1);candidatosIgnorados[0].decisao_operador='ignorar';loteReal.pets=loteReal.pets.map(p=>p.original.clienteId===candidatosIgnorados[0].external_id?{...p,decisao_operador:'ignorar'}:p)
+ loteReal=await rpc('importacao_salvar_lote',[loteReal]);const catalogoAtual=[{id:race,nome:'Sem raça definida (SRD)',especie:'cao',ativo:true,sinonimos:['SRD - Sem Raça Definida']},{id:srdGato,nome:'Sem raça definida (SRD)',especie:'gato',ativo:true,sinonimos:['SRD - Sem Raça Definida']},{id:shih,nome:'Shih Tzu',especie:'cao',ativo:true,sinonimos:['Shih-tzu']},{id:york,nome:'Yorkshire Terrier',especie:'cao',ativo:true,sinonimos:[]}]
+ const sugestoes=classificarSugestoesRacas(loteReal,catalogoAtual),seguras=sugestoes.filter(i=>i.selecionavel),manuais=sugestoes.filter(i=>!i.selecionavel);assert.equal(seguras.length,28);assert.equal(seguras.reduce((n,i)=>n+i.quantidade,0),75);assert.equal(manuais.length,16)
+ const alvos=new Set(seguras.flatMap(s=>loteReal.pets.filter(p=>normalizarDuplicidade(p.original.raca||'')===s.chaveOriginal&&normalizarDuplicidade(p.original.especie||'')===s.chaveEspecieOriginal).map(p=>p.external_id))),antesDecisoes=new Map(loteReal.pets.map(p=>[p.external_id,{decisao:p.decisao_operador,resolvido:{...p.resolvido}}]))
+ await db.exec('reset role');const petsPublicosAntes=(await db.query('select count(*)::int n from public.pets')).rows[0].n;await perfil('authenticated',true);const aprovado=await rpc('importacao_resolver_racas_lote',[loteReal.id,loteReal.revisao,payloadResolucoesRacas(seguras),true]);await db.exec('reset role');assert.equal((await db.query('select count(*)::int n from public.pets')).rows[0].n,petsPublicosAntes);await perfil('authenticated',true)
+ assert.equal(aprovado.pets.filter(p=>alvos.has(p.external_id)&&p.resolvido.raca_id).length,75);for(const p of aprovado.pets){const antes=antesDecisoes.get(p.external_id);assert.equal(p.decisao_operador,antes.decisao);if(!alvos.has(p.external_id))assert.deepEqual(p.resolvido,antes.resolvido)}assert.deepEqual(aprovado.clientes,loteReal.clientes)
+
  const legado=new PGlite();try{
   await legado.exec(schemaFixture);await legado.exec(readFileSync('banco/035_seguranca_clientes_pets_campos_cadastro.sql','utf8'));await legado.exec(readFileSync('banco/036_importacao_clientes_pets_staging.sql','utf8'))
   const claims=JSON.stringify({role:'authenticated',sub:uid,app_metadata:{role:'internal'}});await legado.query("select set_config('request.jwt.claims',$1,false)",[claims]);await legado.exec('set role authenticated')
@@ -149,8 +184,17 @@ if(process.argv[4]&&process.argv[5])await test('CSVs reais preservam preview, av
   if(JSON.stringify(canon(forma(antigo).map(x=>({...x,avisos:[]}))))!==JSON.stringify(canon(forma(reparado).map(x=>({...x,avisos:[]})))))throw new Error('Ressalvar lote anterior alterou decisões ou resoluções')
  }finally{await legado.close()}
 })
+await test('consulta pós-038 executa integralmente em transação somente leitura',async()=>{
+ await db.exec('reset role');const sql=readFileSync('banco/admin/go_live/validar_038_pos_aplicacao.sql','utf8');await db.exec(sql)
+ if(process.argv[4]&&process.argv[5]){const consulta=sql.replace(/^.*?begin transaction isolation level repeatable read read only;/s,'').replace(/rollback;\s*$/i,'');const resultado=await db.query(consulta);assert(resultado.rows.length>=15);assert.deepEqual(resultado.rows.filter(r=>r.secao!=='00_contexto'&&!r.ok),[])}
+})
 await db.close()
 await test('ausência da 035 aborta antes de criar staging',async()=>{
  const isolado=new PGlite();try{await isolado.exec(schemaFixture);await assert.rejects(isolado.exec(readFileSync('banco/036_importacao_clientes_pets_staging.sql','utf8')),/Dependência incompatível/);await isolado.exec('rollback');assert.equal((await isolado.query("select count(*)::int as n from pg_class where relnamespace='public'::regnamespace and relname like 'importacao_%'")).rows[0].n,0)}finally{await isolado.close()}
+})
+await test('falha no meio da 038 reverte os dois objetos da migration',async()=>{
+ const isolado=new PGlite();try{await isolado.exec(schemaFixture);await isolado.exec(readFileSync('banco/035_seguranca_clientes_pets_campos_cadastro.sql','utf8'));await isolado.exec(readFileSync('banco/036_importacao_clientes_pets_staging.sql','utf8'));await isolado.exec(readFileSync('banco/037_preservar_duplicidades_importacao_staging.sql','utf8'))
+ const sql=readFileSync('banco/038_resolucao_racas_staging_em_lote.sql','utf8').replace('grant execute on function public.importacao_resolver_racas_lote','select 1/0;\ngrant execute on function public.importacao_resolver_racas_lote');await assert.rejects(isolado.exec(sql));await isolado.exec('rollback');const r=await isolado.query("select to_regprocedure('public.importacao_sugestoes_racas_seguras()') as helper,to_regprocedure('public.importacao_resolver_racas_lote(uuid,integer,jsonb,boolean)') as rpc");assert.equal(r.rows[0].helper,null);assert.equal(r.rows[0].rpc,null)
+ }finally{await isolado.close()}
 })
 console.log(total+' testes PostgreSQL isolados aprovados; zero conexão remota.')
