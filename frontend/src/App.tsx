@@ -16,6 +16,7 @@ import Contratos from './contratos/Contratos'
 import Importacao from './importacao/Importacao'
 import { supabase } from './lib/supabase'
 import { classificarUsuarioInterno, type EstadoAutenticacao } from './auth/interna'
+import { SistemaProvider } from './context/SistemaProvider'
 
 function App() {
   const [estadoAutenticacao, setEstadoAutenticacao] = useState<EstadoAutenticacao>('carregando')
@@ -420,7 +421,9 @@ function App() {
           </div>
         </header>
 
-        {renderizarPagina()}
+        <SistemaProvider key={usuarioAtual!.id}>
+          {renderizarPagina()}
+        </SistemaProvider>
       </main>
     </div>
   )

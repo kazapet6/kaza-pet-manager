@@ -1,3 +1,5 @@
+import Paginacao from '../components/ui/Paginacao'
+import { usePaginacao } from '../components/ui/usePaginacao'
 import { useContext, useMemo, useRef, useState, type FormEvent } from 'react'
 import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
@@ -50,6 +52,8 @@ export default function Pets() {
       )
     })
   }, [pets, pesquisa])
+
+  const paginacao = usePaginacao(petsFiltrados, pesquisa)
 
   const racasSugeridas = useMemo(() => {
     const termo = racaBusca.trim().toLocaleLowerCase('pt-BR')
@@ -220,6 +224,7 @@ export default function Pets() {
         onChange={(evento) => setPesquisa(evento.target.value)}
       />
 
+      <div ref={paginacao.inicio} tabIndex={-1} aria-label="Início da listagem" />
       {petsFiltrados.length === 0 ? (
         <Card
           style={{
@@ -260,7 +265,7 @@ export default function Pets() {
             marginTop: '24px',
           }}
         >
-          {petsFiltrados.map((pet) => (
+          {paginacao.itensPagina.map((pet) => (
             <div
               key={pet.id}
               role="button"
@@ -331,6 +336,8 @@ export default function Pets() {
           ))}
         </div>
       )}
+
+      <Paginacao pagina={paginacao.pagina} total={paginacao.total} quantidade={petsFiltrados.length} onChange={paginacao.mudarPagina} />
 
       <Modal
         aberto={modalAberto}

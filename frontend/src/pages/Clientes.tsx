@@ -1,3 +1,5 @@
+import Paginacao from '../components/ui/Paginacao'
+import { usePaginacao } from '../components/ui/usePaginacao'
 import { useContext, useMemo, useState, type FormEvent } from 'react'
 import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
@@ -40,6 +42,8 @@ export default function Clientes() {
       )
     })
   }, [clientes, pesquisa])
+
+  const paginacao = usePaginacao(clientesFiltrados, pesquisa)
 
   const clienteSelecionado = clientes.find(
     (cliente) => cliente.id === clienteSelecionadoId,
@@ -163,6 +167,7 @@ export default function Clientes() {
         onChange={(evento) => setPesquisa(evento.target.value)}
       />
 
+      <div ref={paginacao.inicio} tabIndex={-1} aria-label="Início da listagem" />
       {clientesFiltrados.length === 0 ? (
         <Card
           style={{
@@ -202,7 +207,7 @@ export default function Clientes() {
             marginTop: '24px',
           }}
         >
-          {clientesFiltrados.map((cliente) => {
+          {paginacao.itensPagina.map((cliente) => {
             const quantidadePets = contarPetsDoCliente(cliente.id)
 
             return (
@@ -311,6 +316,8 @@ export default function Clientes() {
           })}
         </div>
       )}
+
+      <Paginacao pagina={paginacao.pagina} total={paginacao.total} quantidade={clientesFiltrados.length} onChange={paginacao.mudarPagina} />
 
       <Modal
         aberto={modalAberto}

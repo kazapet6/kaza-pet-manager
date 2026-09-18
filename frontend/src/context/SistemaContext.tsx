@@ -9,6 +9,7 @@ type SistemaContextType = {
   racas: Raca[]
   carregando: boolean
   erro: string | null
+  recarregarDados: () => Promise<void>
 
   adicionarCliente: (
     cliente: Omit<Cliente, 'id' | 'criadoEm'>

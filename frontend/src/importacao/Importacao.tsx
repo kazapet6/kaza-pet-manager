@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useContext, useState } from 'react'
+import { SistemaContext } from '../context/SistemaContext'
 import { analisarArquivos, validarLote, resumo, exportarPendencias, CAMPOS_CADASTRO, CAMPOS_PERFIL, OPCOES, type Lote, type Linha } from './modelo.ts'
 import { normalizar, type RacaImportacao } from './csv.ts'
 import * as api from './api.ts'
@@ -13,6 +14,8 @@ const idsEtapas=[0,1,2,9,3,4,5,6,7]
 const rotulos:Record<string,string>={whatsapp:'WhatsApp',data_nascimento:'Nascimento (AAAA-MM-DD)',raca_id:'Raça',especie:'Espécie',sexo:'Sexo',porte:'Porte',pelagem:'Pelagem',temperamento:'Temperamento',castrado:'Castrado',observacoes:'Observações',nome:'Nome',peso:'Peso (kg)',cor:'Cor'}
 const sugestões=revisaoRacas.split(/\r?\n/).slice(1).map(l=>(l.match(/"(?:[^"]|"")*"/g)||[]).map(v=>v.slice(1,-1).replaceAll('""','"')))
 export default function Importacao() {
+  const { recarregarDados } = useContext(SistemaContext)
+  const [sincronizacaoPendente,setSincronizacaoPendente]=useState(false)
   const [arquivos,setArquivos]=useState<[File|null,File|null]>([null,null]),[origem,setOrigem]=useState('sistema-legado')
   const [lote,setLote]=useState<Lote|null>(null),[racas,setRacas]=useState<RacaImportacao[]>([]),[etapa,setEtapa]=useState(0)
   const [erro,setErro]=useState(''),[ocupado,setOcupado]=useState(false),[sujo,setSujo]=useState(false)
@@ -37,6 +40,23 @@ export default function Importacao() {
   function editar(l:Linha,campo:string,valor:string|boolean|null){if(!lote)return;setLote(validarLote({...lote,[tipo]:lote[tipo].map(x=>x.external_id===l.external_id?{...x,resolvido:{...x.resolvido,[campo]:valor,...(campo==='especie'?{raca_id:null}:{})}}:x)},racas));setSujo(true)}
   function decisao(l:Linha,d:Linha['decisao_operador']){if(!lote)return;setLote(validarLote({...lote,[tipo]:lote[tipo].map(x=>x.external_id===l.external_id?{...x,decisao_operador:d}:x)},racas));setSujo(true)}
   async function salvar(){if(lote)await executar(async()=>{setLote(await api.salvarLote(lote));setSujo(false)})}
+  async function finalizarConfirmacao() {
+    if (!lote) return
+    await executar(async () => {
+      if (!sincronizacaoPendente) {
+        setLote(await api.promoverLote(lote))
+        setSujo(false)
+        setSincronizacaoPendente(true)
+      }
+      try {
+        await recarregarDados()
+      } catch {
+        throw new Error('A importação foi confirmada no banco, mas não foi possível atualizar Clientes e Pets. Tente atualizar as listas novamente; a importação não será repetida.')
+      }
+      setSincronizacaoPendente(false)
+      mudarEtapa(7)
+    })
+  }
   async function resolverRacas(itens:ResolucaoRacaLote[]){
     if(!lote)return false
     setOcupado(true);setErro('')
@@ -86,9 +106,9 @@ export default function Importacao() {
       </>}
       {etapa===5&&<p>Serão promovidos somente os cadastros prontos. Pendentes ficam em staging; ignorados não são criados. Duplicidades aprovadas permanecem separadas. IDs são gerados pelo banco. Salvar a revisão revalida tudo no backend.</p>}
       {!encerrado&&<div className="imp-acoes"><button onClick={()=>void salvar()}>Salvar lote/revisão em staging</button><button disabled={sujo||!lote.revisao||r.clientesProntos+r.petsProntos===0} onClick={()=>mudarEtapa(6)}>Ir para confirmação</button></div>}
-      {etapa===6&&<div className="imp-confirmacao"><h3>Confirmar gravação em Clientes e Pets</h3><p>{r.clientesProntos} clientes e {r.petsProntos} pets elegíveis, incluindo associações explícitas a existentes. {r.clientesPendentes+r.petsPendentes} linhas permanecerão pendentes.</p><label><input type="checkbox" checked={confirmar} onChange={e=>setConfirmar(e.target.checked)}/> Revisei as decisões e autorizo promover os cadastros prontos.</label><button disabled={!confirmar||sujo} onClick={()=>void executar(async()=>{setLote(await api.promoverLote(lote));setSujo(false);mudarEtapa(7)})}>Confirmar importação</button></div>}
+      {etapa===6&&<div className="imp-confirmacao"><h3>Confirmar gravação em Clientes e Pets</h3><p>{r.clientesProntos} clientes e {r.petsProntos} pets elegíveis, incluindo associações explícitas a existentes. {r.clientesPendentes+r.petsPendentes} linhas permanecerão pendentes.</p><label><input type="checkbox" checked={confirmar} onChange={e=>setConfirmar(e.target.checked)}/> Revisei as decisões e autorizo promover os cadastros prontos.</label><button disabled={(!confirmar||sujo)&&!sincronizacaoPendente} onClick={()=>void finalizarConfirmacao()}>{sincronizacaoPendente?'Atualizar listas e finalizar':'Confirmar importação'}</button></div>}
       {etapa===7&&<><h3>Resultado confirmado pelo backend</h3><dl className="imp-resumo">{Object.entries(lote.resultado||{}).map(([k,v])=><div key={k}><dt>{k.replaceAll('_',' ')}</dt><dd>{v}</dd></div>)}</dl><p>{lote.status==='concluido'?'Lote concluído.':'Lote permanece aberto para resolver pendências.'}</p></>}
-      <button onClick={()=>{if(!sujo||window.confirm('Descartar somente a revisão local não salva?')){setLote(null);mudarEtapa(0)}}}>Voltar aos arquivos/lotes</button>
+      <button onClick={()=>{if(!sujo||window.confirm('Descartar somente a revisão local não salva?')){setLote(null);setSincronizacaoPendente(false);mudarEtapa(0)}}}>Voltar aos arquivos/lotes</button>
     </>}
     </fieldset>{ocupado&&<p role="status">Processando…</p>}
     {novaRaca&&lote&&<div role="dialog" aria-modal="true" aria-label="Confirmar nova raça" className="imp-dialog"><h3>Criar raça no catálogo</h3><p>Esta ação grava imediatamente em public.racas, separada da importação final.</p><label>Nome canônico<input value={nomeRaca} onChange={e=>setNomeRaca(e.target.value)} maxLength={100}/></label><label>Espécie<select disabled={!!alvoGrupoRaca} value={especieRaca} onChange={e=>setEspecieRaca(e.target.value)}><option value="cao">Cão</option><option value="gato">Gato</option></select></label><button disabled={ocupado||!nomeRaca.trim()} onClick={()=>void executar(async()=>{const id=await api.criarRaca(lote.id,nomeRaca,especieRaca);const rs=await api.catalogoImportacao();setRacas(rs);const salvo=await api.obterLote(lote.id);setLote(alvoGrupoRaca ? aplicarGrupo(salvo,'raca_id',alvoGrupoRaca.chave,id,rs,alvoGrupoRaca.ids) : validarLote({...salvo,pets:salvo.pets.map(p=>linha&&!p.internal_id&&p.resolvido.especie===especieRaca&&p.external_id===linha.external_id?{...p,resolvido:{...p.resolvido,raca_id:id}}:p)},rs));setSujo(true);setNovaRaca(false)})}>Confirmar criação da raça</button><button disabled={ocupado} onClick={()=>setNovaRaca(false)}>Cancelar</button></div>}
