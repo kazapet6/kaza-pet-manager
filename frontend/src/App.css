@@ -2310,7 +2310,7 @@ img {
   flex: 1 1 0;
   min-height: 0;
   overflow: hidden;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 300px minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
 }
 .app-shell > .dashboard {
@@ -2327,21 +2327,27 @@ img {
   overflow: hidden;
 }
 .sidebar > .brand { flex-shrink: 0; }
-.sidebar > .nav-list { min-height: 0; grid-auto-rows: minmax(0, 1fr); }
+.sidebar > .nav-list { min-height: 0; }
 .sidebar .nav-list { gap: 5px; margin-top: 20px; }
 .sidebar .nav-item { padding: 8px 12px; }
 .sidebar-footer { flex-shrink: 0; }
-@media (min-width: 1121px) {
-  .sidebar .nav-list { gap: 2px; }
-  .sidebar .nav-item { min-height: 0; padding: 2px 12px; }
-  .sidebar .nav-icon { width: 24px; height: 24px; }
-}
-@media (min-width: 1121px) and (max-height: 760px) {
-  .app-shell > .sidebar { padding: 18px 16px; }
-  .sidebar .nav-item { font-size: 13px; line-height: 1.2; }
-  .sidebar .nav-icon { width: 20px; height: 20px; }
-  .sidebar-footer { margin-top: 12px; }
-  .sidebar-note { display: none; }
+@media (min-width: 769px) {
+  .app-shell > .sidebar { padding: 28px 18px; }
+  .sidebar .brand strong { font-size: 22px; font-weight: 800; }
+  .sidebar .brand small { font-size: 16px; }
+  .sidebar > .nav-list {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+  .sidebar .nav-item { flex: 0 0 auto; min-height: 44px; padding: 4px 16px; font-size: 16px; line-height: 1.25; }
+  .sidebar .nav-icon { flex: 0 0 36px; width: 36px; height: 36px; font-size: 20px; }
+  .sidebar .logout { height: 56px; font-size: 16px; }
+  .sidebar .sidebar-footer { margin-top: 16px; }
+  .sidebar .sidebar-note { font-size: 13px; line-height: 1.4; }
 }
 .paginacao { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; }
 .paginacao p { color: var(--color-text-muted); font-size: 14px; }
@@ -2352,7 +2358,7 @@ img {
 .paginacao button:disabled { opacity: .5; cursor: not-allowed; }
 .paginacao button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
 .paginacao-reticencias { padding: 0 3px; }
-@media (max-width: 1120px) {
+@media (max-width: 768px) {
   .app-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   .app-shell > .sidebar { display: block; padding: 14px; }
   .sidebar .nav-list { display: flex; gap: 7px; margin-top: 12px; overflow-x: auto; overflow-y: hidden; }
