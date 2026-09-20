@@ -3,6 +3,7 @@ import type {
   IntencaoVendaContrato,
   RespostaVendaContrato,
 } from "../_shared/contrato-venda.ts";
+import { validarJanelaTaxidogContrato } from "../_shared/contrato-venda.ts";
 import { executarSimulacaoPacote } from "../_shared/simulacao-pacote.ts";
 import {
   ocorrenciasDoCiclo,
@@ -151,7 +152,7 @@ export async function executarVendaContrato(
     }
     const opcao = resultado.opcoes[0];
     if (!opcao) return conflito("ROTINA_SEM_CAPACIDADE", `Não há capacidade para a ocorrência de ${ocorrencia.data}. Escolha outra rotina.`);
-    if (i.modalidadeTransporte === "taxidog" && opcao.horarioApresentado !== horaMinutos(i.horarioFixo))
+    if (i.modalidadeTransporte === "taxidog" && !validarJanelaTaxidogContrato(opcao, i))
       return conflito("JANELA_TAXIDOG_DIVERGENTE", "A janela TaxiDog escolhida não corresponde à rotina informada.");
     ocorrencias.push({
       ordem: ocorrencia.ordem, data: ocorrencia.data,

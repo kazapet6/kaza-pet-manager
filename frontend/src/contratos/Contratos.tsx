@@ -18,6 +18,7 @@ import { listarContratos, materializarCicloContrato, venderContrato } from "./cl
 import type { ContratoResumoVisual } from "./clienteSupabase";
 import { BarraConsumoContrato, ResumoContagemContrato } from "./ConsumoContrato";
 import DetalheContrato from "./DetalheContrato";
+import { consolidarDisponibilidadeSemTransporte, consolidarDisponibilidadeTaxiDog, frequenciaDaRotina, ocorrenciasDaVenda } from "./rotinaVenda";
 import {
   resumoAjuste,
   type ContratoResumo,
@@ -38,6 +39,7 @@ const moeda = new Intl.NumberFormat("pt-BR", {
     "Sábado",
   ],
   diasCurtos = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+const diasDaRotina = ["aos domingos", "às segundas-feiras", "às terças-feiras", "às quartas-feiras", "às quintas-feiras", "às sextas-feiras", "aos sábados"];
 export default function Contratos({ contratoInicialId = null, onContratoInicialAberto }: { contratoInicialId?: string | null; onContratoInicialAberto?: () => void }) {
   const { clientes, pets } = useContext(SistemaContext),
     [contratos, setContratos] = useState<ContratoResumoVisual[]>([]),
@@ -351,11 +353,19 @@ function Venda({
     if(transporte==="taxidog"&&!cicloTaxidogId)return;
     const consultaAtual=++sequenciaConsulta.current;
     setConsultandoAgenda(true);setErroAgenda(null);setOpcao(null);setHora("");setDisponibilidade(null);setDisponibilidadeCiclo(null);
-    try{const servicoIds=pacote.servicos.map(s=>s.servicoId),base={petId,servicoIds,data:ancora,preferenciaFuncionario:"obrigatorio" as const,funcionarioPreferidoId:funcionarioResponsavelId,tipoPlanejamento:"normal" as const,modalidade:transporte,cicloTaxidogId:transporte==="taxidog"?cicloTaxidogId:null};
-      if(transporte==="taxidog"){const[tc,livres]=await Promise.all([consultarDisponibilidadeDoCiclo(base),consultarDisponibilidade({...base,modalidade:"sem_transporte",cicloTaxidogId:null})]);if(consultaAtual!==sequenciaConsulta.current)return;setDisponibilidadeCiclo(tc);setDisponibilidade(livres);if(tc.disponivel&&tc.opcao){setOpcao(tc.opcao);setHora(horaDaOpcao(tc.opcao))}}
-      else{const resultado=await consultarDisponibilidade(base);if(consultaAtual!==sequenciaConsulta.current)return;setDisponibilidade(resultado)}
+    try{const ocorrencias=ocorrenciasDaVenda(pacote.servicos,ancora),base={petId,preferenciaFuncionario:"obrigatorio" as const,funcionarioPreferidoId:funcionarioResponsavelId,tipoPlanejamento:"normal" as const};
+      if(transporte==="taxidog"){
+        const [resultados,livres]=await Promise.all([
+          Promise.all(ocorrencias.map(async ocorrencia=>({data:ocorrencia.data,resultado:await consultarDisponibilidadeDoCiclo({...base,servicoIds:ocorrencia.servicoIds,data:ocorrencia.data,modalidade:"taxidog",cicloTaxidogId})}))),
+          consultarDisponibilidade({...base,servicoIds:ocorrencias[0].servicoIds,data:ocorrencias[0].data,modalidade:"sem_transporte",cicloTaxidogId:null}),
+        ]);
+        if(consultaAtual!==sequenciaConsulta.current)return;
+        const tc=consolidarDisponibilidadeTaxiDog(resultados);setDisponibilidadeCiclo(tc);setDisponibilidade(livres);
+        if(tc?.disponivel&&tc.opcao){setOpcao(tc.opcao);setHora(cicloSelecionado?.coletaInicio.slice(0,5)??"")}
+      }
+      else{const resultados=await Promise.all(ocorrencias.map(async ocorrencia=>({data:ocorrencia.data,resultado:await consultarDisponibilidade({...base,servicoIds:ocorrencia.servicoIds,data:ocorrencia.data,modalidade:"sem_transporte",cicloTaxidogId:null})})));if(consultaAtual!==sequenciaConsulta.current)return;setDisponibilidade(consolidarDisponibilidadeSemTransporte(resultados))}
     }catch(e){if(consultaAtual===sequenciaConsulta.current)setErroAgenda(e instanceof Error?e.message:"Não foi possível consultar a rotina.")}finally{if(consultaAtual===sequenciaConsulta.current)setConsultandoAgenda(false)}
-  },[pacote,petId,ancora,dia,transporte,cicloTaxidogId,funcionarioResponsavelId]);
+  },[pacote,petId,ancora,dia,transporte,cicloTaxidogId,funcionarioResponsavelId,cicloSelecionado]);
   useEffect(()=>{
     if(etapa!==3)return;
     void consultarRotina();
@@ -668,7 +678,7 @@ function Venda({
               <section className="venda-decisao pronta">
                 <span>1</span><div><h4>Data de início</h4><p>Ela também define o dia fixo da rotina.</p>
                 <Input type="date" value={ancora} onChange={(e) => {limparDisponibilidade();setAncora(e.target.value)}} />
-                {dia>=0&&<small>Rotina semanal às <b>{dias[dia]}</b></small>}</div>
+                {dia>=0&&pacote&&<small>Rotina {frequenciaDaRotina(pacote.servicos,ancora)} <b>{diasDaRotina[dia]}</b></small>}</div>
               </section>
               {ancora&&dia>=0&&<section className="venda-decisao pronta">
                 <span>2</span><div><h4>Modalidade de transporte</h4><div className="radio-cards">
@@ -679,7 +689,7 @@ function Venda({
               {transporte&&<section className="venda-decisao pronta"><span>3</span><div><h4>Funcionário responsável</h4><p>A mesma pessoa será validada pelo Motor em todas as ocorrências do ciclo.</p><select value={funcionarioResponsavelId} onChange={(e)=>{limparDisponibilidade();setFuncionarioResponsavelId(e.target.value)}}><option value="">Selecione um funcionário</option>{agenda.funcionarios.filter(f=>f.ativo).map(f=><option key={f.id} value={f.id}>{f.nome}</option>)}</select></div></section>}
               {transporte==="taxidog"&&funcionarioResponsavelId&&<section className="venda-decisao pronta"><span>4</span><div><h4>Horário do TaxiDog</h4><p>Escolha quando a coleta deve acontecer em {dias[dia]}.</p><div className="novo-ciclos venda-taxidog-periodos"><div>{ciclos.map(c=><button type="button" key={c.id} className={cicloTaxidogId===c.id?"selecionada":""} onClick={()=>{if(cicloTaxidogId===c.id)return;limparDisponibilidade();setCicloTaxidogId(c.id)}}><strong>{nomeTaxidogOperacional(c.nome)}</strong><small>Coleta entre {c.coletaInicio.slice(0,5)} e {c.coletaFim.slice(0,5)}</small></button>)}</div>{!ciclos.length&&<p className="ux-info">Não há horário do TaxiDog configurado para esta data.</p>}</div></div></section>}
               {transporte==="sem_transporte"&&funcionarioResponsavelId&&<section className="venda-decisao"><span>4</span><div><h4>Horários disponíveis pelo Motor</h4><p>Capacidade real do funcionário escolhido para todas as ocorrências.</p>{consultandoAgenda?<div className="ux-info">Consultando equipe, equipamentos e capacidade…</div>:erroAgenda?<div className="ux-error">{erroAgenda} <button onClick={()=>void consultarRotina()}>Tentar novamente</button></div>:disponibilidade?.estado==="OK"?<Horarios opcoes={disponibilidade.opcoes} selecionada={opcao} selecionar={o=>{setOpcao(o);setHora(horaDaOpcao(o))}}/>:disponibilidade?<div className="ux-info"><b>Nenhum horário disponível.</b>{disponibilidade.motivos.map(m=><p key={m}>{m}</p>)}</div>:<div className="ux-info">A consulta começará automaticamente.</div>}</div></section>}
-              {transporte==="taxidog"&&cicloTaxidogId&&funcionarioResponsavelId&&<section className="venda-decisao"><span>5</span><div><h4>Horário previsto do atendimento</h4><p>O Motor verifica a capacidade do responsável para o horário de coleta escolhido.</p><PainelHorariosTaxidog linguagem="operacional" ciclo={cicloSelecionado?{...cicloSelecionado,nome:nomeTaxidogOperacional(cicloSelecionado.nome)}:undefined} horarios={disponibilidade} resultado={disponibilidadeCiclo} selecionada={opcao} consultando={consultandoAgenda} erro={erroAgenda} consultar={()=>void consultarRotina()} selecionar={o=>{setOpcao(o);setHora(horaDaOpcao(o))}}/>{opcao&&<small>Horário previsto do atendimento: <b>{horaDaMinuto(opcao.inicioOperacional)}–{horaDaMinuto(opcao.conclusaoPrevista)}</b></small>}</div></section>}
+              {transporte==="taxidog"&&cicloTaxidogId&&funcionarioResponsavelId&&<section className="venda-decisao"><span>5</span><div><h4>Horário previsto do atendimento</h4><p>O Motor verifica a capacidade do responsável em todas as ocorrências do ciclo.</p><PainelHorariosTaxidog linguagem="operacional" ciclo={cicloSelecionado?{...cicloSelecionado,nome:nomeTaxidogOperacional(cicloSelecionado.nome)}:undefined} horarios={disponibilidade} resultado={disponibilidadeCiclo} selecionada={opcao} consultando={consultandoAgenda} erro={erroAgenda} consultar={()=>void consultarRotina()} selecionar={o=>{setOpcao(o);setHora(cicloSelecionado?.coletaInicio.slice(0,5)??"")}}/>{opcao&&<small>Horário previsto do primeiro atendimento: <b>{horaDaMinuto(opcao.inicioOperacional)}–{horaDaMinuto(opcao.conclusaoPrevista)}</b></small>}</div></section>}
               {opcao&&<section className="venda-decisao pronta"><span>{transporte==="taxidog"?6:5}</span><div><h4>Renovação</h4><label className="ux-switch"><input type="checkbox" checked={renovacao} onChange={(e)=>setRenovacao(e.target.checked)}/><span/><div><b>Renovação automática</b><small>Criar automaticamente o próximo ciclo ao finalizar este.</small></div></label></div></section>}
             </div>
           </main>
