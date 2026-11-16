@@ -1,0 +1,52 @@
+/* Agenda em Cards — somente apresentação. As políticas de horário e agendamento ficam no backend. */
+.kpm-cards-instrucao{margin:8px 0 14px;color:var(--text-muted,#5b655b);font-size:12px;line-height:1.5}
+.kpm-cards-scroll{overflow:auto;width:100%;max-width:100%;border:1px solid #e4e8e1;border-radius:17px;background:#f5f7f3;box-shadow:0 8px 26px rgba(36,77,44,.055)}
+.kpm-cards-grade{display:grid;min-width:max-content;align-items:stretch}
+.kpm-cards-canto{grid-column:1;grid-row:1;position:sticky;left:0;top:0;z-index:5;display:grid;place-items:center;min-height:70px;background:#edf3ec;border-right:1px solid #dce5db;font-weight:800;color:#45624b;font-size:12px}
+.kpm-cards-funcionario{position:sticky;top:0;z-index:4;display:flex;align-items:center;gap:11px;min-height:70px;padding:12px 14px;border-right:1px solid #dce5db;border-bottom:1px solid #dce5db;background:#edf3ec}
+.kpm-cards-funcionario-avatar{display:grid;place-items:center;width:36px;height:36px;flex:none;border-radius:12px;background:#2c5f3a;color:#fff;font-size:16px;font-weight:800}
+.kpm-cards-funcionario-textos{display:grid;gap:4px;min-width:0}
+.kpm-cards-funcionario-textos strong{font-size:13px;color:#233d2d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kpm-cards-funcionario-textos small{font-size:11px;color:#597362;white-space:nowrap}
+.kpm-cards-linha-conteudo{display:contents}
+.kpm-cards-hora{grid-column:1;position:sticky;left:0;z-index:2;padding:16px 8px;border-top:1px solid #e1e8de;border-right:1px solid #dce5db;text-align:center;background:#f2f5f0}
+.kpm-cards-hora time{font-size:13px;font-weight:800;color:#426449;font-variant-numeric:tabular-nums}
+.kpm-cards-celula{display:flex;flex-direction:column;gap:9px;min-width:245px;min-height:104px;padding:10px;border-top:1px solid #e1e8de;border-right:1px solid #e1e8de}
+.kpm-cards-adicionar{display:flex;align-items:center;justify-content:center;gap:8px;min-height:45px;margin:auto 0;border:1px dashed #c9d8ca;border-radius:11px;background:rgba(255,255,255,.55);color:#66846d;font-size:13px;cursor:pointer}
+.kpm-cards-adicionar:hover,.kpm-cards-adicionar:focus-visible{border-color:#51845e;background:#e6f0e5;color:#2b5b38}
+.kpm-cards-adicionar span{font-size:11px}
+.kpm-cards-card{position:relative;display:grid;gap:10px;min-width:0;padding:12px 12px 11px 15px;border:1px solid #e2e8df;border-left:4px solid #92a898;border-radius:12px;background:#fff;box-shadow:0 4px 13px rgba(29,68,38,.055);cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}
+.kpm-cards-card:hover,.kpm-cards-card:focus-visible{outline:2px solid transparent;transform:translateY(-1px);box-shadow:0 9px 22px rgba(29,68,38,.13)}
+.kpm-cards-card:focus-visible{outline-color:#4b8f5a}
+.kpm-cards-topo{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px}
+.kpm-cards-topo time{font-size:12px;color:#294e33;font-weight:800;font-variant-numeric:tabular-nums}
+.kpm-cards-status-etiqueta{border-radius:99px;padding:4px 7px;background:#edf1ed;color:#56715d;font-size:10px;font-weight:700;line-height:1.15}
+.kpm-cards-pet{display:flex;align-items:center;gap:9px;min-width:0}
+.kpm-cards-pet-avatar{display:grid;flex:none;place-items:center;width:32px;height:32px;border-radius:10px;background:#e7f1e7;color:#386246;font-weight:800}
+.kpm-cards-pet>div:last-child{display:grid;gap:3px;min-width:0}
+.kpm-cards-pet strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#1d3424;font-size:14px}
+.kpm-cards-pet small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#788478;font-size:11px}
+.kpm-cards-servicos{overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;margin:0;color:#536558;font-size:12px;line-height:1.4}
+.kpm-cards-info{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.kpm-cards-info>span{display:inline-flex;align-items:center;gap:4px;border-radius:7px;background:#f4f6f0;padding:5px 7px;font-size:10px;color:#476049}
+.kpm-cards-info>span:last-child{margin-left:auto;background:#f5efe6;color:#88653d;font-weight:700}
+.kpm-cards-acao{padding:8px 10px;background:#eaf2ea;border:1px solid #d3e3d4;border-radius:8px;color:#285336;font-weight:800;font-size:11px;cursor:pointer}
+.kpm-cards-acao:hover:not(:disabled),.kpm-cards-acao:focus-visible:not(:disabled){background:#d8e8d9}
+.kpm-cards-acao:disabled{opacity:.5;cursor:wait}
+.kpm-cards-conflito{outline:1px solid #d5a039}
+.kpm-cards-alerta{color:#a76b12;font-size:11px}
+.kpm-cards-status-agendado{border-left-color:#94a3b8}
+.kpm-cards-status-confirmado{border-left-color:#3c8bce}
+.kpm-cards-status-em_atendimento{border-left-color:#d58b24}
+.kpm-cards-status-aguardando_retirada,.kpm-cards-status-aguardando_entrega{border-left-color:#a480c4}
+.kpm-cards-status-concluido{border-left-color:#46a36b}
+.kpm-cards-status-cancelado,.kpm-cards-status-faltou{border-left-color:#b88d90;opacity:.77}
+.kpm-cards-status-etiqueta.kpm-cards-status-confirmado{background:#e7f2fc;color:#246ba1}
+.kpm-cards-status-etiqueta.kpm-cards-status-em_atendimento{background:#fff2df;color:#956115}
+.kpm-cards-status-etiqueta.kpm-cards-status-concluido{background:#e9f7ed;color:#287b47}
+.kpm-cards-status-etiqueta.kpm-cards-status-cancelado,.kpm-cards-status-etiqueta.kpm-cards-status-faltou{background:#f9eded;color:#a04f57}
+.kpm-cards-vazio{padding:38px 20px;text-align:center;background:#f7f9f5;border:1px dashed #bfd2c0;border-radius:14px;color:#47604b}
+.kpm-cards-vazio-icone{font-size:29px}.kpm-cards-vazio h3{margin:8px 0;font-size:16px}.kpm-cards-vazio p{font-size:13px}.kpm-cards-vazio button{padding:10px 14px;border:0;border-radius:10px;background:#285336;color:#fff;cursor:pointer}
+.kpm-cards-sem-horario{margin-top:16px;border:1px solid #e5d5bd;background:#fffaf4;border-radius:12px;padding:13px}.kpm-cards-sem-horario h3{margin:0 0 6px;font-size:14px}.kpm-cards-sem-horario p{font-size:12px}.kpm-cards-sem-horario>div{display:flex;flex-wrap:wrap;gap:8px}.kpm-cards-sem-horario button{background:#fff;border:1px solid #d8bd94;border-radius:8px;padding:8px 10px;cursor:pointer}
+@media(max-width:700px){.kpm-cards-funcionario{min-height:62px}.kpm-cards-celula{min-width:245px;padding:8px}.kpm-cards-instrucao{font-size:11px}}
+@media(prefers-reduced-motion:reduce){.kpm-cards-card{transition:none}.kpm-cards-card:hover{transform:none}}
