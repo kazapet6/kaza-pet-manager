@@ -44,6 +44,24 @@ Fluxo lógico:
 - Piloto isolado de envio Meta Cloud API aprovado; não equipará-lo a automações validadas.
 - Código operacional local anterior possui arquivos não rastreados de mensageria, que precisam de inventário antes de substituição.
 
+## Cobrança automática por inadimplência (integração futura — não bloqueante)
+
+**Requisito funcional:** Quando o módulo Financeiro autoritativo incluir um cliente na lista de **inadimplentes**, a Mensageria deverá receber um evento de domínio, por exemplo `CLIENTE_ENTROU_INADIMPLENCIA`, e enviar a mensagem de cobrança correspondente pela WhatsApp Cloud API, mediante regra habilitada. O gatilho é a **transição de situação financeira**, não uma consulta genérica à lista a cada carregamento. Os detalhes de elegibilidade (atraso mínimo, tolerância, parcelamento, contestação e pagamentos parciais) serão configurados no Financeiro antes da ativação.
+
+**Sem dependência para o MVP:** Desenvolver desde já, no catálogo de eventos e no editor, um modelo de cobrança em rascunho e o contrato de integração (event code, variáveis, políticas). Não ativar disparo real, cron ou leitura fictícia do financeiro enquanto ele não estiver concluído. Esse item **não trava** o editor, os gatilhos de agenda, os históricos de pacotes/planos nem a confirmação interativa por WhatsApp.
+
+**Tags planejadas** (somente após existir fonte financeira confiável):
+- `{{NOME_TUTOR}}`, `{{NOME_EMPRESA}}` já existentes;
+- `{{VALOR_EM_ABERTO}}`, `{{DATA_VENCIMENTO}}`, `{{REFERENCIA_COBRANCA}}`, `{{LINK_PAGAMENTO}}`, `{{DIAS_EM_ATRASO}}`: a adicionar ao catálogo com origem e tratamento de ausência definidos.
+
+**Exemplo editável de modelo, ilustrativo e sem dado real:**
+
+> Olá, {{NOME_TUTOR}}! 💚 Identificamos uma pendência referente a {{REFERENCIA_COBRANCA}}, com vencimento em {{DATA_VENCIMENTO}}, no valor de {{VALOR_EM_ABERTO}}. Caso já tenha realizado o pagamento, por favor, desconsidere esta mensagem. Se precisar de ajuda, responda por aqui. — {{NOME_EMPRESA}}
+
+**Regras de segurança do fluxo:** deduplicar cobrança por evento/débito/ciclo; bloquear envios repetidos em reprocessamentos; consultar novamente se o débito ainda está vencido antes de enviar; interromper automaticamente cobranças após regularização, acordos ou suspensão; respeitar consentimento, opt-out, frequência máxima e horários adequados; usar template de categoria apropriada aprovado pela Meta quando necessário. Conteúdo financeiro sensível e links devem ser associados ao registro correto, sem confiar em telefone fornecido pela interface. Não cobrar dívida já quitada nem enviar dados a destinatário não verificado. Registrar mensagem, versão do modelo, resultado da Meta e auditoria.
+
+**Aceite diferido:** Quando o Financeiro estiver pronto, simular mudança de adimplente para inadimplente em homologação, verificar um único envio elegível, supressão após pagamento, idempotência, erros, histórico e ausência de disparos indevidos. Só então habilitar automação por autorização específica.
+
 ## Segurança e regras
 
 - RLS/ACL, autorização por unidade e função administrativa; operadores comuns não alteram templates críticos.
