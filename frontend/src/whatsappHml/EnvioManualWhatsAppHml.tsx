@@ -10,6 +10,12 @@ type Envio = {
   erro_codigo: string | null
   status_entrega?: 'sent' | 'delivered' | 'read' | 'failed' | null
 }
+type Diagnostico = {
+  janela_24h: boolean
+  credencial_meta_presente: boolean
+  envio_backend_habilitado: boolean
+  destinatario_restrito: boolean
+}
 type RespostaHistorico = { envios?: Envio[] }
 type RespostaEnvio = { estado?: string; codigo?: string }
 type Props = { cliente: Cliente }
@@ -26,6 +32,8 @@ export default function EnvioManualWhatsAppHml({ cliente }: Props) {
   const [historico, setHistorico] = useState<Envio[]>([])
   const [chave, setChave] = useState(() => crypto.randomUUID())
   const [confirmado, setConfirmado] = useState(false)
+  const [diagnostico, setDiagnostico] = useState<Diagnostico | null>(null)
+  const [erroDiagnostico, setErroDiagnostico] = useState('')
   const numero = numeroWhatsAppBrasil(cliente.whatsapp)
   const valido = Boolean(validarTextoManual(texto)) && Boolean(numero)
   const envioLiberadoNaTela = import.meta.env.VITE_WHATSAPP_HML_SEND_UI_ENABLED === 'true'
@@ -37,15 +45,29 @@ export default function EnvioManualWhatsAppHml({ cliente }: Props) {
     if (!error && Array.isArray(data?.envios)) setHistorico(data.envios)
   }
 
+  async function carregarDiagnostico() {
+    setErroDiagnostico('')
+    const { data, error } = await supabase.functions.invoke<Diagnostico>(
+      'enviar-whatsapp-hml', { body: { acao: 'diagnostico' } },
+    )
+    if (error || !data || typeof data.janela_24h !== 'boolean') {
+      setDiagnostico(null)
+      setErroDiagnostico('Diagnóstico indisponível; envio continua bloqueado.')
+    } else {
+      setDiagnostico(data)
+    }
+  }
+
   useEffect(() => {
     void carregarHistorico()
+    void carregarDiagnostico()
     // O componente é recriado ao selecionar outro cliente.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cliente.id])
 
   async function enviar() {
     const mensagem = validarTextoManual(texto)
-    if (!mensagem || !numero || ocupado || !confirmado || !envioLiberadoNaTela) return
+    if (!mensagem || !numero || ocupado || !confirmado || !envioLiberadoNaTela || !diagnostico?.janela_24h || !diagnostico?.credencial_meta_presente || !diagnostico?.envio_backend_habilitado) return
     if (!window.confirm(`Enviar uma mensagem de TESTE para ${cliente.nome} (${numero}) pela API oficial da Meta?`)) return
     setOcupado(true)
     setEstado('Solicitando o envio à Meta…')
@@ -85,6 +107,21 @@ export default function EnvioManualWhatsAppHml({ cliente }: Props) {
       </p>
       <p style={{ margin: 0 }}><strong>Cliente:</strong> {cliente.nome}
         <br /><strong>Destino:</strong> {numero ?? 'WhatsApp inválido'}</p>
+      <div style={{ padding: 14, border: '1px solid #d4cdbd', borderRadius: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+          <strong>Diagnóstico do envio (somente leitura)</strong>
+          <button type="button" style={{ ...botao, background: '#f2eee7', color: '#285336' }}
+            onClick={() => void carregarDiagnostico()}>Verificar</button>
+        </div>
+        {erroDiagnostico && <p role="alert">{erroDiagnostico}</p>}
+        {!diagnostico && !erroDiagnostico && <p>Consultando configurações seguras…</p>}
+        {diagnostico && <div style={{ display: 'grid', gap: 6, marginTop: 10 }}>
+          <span>Janela de 24 horas: <strong>{diagnostico.janela_24h ? 'Confirmada' : 'Não confirmada'}</strong></span>
+          <span>Credencial Meta: <strong>{diagnostico.credencial_meta_presente ? 'Presente' : 'Não configurada'}</strong></span>
+          <span>Envio no servidor: <strong>{diagnostico.envio_backend_habilitado ? 'Habilitado' : 'Bloqueado'}</strong></span>
+          <span>Destinatário restrito: <strong>{diagnostico.destinatario_restrito ? 'Sim' : 'Não'}</strong></span>
+        </div>}
+      </div>
       <label htmlFor="whatsapp-hml-texto" style={{ fontWeight: 700 }}>Mensagem de teste (até 512 caracteres)</label>
       <textarea id="whatsapp-hml-texto" value={texto} onChange={e => editarTexto(e.target.value)}
         maxLength={512} rows={4} placeholder="Digite a mensagem manual…"
@@ -102,8 +139,8 @@ export default function EnvioManualWhatsAppHml({ cliente }: Props) {
         Confirmo o destinatário e autorizo uma única mensagem de teste.
       </label>
       <button type="button" onClick={() => void enviar()}
-        disabled={!envioLiberadoNaTela || !valido || !confirmado || ocupado || jaAceito}
-        style={{ ...botao, opacity: !envioLiberadoNaTela || !valido || !confirmado || ocupado || jaAceito ? 0.5 : 1 }}>
+        disabled={!envioLiberadoNaTela || !diagnostico?.janela_24h || !diagnostico?.credencial_meta_presente || !diagnostico?.envio_backend_habilitado || !valido || !confirmado || ocupado || jaAceito}
+        style={{ ...botao, opacity: !envioLiberadoNaTela || !diagnostico?.janela_24h || !diagnostico?.credencial_meta_presente || !diagnostico?.envio_backend_habilitado || !valido || !confirmado || ocupado || jaAceito ? 0.5 : 1 }}>
         {ocupado ? 'Enviando…' : 'Enviar via Meta (teste)'}
       </button>
       {estado && <p role="status" style={{ margin: 0, color: '#285336' }}>{estado}</p>}
