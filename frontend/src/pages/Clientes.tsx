@@ -7,8 +7,10 @@ import Card from '../components/ui/Card'
 import Modal from '../components/ui/Modal'
 import { SistemaContext } from '../context/SistemaContext'
 import type { Cliente } from '../types/Cliente'
+import EnvioManualWhatsAppHml from '../whatsappHml/EnvioManualWhatsAppHml'
+import { WHATSAPP_HML_HABILITADO } from '../whatsappHml/configuracao'
 
-export default function Clientes() {
+export default function Clientes({ whatsappHmlAdmin = false }: { whatsappHmlAdmin?: boolean } = {}) {
   const { clientes, pets, adicionarCliente, atualizarCliente } =
     useContext(SistemaContext)
   const [modalAberto, setModalAberto] = useState(false)
@@ -18,6 +20,7 @@ export default function Clientes() {
   const [clienteSelecionadoId, setClienteSelecionadoId] = useState<
     string | null
   >(null)
+  const [clienteWhatsAppId, setClienteWhatsAppId] = useState<string | null>(null)
   const [pesquisa, setPesquisa] = useState('')
 
   const [nome, setNome] = useState('')
@@ -48,6 +51,8 @@ export default function Clientes() {
   const clienteSelecionado = clientes.find(
     (cliente) => cliente.id === clienteSelecionadoId,
   )
+
+  const clienteWhatsApp = clientes.find((c) => c.id === clienteWhatsAppId) ?? null
 
   const petsDoClienteSelecionado = clienteSelecionado
     ? pets.filter((pet) => pet.clienteId === clienteSelecionado.id)
@@ -503,6 +508,12 @@ export default function Clientes() {
 
             <div>
               <Button onClick={editarCliente}>Editar cliente</Button>
+              {WHATSAPP_HML_HABILITADO && whatsappHmlAdmin && (
+                <Button variant="secondary" onClick={() => {
+                  setClienteWhatsAppId(clienteSelecionado.id)
+                  setClienteSelecionadoId(null)
+                }}>WhatsApp (teste HML)</Button>
+              )}
             </div>
 
             <div>
@@ -550,6 +561,17 @@ export default function Clientes() {
           </div>
         )}
       </Modal>
+      {WHATSAPP_HML_HABILITADO && whatsappHmlAdmin && (
+        <Modal
+          aberto={Boolean(clienteWhatsApp)}
+          titulo="WhatsApp • Envio manual (homologação)"
+          onClose={() => setClienteWhatsAppId(null)}
+        >
+          {clienteWhatsApp && (
+            <EnvioManualWhatsAppHml key={clienteWhatsApp.id} cliente={clienteWhatsApp} />
+          )}
+        </Modal>
+      )}
     </div>
   )
 }
