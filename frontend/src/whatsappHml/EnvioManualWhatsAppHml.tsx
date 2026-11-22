@@ -28,6 +28,7 @@ export default function EnvioManualWhatsAppHml({ cliente }: Props) {
   const [confirmado, setConfirmado] = useState(false)
   const numero = numeroWhatsAppBrasil(cliente.whatsapp)
   const valido = Boolean(validarTextoManual(texto)) && Boolean(numero)
+  const envioLiberadoNaTela = import.meta.env.VITE_WHATSAPP_HML_SEND_UI_ENABLED === 'true'
 
   async function carregarHistorico() {
     const { data, error } = await supabase.functions.invoke<RespostaHistorico>(
@@ -44,7 +45,7 @@ export default function EnvioManualWhatsAppHml({ cliente }: Props) {
 
   async function enviar() {
     const mensagem = validarTextoManual(texto)
-    if (!mensagem || !numero || ocupado || !confirmado) return
+    if (!mensagem || !numero || ocupado || !confirmado || !envioLiberadoNaTela) return
     if (!window.confirm(`Enviar uma mensagem de TESTE para ${cliente.nome} (${numero}) pela API oficial da Meta?`)) return
     setOcupado(true)
     setEstado('Solicitando o envio à Meta…')
@@ -88,6 +89,11 @@ export default function EnvioManualWhatsAppHml({ cliente }: Props) {
       <textarea id="whatsapp-hml-texto" value={texto} onChange={e => editarTexto(e.target.value)}
         maxLength={512} rows={4} placeholder="Digite a mensagem manual…"
         style={{ padding: 12, borderRadius: 12, border: '1px solid #d4cdbd', width: '100%', resize: 'vertical' }} />
+      {!envioLiberadoNaTela && (
+        <p role="status" style={{ margin: 0, color: '#a05b15', fontWeight: 700 }}>
+          Envio bloqueado na interface. Apenas visualização da homologação.
+        </p>
+      )}
       <p style={{ margin: 0, color: '#64726b', fontSize: 13 }}>
         Texto livre só pode ser enviado dentro da janela de 24 horas após uma mensagem do destinatário.
       </p>
@@ -96,8 +102,8 @@ export default function EnvioManualWhatsAppHml({ cliente }: Props) {
         Confirmo o destinatário e autorizo uma única mensagem de teste.
       </label>
       <button type="button" onClick={() => void enviar()}
-        disabled={!valido || !confirmado || ocupado || jaAceito}
-        style={{ ...botao, opacity: !valido || !confirmado || ocupado || jaAceito ? 0.5 : 1 }}>
+        disabled={!envioLiberadoNaTela || !valido || !confirmado || ocupado || jaAceito}
+        style={{ ...botao, opacity: !envioLiberadoNaTela || !valido || !confirmado || ocupado || jaAceito ? 0.5 : 1 }}>
         {ocupado ? 'Enviando…' : 'Enviar via Meta (teste)'}
       </button>
       {estado && <p role="status" style={{ margin: 0, color: '#285336' }}>{estado}</p>}
