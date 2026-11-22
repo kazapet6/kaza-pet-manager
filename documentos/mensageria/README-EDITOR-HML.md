@@ -40,3 +40,18 @@
 - Mensagens de pacotes/planos devem calcular saldo e histórico real no servidor; assinaturas ilimitadas não têm "créditos restantes" fictícios.
 - Cobrança somente quando o Financeiro autoritativo produzir evento de inadimplência e confirmar débito ainda vigente.
 - Recuperar e conciliar arquivos locais de mensageria não rastreados antes de qualquer promoção ao sistema oficial.
+
+## Segunda entrega — persistência de rascunhos no Supabase HML
+
+- Projeto **exclusivo de homologação**: `jgtctzqieyorhvqxjbpk`.
+- Banco: `public.mensageria_hml_editor_rascunhos` (versão atual, não publicada, exclusão lógica) e `public.mensageria_hml_editor_versoes` (histórico imutável por operação).
+- RPC `public.mensageria_hml_editor_operar(uuid,text,jsonb,uuid)` é **security invoker** e somente `service_role` recebe `EXECUTE`. Acesso direto a ambas as tabelas revogado para `anon` e `authenticated`, RLS ligada sem políticas de usuário.
+- Edge `supabase/functions/mensageria-editor-hml/index.ts`, publicada apenas na HML como `mensageria-editor-hml`, `verify_jwt=true`. Autentica JWT e revalida autorização administrativa com a RPC `mensageria_hml_autorizar_operador` antes de aceitar `listar`, `salvar` ou `excluir`. Possui identidade do projeto e origin allowlist. Não importa funções da Meta nem envia mensagens.
+- Contrato: `{acao:'listar'}` retorna `{rascunhos:[{id,nome,eventoCodigo,contexto,texto,versao,atualizadoEm}]}`.
+- `{acao:'salvar',id,versaoEsperada,chaveIdempotencia,nome,texto,contexto,eventoCodigo}` cria com versão esperada 0 ou incrementa a versão se ela coincidir. Retorna `{status:'salvo',rascunho:...}`; concorrência e chave repetida são tratadas pela RPC e pelo banco.
+- `{acao:'excluir',id,versaoEsperada,chaveIdempotencia}` arquiva o rascunho sem apagar o histórico de versões.
+- A tela carrega a lista HML separadamente dos rascunhos de navegador. **Nenhum rascunho local é enviado automaticamente**: o usuário deve clicar em **Copiar para Supabase HML**. É possível manter as duas cópias até confirmar o sucesso.
+- O editor operacional não recebe nenhuma conexão com a HML quando `VITE_WHATSAPP_HML_ENABLED` é falso ou o URL não é exatamente o projeto HML.
+- Exclusivamente em transação com `ROLLBACK` foi validado: criar, listar, atualizar, replay idempotente, rejeitar versão antiga, excluir, listar sem excluído. Nenhuma linha fictícia permaneceu.
+- Auditoria Supabase: `rls_enabled_no_policy` informativo e **intencional** para essas duas tabelas, pois acesso direto é negado aos usuários e `service_role` é o único principal autorizado.
+- Os testes finais de navegação e build devem ser realizados no worktree isolado; **não foi realizada publicação em Vercel nem produção**.
