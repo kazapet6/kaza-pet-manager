@@ -18,6 +18,7 @@ import { supabase } from './lib/supabase'
 import { classificarUsuarioInterno, type EstadoAutenticacao } from './auth/interna'
 import { SistemaProvider } from './context/SistemaProvider'
 import WhatsAppHmlPiloto from './whatsappHml/WhatsAppHmlPiloto'
+import MensageriaCentral from './mensageria/MensageriaCentral'
 import { WHATSAPP_HML_HABILITADO } from './whatsappHml/configuracao'
 
 function App() {
@@ -103,7 +104,7 @@ function App() {
     : 'A'
 
   const nomePagina =
-    paginaAtual === 'importacao' ? 'Configurações • Importação de dados' : paginaAtual === 'agenda'
+    paginaAtual === 'mensageria' ? 'Mensageria' : paginaAtual === 'importacao' ? 'Configurações • Importação de dados' : paginaAtual === 'agenda'
       ? 'Agenda'
       : paginaAtual === 'clientes'
         ? 'Clientes'
@@ -133,6 +134,9 @@ function App() {
         return <Importacao />
       case 'agenda':
         return <Agenda onVerContrato={(contratoId) => { setContratoEmFocoId(contratoId); setPaginaAtual('contratos') }} />
+
+      case 'mensageria':
+        return <MensageriaCentral />
 
       case 'clientes':
         return <Clientes whatsappHmlAdmin={usuarioAtual?.app_metadata?.whatsapp_admin === true} />
@@ -293,6 +297,15 @@ function App() {
             <span>Agenda</span>
           </button>
 
+          {import.meta.env.VITE_MENSAGERIA_STUDIO_ENABLED === 'true' && (
+            <button
+              className={paginaAtual === 'mensageria' ? 'nav-item ativo' : 'nav-item'}
+              onClick={() => setPaginaAtual('mensageria')}
+            >
+              <span className="nav-icon">✉️</span>
+              <span>Mensageria (laboratório)</span>
+            </button>
+          )}
           <button
             className={
               paginaAtual === 'clientes'
