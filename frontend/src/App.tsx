@@ -133,7 +133,7 @@ function App() {
         return <Agenda onVerContrato={(contratoId) => { setContratoEmFocoId(contratoId); setPaginaAtual('contratos') }} />
 
       case 'clientes':
-        return <Clientes />
+        return <Clientes whatsappHmlAdmin={usuarioAtual?.app_metadata?.whatsapp_admin === true} />
 
       case 'pets':
         return <Pets />
