@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Cliente } from '../types/Cliente'
 import { supabase } from '../lib/supabase'
 import EnvioManualWhatsAppHml from './EnvioManualWhatsAppHml'
+import MensageriaCentral from '../mensageria/MensageriaCentral'
 
 type Props = {
   email: string
@@ -10,13 +11,14 @@ type Props = {
 }
 
 export default function WhatsAppHmlPiloto({ email, autorizado, onSair }: Props) {
+  const [pagina, setPagina] = useState<'mensageria' | 'piloto'>('mensageria')
   const [cliente, setCliente] = useState<Cliente | null>(null)
   const [erro, setErro] = useState('')
   const [carregando, setCarregando] = useState(true)
   const [recarregar, setRecarregar] = useState(0)
 
   useEffect(() => {
-    if (!autorizado) {
+    if (!autorizado || pagina !== 'piloto') {
       setCarregando(false)
       return
     }
@@ -43,7 +45,7 @@ export default function WhatsAppHmlPiloto({ email, autorizado, onSair }: Props) 
     }
     void consultar()
     return () => { ativo = false }
-  }, [autorizado, recarregar])
+  }, [autorizado, recarregar, pagina])
 
   return (
     <main style={{
@@ -51,7 +53,7 @@ export default function WhatsAppHmlPiloto({ email, autorizado, onSair }: Props) 
       padding: 'clamp(20px, 4vw, 60px)', color: '#253a2b',
       fontFamily: 'inherit',
     }}>
-      <div style={{ maxWidth: 810, margin: '0 auto', display: 'grid', gap: 20 }}>
+      <div style={{ maxWidth: 1560, margin: '0 auto', display: 'grid', gap: 20 }}>
         <header style={{
           padding: 24, background: '#234c32', color: 'white',
           borderRadius: 18, display: 'flex', flexWrap: 'wrap',
@@ -59,13 +61,28 @@ export default function WhatsAppHmlPiloto({ email, autorizado, onSair }: Props) 
         }}>
           <div>
             <strong style={{ fontSize: 24 }}>KAZA PET MANAGER</strong>
-            <p style={{ marginBottom: 0 }}>WhatsApp • Piloto local de homologação</p>
+            <p style={{ marginBottom: 0 }}>Mensageria • Ambiente de homologação</p>
           </div>
           <button type="button" onClick={() => void onSair()}
             style={{ padding: '9px 16px', borderRadius: 10, border: '1px solid white',
               background: 'transparent', color: 'white', cursor: 'pointer' }}>Sair</button>
         </header>
-        <section style={{ background: 'white', padding: 24, borderRadius: 18, display: 'grid', gap: 12 }}>
+        {autorizado && <nav aria-label="Navegação da homologação" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <button type="button" onClick={() => setPagina('mensageria')}
+            style={{ border: 0, borderRadius: 10, padding: '11px 17px', fontWeight: 700,
+              cursor: 'pointer', background: pagina === 'mensageria' ? '#285b3c' : '#ffffff',
+              color: pagina === 'mensageria' ? '#ffffff' : '#285b3c' }}>
+            ✉ Mensageria
+          </button>
+          <button type="button" onClick={() => setPagina('piloto')}
+            style={{ border: 0, borderRadius: 10, padding: '11px 17px', fontWeight: 700,
+              cursor: 'pointer', background: pagina === 'piloto' ? '#285b3c' : '#ffffff',
+              color: pagina === 'piloto' ? '#ffffff' : '#285b3c' }}>
+            🧪 Piloto Cloud API
+          </button>
+        </nav>}
+        {autorizado && pagina === 'mensageria' && <MensageriaCentral />}
+        {(!autorizado || pagina === 'piloto') && <section style={{ background: 'white', padding: 24, borderRadius: 18, display: 'grid', gap: 12 }}>
           <p style={{ margin: 0, color: '#6b746b' }}>Conta de homologação: {email}</p>
           <h1 style={{ margin: 0, fontSize: 28 }}>Cliente de teste autorizado</h1>
           <p style={{ margin: 0 }}>
@@ -88,8 +105,8 @@ export default function WhatsAppHmlPiloto({ email, autorizado, onSair }: Props) 
               </p>
             </div>
           )}
-        </section>
-        {autorizado && cliente && !carregando && !erro && (
+        </section>}
+        {autorizado && pagina === 'piloto' && cliente && !carregando && !erro && (
           <section style={{ background: 'white', padding: 24, borderRadius: 18 }}>
             <h2 style={{ marginTop: 0 }}>WhatsApp — envio manual</h2>
             <EnvioManualWhatsAppHml cliente={cliente} />
