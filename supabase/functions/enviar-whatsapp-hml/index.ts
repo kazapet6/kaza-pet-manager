@@ -160,6 +160,30 @@ export async function criarHandler(req: Request, env: Env = Deno.env): Promise<R
     body = JSON.parse(bruto)
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('INVALIDO')
   } catch { return json(400, { codigo: 'CORPO_INVALIDO' }, origem) }
+  // O banco HML não concede SELECT direto na tabela clientes ao frontend.
+  // Devolver APENAS a ficha fictícia, após validação da sessão administrativa.
+  if (body.acao === 'cliente_piloto') {
+    const id = 'CLI-990003'
+    try {
+      const resultado = await backend(c,
+        `/rest/v1/clientes?select=id,nome,whatsapp,endereco,bairro,cidade,observacoes,created_at&id=eq.${id}&limit=1`)
+      const piloto = Array.isArray(resultado.dados) ? resultado.dados[0] : null
+      if (!resultado.ok || !piloto || numeroBr(piloto.whatsapp) !== c.allowed)
+        return json(404, { codigo: 'CLIENTE_PILOTO_INDISPONIVEL' }, origem)
+      return json(200, { cliente: {
+        id: piloto.id,
+        nome: piloto.nome,
+        whatsapp: piloto.whatsapp,
+        endereco: piloto.endereco ?? '',
+        bairro: piloto.bairro ?? '',
+        cidade: piloto.cidade ?? '',
+        observacoes: piloto.observacoes ?? '',
+        criadoEm: piloto.created_at ?? '',
+      } }, origem)
+    } catch {
+      return json(503, { codigo: 'CLIENTE_PILOTO_INDISPONIVEL' }, origem)
+    }
+  }
   if (!clienteId(body.cliente_id)) return json(400, { codigo: 'CLIENTE_INVALIDO' }, origem)
   const cliente = await lerCliente(c, body.cliente_id)
   if (!cliente || numeroBr(cliente.whatsapp) !== c.allowed)
