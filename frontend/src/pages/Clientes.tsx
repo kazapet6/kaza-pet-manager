@@ -1,6 +1,6 @@
 import Paginacao from '../components/ui/Paginacao'
 import { usePaginacao } from '../components/ui/usePaginacao'
-import { useContext, useMemo, useState, type FormEvent } from 'react'
+import { useContext, useMemo, useState, useEffect, type FormEvent } from 'react'
 import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
 import Card from '../components/ui/Card'
@@ -9,6 +9,7 @@ import { SistemaContext } from '../context/SistemaContext'
 import type { Cliente } from '../types/Cliente'
 import EnvioManualWhatsAppHml from '../whatsappHml/EnvioManualWhatsAppHml'
 import { WHATSAPP_HML_HABILITADO } from '../whatsappHml/configuracao'
+import { supabase } from '../lib/supabase'
 
 export default function Clientes({ whatsappHmlAdmin = false }: { whatsappHmlAdmin?: boolean } = {}) {
   const { clientes, pets, adicionarCliente, atualizarCliente } =
@@ -22,6 +23,35 @@ export default function Clientes({ whatsappHmlAdmin = false }: { whatsappHmlAdmi
   >(null)
   const [clienteWhatsAppId, setClienteWhatsAppId] = useState<string | null>(null)
   const [pesquisa, setPesquisa] = useState('')
+  const [clientePiloto, setClientePiloto] = useState<Cliente | null>(null)
+  const [erroPiloto, setErroPiloto] = useState('')
+
+  useEffect(() => {
+    if (!WHATSAPP_HML_HABILITADO || !whatsappHmlAdmin) return
+    let ativo = true
+    async function carregarPiloto() {
+      const { data, error } = await supabase.functions.invoke<{ cliente?: Cliente }>(
+        'enviar-whatsapp-hml', { body: { acao: 'cliente_piloto' } },
+      )
+      if (!ativo) return
+      if (error || !data?.cliente) {
+        setErroPiloto('Não foi possível carregar o cliente de teste autorizado.')
+      } else {
+        setClientePiloto(data.cliente)
+        setErroPiloto('')
+      }
+    }
+    void carregarPiloto()
+    return () => { ativo = false }
+  }, [whatsappHmlAdmin])
+
+  // A ficha HML é obtida pela função autorizada; nunca ampliamos SELECT/RLS de clientes.
+  const clientesVisiveis = useMemo(
+    () => clientePiloto && WHATSAPP_HML_HABILITADO && whatsappHmlAdmin
+      ? [clientePiloto, ...clientes.filter(c => c.id !== clientePiloto.id)]
+      : clientes,
+    [clientes, clientePiloto, whatsappHmlAdmin],
+  )
 
   const [nome, setNome] = useState('')
   const [whatsapp, setWhatsapp] = useState('')
@@ -34,25 +64,25 @@ export default function Clientes({ whatsappHmlAdmin = false }: { whatsappHmlAdmi
     const termo = pesquisa.trim().toLowerCase()
 
     if (!termo) {
-      return clientes
+      return clientesVisiveis
     }
 
-    return clientes.filter((cliente) => {
+    return clientesVisiveis.filter((cliente) => {
       return (
         cliente.nome.toLowerCase().includes(termo) ||
         cliente.whatsapp.toLowerCase().includes(termo) ||
         cliente.id.toLowerCase().includes(termo)
       )
     })
-  }, [clientes, pesquisa])
+  }, [clientesVisiveis, pesquisa])
 
   const paginacao = usePaginacao(clientesFiltrados, pesquisa)
 
-  const clienteSelecionado = clientes.find(
+  const clienteSelecionado = clientesVisiveis.find(
     (cliente) => cliente.id === clienteSelecionadoId,
   )
 
-  const clienteWhatsApp = clientes.find((c) => c.id === clienteWhatsAppId) ?? null
+  const clienteWhatsApp = clientesVisiveis.find((c) => c.id === clienteWhatsAppId) ?? null
 
   const petsDoClienteSelecionado = clienteSelecionado
     ? pets.filter((pet) => pet.clienteId === clienteSelecionado.id)
@@ -166,6 +196,18 @@ export default function Clientes({ whatsappHmlAdmin = false }: { whatsappHmlAdmi
         </Button>
       </div>
 
+      {erroPiloto && WHATSAPP_HML_HABILITADO && whatsappHmlAdmin && (
+        <p role="alert" style={{ color: 'var(--color-error)', margin: '0 0 16px' }}>
+          {erroPiloto}
+        </p>
+      )}
+      {clientePiloto && WHATSAPP_HML_HABILITADO && whatsappHmlAdmin && (
+        <Card style={{ marginBottom: 20, border: '1px solid #a8cba9', background: '#f1f8ee' }}>
+          <strong>🧪 WhatsApp — Cliente fictício autorizado</strong>
+          <p style={{ color: '#64726b' }}>{clientePiloto.nome} • número final {clientePiloto.whatsapp.slice(-4)}</p>
+          <Button onClick={() => setClienteSelecionadoId(clientePiloto.id)}>Abrir ficha de teste</Button>
+        </Card>
+      )}
       <Input
         placeholder="🔍 Pesquisar por nome, WhatsApp ou código..."
         value={pesquisa}
@@ -188,7 +230,7 @@ export default function Clientes({ whatsappHmlAdmin = false }: { whatsappHmlAdmi
           </div>
 
           <strong style={{ fontSize: '18px' }}>
-            {clientes.length === 0
+            {clientesVisiveis.length === 0
               ? 'Nenhum cliente cadastrado'
               : 'Nenhum cliente encontrado'}
           </strong>
@@ -199,7 +241,7 @@ export default function Clientes({ whatsappHmlAdmin = false }: { whatsappHmlAdmi
               color: 'var(--color-text-muted)',
             }}
           >
-            {clientes.length === 0
+            {clientesVisiveis.length === 0
               ? 'Cadastre o primeiro cliente para começar.'
               : 'Tente pesquisar usando outro nome ou telefone.'}
           </p>
