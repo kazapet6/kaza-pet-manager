@@ -3,6 +3,7 @@
 const REF = 'jgtctzqieyorhvqxjbpk'
 const BASE = `https://${REF}.supabase.co`
 const GRAFO = 'https://graph.facebook.com/v27.0'
+const CLIENTE_PILOTO_ID = 'CLI-990003'
 const ORIGENS = new Set(['http://localhost:5173', 'http://127.0.0.1:5173'])
 
 type Envio = {
@@ -83,10 +84,6 @@ async function operador(c: Config, req: Request) {
     { method: 'POST', body: JSON.stringify({ p_expected: c.operatorId }) }, token)
   return autorizacao.ok && autorizacao.dados === true ? c.operatorId : null
 }
-async function lerCliente(c: Config, id: string) {
-  const r = await backend(c, `/rest/v1/clientes?select=id,whatsapp&id=eq.${encodeURIComponent(id)}&limit=1`)
-  return r.ok && Array.isArray(r.dados) && r.dados.length === 1 ? r.dados[0] : null
-}
 async function historico(c: Config, id: string) {
   const r = await backend(c, `/rest/v1/whatsapp_hml_envios_manuais?select=id,estado,criado_em,erro_codigo,meta_message_id&cliente_id=eq.${encodeURIComponent(id)}&order=criado_em.desc&limit=5`)
   if (!r.ok || !Array.isArray(r.dados)) throw new Error('HISTORICO_INDISPONIVEL')
@@ -160,35 +157,21 @@ export async function criarHandler(req: Request, env: Env = Deno.env): Promise<R
     body = JSON.parse(bruto)
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('INVALIDO')
   } catch { return json(400, { codigo: 'CORPO_INVALIDO' }, origem) }
-  // O banco HML não concede SELECT direto na tabela clientes ao frontend.
-  // Devolver APENAS a ficha fictícia, após validação da sessão administrativa.
+  // Homologação estritamente vinculada ao único ID fictício já cadastrado.
+  // A ficha é montada no servidor com dados sintéticos e o telefone permitido
+  // vem do segredo HML_TEST_RECIPIENT_E164, evitando ampliar SELECT/RLS.
   if (body.acao === 'cliente_piloto') {
-    const id = 'CLI-990003'
-    try {
-      const resultado = await backend(c,
-        `/rest/v1/clientes?select=id,nome,whatsapp,endereco,bairro,cidade,observacoes,created_at&id=eq.${id}&limit=1`)
-      const piloto = Array.isArray(resultado.dados) ? resultado.dados[0] : null
-      if (!resultado.ok || !piloto || numeroBr(piloto.whatsapp) !== c.allowed)
-        return json(404, { codigo: 'CLIENTE_PILOTO_INDISPONIVEL' }, origem)
-      return json(200, { cliente: {
-        id: piloto.id,
-        nome: piloto.nome,
-        whatsapp: piloto.whatsapp,
-        endereco: piloto.endereco ?? '',
-        bairro: piloto.bairro ?? '',
-        cidade: piloto.cidade ?? '',
-        observacoes: piloto.observacoes ?? '',
-        criadoEm: piloto.created_at ?? '',
-      } }, origem)
-    } catch {
-      return json(503, { codigo: 'CLIENTE_PILOTO_INDISPONIVEL' }, origem)
-    }
+    return json(200, { cliente: {
+      id: CLIENTE_PILOTO_ID,
+      nome: 'Tutor fictício WhatsApp HML',
+      whatsapp: c.allowed,
+      endereco: '', bairro: '', cidade: '',
+      observacoes: 'Somente homologação — destinatário autorizado',
+      criadoEm: '',
+    } }, origem)
   }
-  if (!clienteId(body.cliente_id)) return json(400, { codigo: 'CLIENTE_INVALIDO' }, origem)
-  const cliente = await lerCliente(c, body.cliente_id)
-  if (!cliente || numeroBr(cliente.whatsapp) !== c.allowed)
-    return json(403, { codigo: 'DESTINATARIO_FORA_DA_LISTA_TESTE' }, origem)
-
+  if (!clienteId(body.cliente_id) || body.cliente_id !== CLIENTE_PILOTO_ID)
+    return json(403, { codigo: 'CLIENTE_FORA_DA_LISTA_TESTE' }, origem)
   if (body.acao === 'historico') {
     try { return json(200, { envios: await historico(c, body.cliente_id) }, origem) }
     catch { return json(503, { codigo: 'HISTORICO_INDISPONIVEL' }, origem) }
