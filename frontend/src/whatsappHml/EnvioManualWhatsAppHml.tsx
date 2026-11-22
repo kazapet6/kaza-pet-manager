@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { supabase } from '../lib/supabase'
 import { numeroWhatsAppBrasil, validarTextoManual } from './validacao'
 import type { Cliente } from '../types/Cliente'
@@ -8,12 +8,13 @@ type Envio = {
   estado: 'reservado' | 'aceito' | 'falha' | 'indeterminado'
   criado_em: string
   erro_codigo: string | null
+  status_entrega?: 'sent' | 'delivered' | 'read' | 'failed' | null
 }
 type RespostaHistorico = { envios?: Envio[] }
 type RespostaEnvio = { estado?: string; codigo?: string }
 type Props = { cliente: Cliente }
 
-const botao: React.CSSProperties = {
+const botao: CSSProperties = {
   padding: '11px 16px', borderRadius: 12, border: 0, fontWeight: 700,
   background: '#285336', color: '#fff', cursor: 'pointer',
 }
@@ -115,6 +116,10 @@ export default function EnvioManualWhatsAppHml({ cliente }: Props) {
                 : envio.estado === 'indeterminado' || envio.estado === 'reservado'
                   ? 'Resultado incerto; não repetir automaticamente'
                   : 'Falhou'}
+              {envio.status_entrega === 'read' ? ' — lida' :
+                envio.status_entrega === 'delivered' ? ' — entregue' :
+                envio.status_entrega === 'sent' ? ' — enviada' :
+                envio.status_entrega === 'failed' ? ' — falhou na entrega' : ''}
               {envio.erro_codigo ? ` (${envio.erro_codigo})` : ''}
             </li>)}
           </ul>}
