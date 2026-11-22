@@ -107,16 +107,16 @@ async function historico(c: Config, id: string) {
   }))
 }
 async function verificarInboundRecente(c: Config, destino: string) {
-  const desde = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-  const r = await backend(c,
-    `/rest/v1/mensageria_webhooks_meta?select=payload&created_at=gte.${encodeURIComponent(desde)}&order=created_at.desc&limit=100`)
-  if (!r.ok || !Array.isArray(r.dados)) return false
-  return r.dados.some((linha: { payload?: any }) =>
-    Array.isArray(linha.payload?.entry) && linha.payload.entry.some((entry: any) =>
-      Array.isArray(entry.changes) && entry.changes.some((change: any) =>
-        Array.isArray(change.value?.messages) && change.value.messages.some((msg: any) =>
-          typeof msg.from === 'string' && numeroBr(msg.from) === destino))))
+  // Consulta booleana restrita: o service_role não recebe SELECT nos payloads
+  // nem pode ler o corpo das mensagens recebidas.
+  const r = await backend(c, '/rest/v1/rpc/whatsapp_hml_tem_inbound_recente', {
+    method: 'POST',
+    body: JSON.stringify({ p_numero: destino }),
+  })
+  if (!r.ok || typeof r.dados !== 'boolean') return false
+  return r.dados
 }
+
 async function registrar(c: Config, registro: Record<string, unknown>) {
   const r = await backend(c, '/rest/v1/whatsapp_hml_envios_manuais?select=*',
     { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(registro) })
