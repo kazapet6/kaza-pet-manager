@@ -170,6 +170,16 @@ export async function criarHandler(req: Request, env: Env = Deno.env): Promise<R
       criadoEm: '',
     } }, origem)
   }
+  if (body.acao === 'diagnostico') {
+    const dentroDaJanela = await verificarInboundRecente(c, c.allowed)
+    const tokenConfigurado = (env.get('HML_META_ACCESS_TOKEN') ?? '').length >= 32
+    return json(200, {
+      janela_24h: dentroDaJanela,
+      credencial_meta_presente: tokenConfigurado,
+      envio_backend_habilitado: env.get('HML_MANUAL_SEND_ENABLED') === 'true',
+      destinatario_restrito: true,
+    }, origem)
+  }
   if (!clienteId(body.cliente_id) || body.cliente_id !== CLIENTE_PILOTO_ID)
     return json(403, { codigo: 'CLIENTE_FORA_DA_LISTA_TESTE' }, origem)
   if (body.acao === 'historico') {
