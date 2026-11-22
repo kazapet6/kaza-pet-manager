@@ -1,10 +1,20 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { supabase } from '../lib/supabase'
+import { WHATSAPP_HML_HABILITADO } from '../whatsappHml/configuracao'
 import { eventosMensageria, modelosExemplo, tagsMensageria, type Contexto } from './catalogo'
 import { criarModelo, extrairTags, lerRascunhosLocal, previaModelo, validarModelo, type ModeloRascunho } from './motor'
 import './MensageriaCentral.css'
 
 const CHAVE = 'kaza-mensageria-hml-rascunhos-v1'
 type Aba = 'modelos' | 'automacoes' | 'historico' | 'integracoes'
+type RascunhoHml = ModeloRascunho & { versao: number }
+type RespostaApiHml = {
+  status?: string
+  codigo?: string
+  rascunho?: RascunhoHml
+  rascunhos?: RascunhoHml[]
+  excluido?: boolean
+}
 
 function carregarLocal(): ModeloRascunho[] {
   try { return lerRascunhosLocal(window.localStorage.getItem(CHAVE)) }
@@ -28,6 +38,10 @@ const estadoInicial = {nome:inicial.nome,eventoCodigo:inicial.eventoCodigo,conte
 export default function MensageriaCentral() {
   const [aba,setAba] = useState<Aba>('modelos')
   const [rascunhos,setRascunhos] = useState<ModeloRascunho[]>(carregarLocal)
+  const [rascunhosHml,setRascunhosHml] = useState<RascunhoHml[]>([])
+  const [carregandoHml,setCarregandoHml] = useState(false)
+  const [salvandoHml,setSalvandoHml] = useState(false)
+  const [erroHml,setErroHml] = useState('')
   const [selecionado,setSelecionado] = useState(inicial.id)
   const [filtro,setFiltro] = useState('')
   const [edicao,setEdicao] = useState(estadoInicial)
@@ -35,9 +49,10 @@ export default function MensageriaCentral() {
   const [mensagem,setMensagem] = useState('')
   const textarea = useRef<HTMLTextAreaElement | null>(null)
   const modelos = useMemo(() => [
-    ...rascunhos.map(r=>({ ...r,rascunho:true })),
-    ...modelosExemplo.map(e=>({...e,rascunho:false})),
-  ], [rascunhos])
+    ...rascunhosHml.map(r=>({...r,rascunho:true,origem:'hml' as const})),
+    ...rascunhos.map(r=>({...r,rascunho:true,origem:'local' as const})),
+    ...modelosExemplo.map(e=>({...e,rascunho:false,origem:'exemplo' as const})),
+  ], [rascunhos,rascunhosHml])
   const modeloEscolhido = modelos.find(m=>m.id===selecionado)
   const visiveis = modelos.filter(m=>`${m.nome} ${m.contexto} ${m.eventoCodigo}`.toLowerCase().includes(filtro.trim().toLowerCase()))
   const tagsContexto = tagsMensageria.filter(t=>t.contextos.includes(edicao.contexto))
@@ -45,6 +60,80 @@ export default function MensageriaCentral() {
   const evento = eventosMensageria.find(e=>e.codigo===edicao.eventoCodigo)
   const preview = previaModelo(edicao.texto)
   const codigosUsados = extrairTags(edicao.texto)
+
+  async function carregarHml() {
+    if(!WHATSAPP_HML_HABILITADO)return
+    setCarregandoHml(true);setErroHml('')
+    try {
+      const {data,error}=await supabase.functions.invoke<RespostaApiHml>(
+        'mensageria-editor-hml',{body:{acao:'listar'}})
+      if(error||!Array.isArray(data?.rascunhos))throw new Error('CONSULTA_INDISPONIVEL')
+      const itens=data.rascunhos.filter(r=>
+        typeof r.id==='string' && typeof r.versao==='number' &&
+        typeof r.nome==='string' && typeof r.texto==='string')
+      setRascunhosHml(itens)
+    }catch {
+      setErroHml('Não foi possível consultar os rascunhos HML. Seus rascunhos locais continuam disponíveis.')
+    }finally {setCarregandoHml(false)}
+  }
+  useEffect(()=>{
+    if(WHATSAPP_HML_HABILITADO)void carregarHml()
+    // Busca uma vez ao abrir a Central; sincronização manual pelo botão Atualizar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[])
+
+  async function salvarHml() {
+    if(!WHATSAPP_HML_HABILITADO || salvandoHml)return
+    if(!edicao.nome.trim()||!edicao.texto.trim()||edicao.texto.length>4096){
+      setMensagem('Preencha nome e texto antes de salvar na homologação.');return
+    }
+    const atual=modeloEscolhido?.origem==='hml'?modeloEscolhido:null
+    const id=atual?.id??crypto.randomUUID()
+    const versaoEsperada=atual?.versao??0
+    setSalvandoHml(true);setMensagem('')
+    try{
+      const {data,error}=await supabase.functions.invoke<RespostaApiHml>(
+        'mensageria-editor-hml',{body:{
+          acao:'salvar', id,versaoEsperada,chaveIdempotencia:crypto.randomUUID(),
+          nome:edicao.nome,eventoCodigo:edicao.eventoCodigo,
+          contexto:edicao.contexto,texto:edicao.texto
+        }})
+      if(error||data?.status!=='salvo'||!data?.rascunho){
+        setMensagem('Não foi possível salvar no Supabase HML. Se outra aba alterou este modelo, atualize a lista antes de editar novamente.')
+        return
+      }
+      const novo=data.rascunho
+      setRascunhosHml(lista=>[novo,...lista.filter(r=>r.id!==novo.id)])
+      setSelecionado(novo.id)
+      setModificado(false)
+      setMensagem(problemas.length
+        ? 'Versão '+novo.versao+' salva na HML com pendências de publicação. Nenhuma mensagem enviada.'
+        : 'Versão '+novo.versao+' salva na HML. Nenhum disparo foi habilitado.')
+    }catch{setMensagem('Falha ao salvar na HML. Não repita sem verificar a lista.')}
+    finally{setSalvandoHml(false)}
+  }
+
+  async function excluirHml() {
+    if(!WHATSAPP_HML_HABILITADO||salvandoHml||
+      modeloEscolhido?.origem!=='hml'||!window.confirm('Arquivar este rascunho da homologação?'))return
+    const atual=modeloEscolhido
+    setSalvandoHml(true);setMensagem('')
+    try{
+      const {data,error}=await supabase.functions.invoke<RespostaApiHml>(
+        'mensageria-editor-hml',{body:{
+          acao:'excluir', id:atual.id,versaoEsperada:atual.versao,
+          chaveIdempotencia:crypto.randomUUID()
+        }})
+      if(error||data?.status!=='salvo'||!data.excluido){
+        setMensagem('Exclusão não confirmada. Recarregue a listagem antes de tentar novamente.')
+        return
+      }
+      setRascunhosHml(lista=>lista.filter(r=>r.id!==atual.id))
+      setSelecionado(inicial.id);setEdicao(estadoInicial);setModificado(false)
+      setMensagem('Rascunho arquivado na HML. Versões preservadas na auditoria.')
+    }catch{setMensagem('Resultado incerto ao arquivar. Verifique a listagem.')}
+    finally{setSalvandoHml(false)}
+  }
 
   function mudarModelo(id: string) {
     if (modificado && !window.confirm('Há alterações não salvas. Deseja descartá-las?')) return
@@ -87,7 +176,7 @@ export default function MensageriaCentral() {
     if (!edicao.nome.trim() || !edicao.texto.trim() || edicao.texto.length>4096) {
       setMensagem('Informe nome e texto (até 4.096 caracteres) antes de salvar.');return
     }
-    const id = modeloEscolhido?.rascunho ? modeloEscolhido.id : crypto.randomUUID()
+    const id = modeloEscolhido?.origem==='local' ? modeloEscolhido.id : crypto.randomUUID()
     const modelo = criarModelo({
       nome:edicao.nome.trim(),eventoCodigo:edicao.eventoCodigo,
       contexto:edicao.contexto,texto:edicao.texto,
@@ -100,7 +189,7 @@ export default function MensageriaCentral() {
       : 'Rascunho local salvo. Para publicar, será necessária integração segura ao banco.')
   }
   function descartar() {
-    if (!modeloEscolhido?.rascunho || !window.confirm('Excluir este rascunho deste navegador?')) return
+    if (modeloEscolhido?.origem!=='local' || !window.confirm('Excluir este rascunho deste navegador?')) return
     const next=rascunhos.filter(r=>r.id!==modeloEscolhido.id)
     if(!escreverLocal(next)){setMensagem('Não foi possível excluir o rascunho.');return}
     setRascunhos(next)
@@ -150,12 +239,20 @@ export default function MensageriaCentral() {
             </div>
             <input aria-label="Buscar modelos" className="msg-input" placeholder="Buscar modelo ou evento…"
               value={filtro} onChange={e=>setFiltro(e.target.value)}/>
-            <p className="msg-hint">Modelos de exemplo + seus rascunhos locais</p>
+            <p className="msg-hint">Exemplos, rascunhos HML e rascunhos deste navegador</p>
+            {WHATSAPP_HML_HABILITADO && <button type="button" className="msg-quiet"
+              disabled={carregandoHml} onClick={()=>void carregarHml()}>
+              {carregandoHml?'Carregando…':'↻ Atualizar modelos HML'}
+            </button>}
+            {erroHml&&<p role="alert" className="msg-issues">{erroHml}</p>}
             <div className="msg-models">
               {visiveis.map(m=><button type="button" key={m.id} className={selecionado===m.id?'msg-model selected':'msg-model'}
                 onClick={()=>mudarModelo(m.id)}>
                 <strong>{m.nome}</strong>
-                <small>{nomeContexto(m.contexto)} • {m.rascunho?'Seu rascunho':'Exemplo'}</small>
+                <small>{nomeContexto(m.contexto)} • {
+                  m.origem==='hml'?'HML · versão '+m.versao:
+                  m.origem==='local'?'Rascunho local':'Exemplo'
+                }</small>
               </button>)}
               {visiveis.length===0 && <p className="msg-hint">Nenhum modelo encontrado.</p>}
             </div>
@@ -166,7 +263,8 @@ export default function MensageriaCentral() {
                 <h2>Editor de mensagens</h2>
                 <p>Personalize o texto e insira tags sem digitar códigos.</p>
               </div>
-              <span className="msg-pill">Rascunho local</span>
+              <span className="msg-pill">{modeloEscolhido?.origem==='hml'
+                ? 'HML · versão '+modeloEscolhido.versao : 'Editor de rascunhos'}</span>
             </div>
             <div className="msg-fields">
               <label>Nome do modelo
@@ -199,13 +297,19 @@ export default function MensageriaCentral() {
               <ul>{problemas.map((p,i)=><li key={p.codigo+i}>{p.mensagem}</li>)}</ul>
             </div>}
             <div className="msg-controls">
-              <button type="button" className="msg-primary" onClick={salvar}>Salvar rascunho</button>
-              <button type="button" className="msg-quiet" onClick={duplicar}>Duplicar</button>
-              {modeloEscolhido?.rascunho && <button type="button" className="msg-danger" onClick={descartar}>Excluir</button>}
+              {WHATSAPP_HML_HABILITADO && <button type="button" className="msg-primary"
+                disabled={salvandoHml||carregandoHml} onClick={()=>void salvarHml()}>
+                {salvandoHml?'Salvando…':modeloEscolhido?.origem==='local'?'Copiar para Supabase HML':'Salvar no Supabase HML'}
+              </button>}
+              <button type="button" className="msg-quiet" onClick={salvar}>Salvar neste navegador</button>
+              <button type="button" className="msg-quiet" onClick={duplicar}>Duplicar localmente</button>
+              {modeloEscolhido?.origem==='local' && <button type="button" className="msg-danger" onClick={descartar}>Excluir local</button>}
+              {modeloEscolhido?.origem==='hml' && <button type="button" className="msg-danger"
+                disabled={salvandoHml} onClick={()=>void excluirHml()}>Arquivar na HML</button>}
               {modificado && <span className="msg-dirty">● Alterações não salvas</span>}
             </div>
             {mensagem && <p role="status" className="msg-save-status">{mensagem}</p>}
-            <p className="msg-hint">Os rascunhos ficam somente neste navegador; ainda não são modelos publicados no Supabase nem templates aprovados pela Meta.</p>
+            <p className="msg-hint">O botão de salvar na HML mantém versões no banco isolado. Rascunhos locais permanecem no navegador até você copiá-los explicitamente. Nenhum deles é publicado ou aprovado pela Meta.</p>
           </section>
           <aside className="msg-preview">
             <div className="msg-panel-heading">
