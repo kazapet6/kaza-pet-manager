@@ -91,13 +91,13 @@ async function historico(c: Config, id: string) {
   return await Promise.all(r.dados.map(async (envio: Envio) => {
     let status_entrega: string | null = null
     if (envio.meta_message_id) {
-      const itens = await backend(c,
-        `/rest/v1/mensageria_webhook_itens_meta?select=status_meta,ocorrido_at&tipo=eq.status&mensagem_externa_id=eq.${encodeURIComponent(envio.meta_message_id)}&order=ocorrido_at.desc&limit=20`)
-      if (itens.ok && Array.isArray(itens.dados)) {
-        const status = new Set(itens.dados.map((i: { status_meta: string }) => i.status_meta))
-        status_entrega = status.has('read') ? 'read' :
-          status.has('delivered') ? 'delivered' : status.has('sent') ? 'sent' :
-          status.has('failed') ? 'failed' : null
+      const consulta = await backend(c, '/rest/v1/rpc/whatsapp_hml_status_envio', {
+        method: 'POST',
+        body: JSON.stringify({ p_meta_message_id: envio.meta_message_id }),
+      })
+      if (consulta.ok && typeof consulta.dados === 'string' &&
+          ['sent', 'delivered', 'read', 'failed'].includes(consulta.dados)) {
+        status_entrega = consulta.dados
       }
     }
     return {
