@@ -92,9 +92,26 @@ function respostaPublica(e: Envio) {
   return { id: e.id, estado: e.estado, criado_em: e.criado_em, erro_codigo: e.erro_codigo ?? null }
 }
 async function historico(c: Config, id: string) {
-  const r = await backend(c, `/rest/v1/whatsapp_hml_envios_manuais?select=id,estado,criado_em,erro_codigo&cliente_id=eq.${encodeURIComponent(id)}&order=criado_em.desc&limit=5`)
+  const r = await backend(c, `/rest/v1/whatsapp_hml_envios_manuais?select=id,estado,criado_em,erro_codigo,meta_message_id&cliente_id=eq.${encodeURIComponent(id)}&order=criado_em.desc&limit=5`)
   if (!r.ok || !Array.isArray(r.dados)) throw new Error('HISTORICO_INDISPONIVEL')
-  return r.dados
+  // O status de entrega vem dos webhooks reais da Meta, nunca é inferido pelo HTTP 200.
+  return await Promise.all(r.dados.map(async (envio: Envio) => {
+    let status_entrega: string | null = null
+    if (envio.meta_message_id) {
+      const itens = await backend(c,
+        `/rest/v1/mensageria_webhook_itens_meta?select=status_meta,ocorrido_at&tipo=eq.status&mensagem_externa_id=eq.${encodeURIComponent(envio.meta_message_id)}&order=ocorrido_at.desc&limit=20`)
+      if (itens.ok && Array.isArray(itens.dados)) {
+        const status = new Set(itens.dados.map((i: { status_meta: string }) => i.status_meta))
+        status_entrega = status.has('read') ? 'read' :
+          status.has('delivered') ? 'delivered' : status.has('sent') ? 'sent' :
+          status.has('failed') ? 'failed' : null
+      }
+    }
+    return {
+      id: envio.id, estado: envio.estado, criado_em: envio.criado_em,
+      erro_codigo: envio.erro_codigo, status_entrega,
+    }
+  }))
 }
 async function verificarInboundRecente(c: Config, destino: string) {
   const desde = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
