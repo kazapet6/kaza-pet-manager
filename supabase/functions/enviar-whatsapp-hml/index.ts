@@ -30,6 +30,16 @@ function numeroBr(valor: string) {
   const d = digitos.startsWith('55') ? digitos : `55${digitos}`
   return /^55[1-9][0-9][0-9]{8,9}$/.test(d) ? d : null
 }
+// Exige autorização de envio de curta duração (no máximo 3 minutos).
+// Mesmo se o desligamento pelo operador falhar, o servidor bloqueia após expirar.
+function envioTemporarioHabilitado(env: Env) {
+  const bruto = env.get('HML_MANUAL_SEND_EXPIRES_AT') ?? ''
+  const ate = Date.parse(bruto)
+  const restante = ate - Date.now()
+  return env.get('HML_MANUAL_SEND_ENABLED') === 'true' &&
+    Number.isFinite(ate) && restante > 0 && restante <= 180_000
+}
+
 function textoValido(texto: unknown): texto is string {
   return typeof texto === 'string' && texto.trim().length >= 1 && texto.trim().length <= 512
 }
@@ -176,7 +186,7 @@ export async function criarHandler(req: Request, env: Env = Deno.env): Promise<R
     return json(200, {
       janela_24h: dentroDaJanela,
       credencial_meta_presente: tokenConfigurado,
-      envio_backend_habilitado: env.get('HML_MANUAL_SEND_ENABLED') === 'true',
+      envio_backend_habilitado: envioTemporarioHabilitado(env),
       destinatario_restrito: true,
     }, origem)
   }
@@ -188,7 +198,7 @@ export async function criarHandler(req: Request, env: Env = Deno.env): Promise<R
   }
   if (body.acao !== 'enviar' || !uuid(body.chave_idempotencia) || !textoValido(body.texto))
     return json(400, { codigo: 'PEDIDO_INVALIDO' }, origem)
-  if (env.get('HML_MANUAL_SEND_ENABLED') !== 'true')
+  if (!envioTemporarioHabilitado(env))
     return json(503, { codigo: 'ENVIO_MANUAL_DESATIVADO' }, origem)
   const accessToken = env.get('HML_META_ACCESS_TOKEN')
   if (!accessToken || accessToken.length < 32)
@@ -207,6 +217,8 @@ export async function criarHandler(req: Request, env: Env = Deno.env): Promise<R
     }
     if (!await verificarInboundRecente(c, c.allowed))
       return json(409, { codigo: 'JANELA_DE_24H_NAO_CONFIRMADA' }, origem)
+    if (!envioTemporarioHabilitado(env))
+      return json(503, { codigo: 'JANELA_DE_ENVIO_ENCERRADA' }, origem)
     // Um envio aceito/indeterminado nos últimos 60 segundos bloqueia repetição inadvertida.
     const recente = await backend(c,
       `/rest/v1/whatsapp_hml_envios_manuais?select=id&telefone=eq.${c.allowed}&estado=in.(reservado,aceito,indeterminado)&criado_em=gte.${encodeURIComponent(new Date(Date.now() - 60000).toISOString())}&limit=1`)
@@ -223,6 +235,12 @@ export async function criarHandler(req: Request, env: Env = Deno.env): Promise<R
       return json(503, { codigo: 'REGISTRO_INDISPONIVEL' }, origem)
     }
     const registro: Envio = criacao.dados[0]
+    // Uma segunda checagem antes da chamada externa limita o risco
+    // se o cadastro levar mais tempo que a janela temporária.
+    if (!envioTemporarioHabilitado(env)) {
+      await atualizar(c, registro.id, { estado: 'falha', erro_codigo: 'JANELA_ENCERRADA' }).catch(() => {})
+      return json(503, { estado: 'falha', codigo: 'JANELA_DE_ENVIO_ENCERRADA' }, origem)
+    }
     let meta: Response
     try {
       meta = await fetch(`${GRAFO}/${c.phone}/messages`, {
