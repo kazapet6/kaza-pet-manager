@@ -4,7 +4,6 @@ const REF = 'jgtctzqieyorhvqxjbpk'
 const BASE = `https://${REF}.supabase.co`
 const GRAFO = 'https://graph.facebook.com/v27.0'
 const ORIGENS = new Set(['http://localhost:5173', 'http://127.0.0.1:5173'])
-const ESTADOS = ['reservado', 'aceito', 'falha', 'indeterminado']
 
 type Envio = {
   id: string; chave_idempotencia: string; operador_id: string
@@ -87,9 +86,6 @@ async function operador(c: Config, req: Request) {
 async function lerCliente(c: Config, id: string) {
   const r = await backend(c, `/rest/v1/clientes?select=id,whatsapp&id=eq.${encodeURIComponent(id)}&limit=1`)
   return r.ok && Array.isArray(r.dados) && r.dados.length === 1 ? r.dados[0] : null
-}
-function respostaPublica(e: Envio) {
-  return { id: e.id, estado: e.estado, criado_em: e.criado_em, erro_codigo: e.erro_codigo ?? null }
 }
 async function historico(c: Config, id: string) {
   const r = await backend(c, `/rest/v1/whatsapp_hml_envios_manuais?select=id,estado,criado_em,erro_codigo,meta_message_id&cliente_id=eq.${encodeURIComponent(id)}&order=criado_em.desc&limit=5`)
