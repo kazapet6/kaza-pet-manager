@@ -1,4 +1,4 @@
-import { eventosMensageria, tagsMensageria, type Contexto, type Tag } from './catalogo'
+import { eventosMensageria, tagsMensageria, type Contexto, type Tag } from './catalogo.ts'
 
 export type ModeloRascunho = {
   id: string
