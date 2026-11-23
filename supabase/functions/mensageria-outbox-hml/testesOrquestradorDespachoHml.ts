@@ -66,7 +66,8 @@ function clean(){chamadas=[]}
 let r=await executarUmAgradecimentoHml(cfg,op())
 assert.equal(r.estado,'aceito')
 assert.equal(r.codigo,'META_ACEITOU_NAO_E_ENTREGA')
-assert.equal(r.enviados,1)
+assert.equal(r.aceitosMeta,1)
+assert.equal(r.entregues,0)
 assert.deepEqual(chamadas,['listar','reservar','contexto','meta_mock','finalizar_aceito_meta'])
 
 for(const wrong of [
@@ -152,6 +153,6 @@ assert.deepEqual(chamadas,['listar','reservar','contexto','finalizar_indetermina
 
 assert.equal(
  (await executarUmAgradecimentoHml({...cfg,envioHabilitado:false},
-   {...op(),async enviar(){assert.fail('Envio proibido com flag desligada')}})).enviados,
+   {...op(),async enviar(){assert.fail('Envio proibido com flag desligada')}})).aceitosMeta,
  0)
 console.log('OUTBOX HML - ORQUESTRACAO FICTICIA, MODELO, AGENDA, TIMEOUT E DEDUPE - PASS')
