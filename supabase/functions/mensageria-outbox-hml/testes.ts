@@ -39,16 +39,16 @@ assert.equal(data.reservados,0)
 assert.equal(data.envio_automatico_habilitado,false)
 assert.equal(called.filter(x=>x.endsWith('/rest/v1/rpc/mensageria_hml_outbox_listar_pendentes')).length,1)
 // O handler autentica o administrador antes de negar qualquer ação proibida.
- // Essas consultas /auth/v1/user e /rpc/...autorizar_operador são esperadas.
- // A garantia de segurança relevante é: NENHUMA nova consulta à fila e
- // NENHUMA chamada de escrita ou envio, mesmo quando a ação é bloqueada.
+// Essas consultas /auth/v1/user e /rpc/...autorizar_operador são esperadas.
+// A garantia de segurança relevante é: NENHUMA nova consulta à fila e
+// NENHUMA chamada de escrita ou envio, mesmo quando a ação é bloqueada.
 const chamadasDeFila=()=>called.filter(x=>
   x.endsWith('/rest/v1/rpc/mensageria_hml_outbox_listar_pendentes')).length
 const prior=chamadasDeFila()
 r=await handler(request({acao:'processar_lote',limite:1}))
 assert.equal(r.status,503)
 assert.equal((await r.json()).codigo,'ENVIO_INDISPONIVEL_NA_HOMOLOGACAO')
-assert.equal(chamadasDeFila(),prior,'Processamento não pode realizar nem consulta adicional')
+assert.equal(chamadasDeFila(),prior,'Processamento bloqueado não pode consultar a fila')
 r=await handler(request({acao:'enviar'}))
 assert.equal(r.status,503)
 assert.equal(chamadasDeFila(),prior)
