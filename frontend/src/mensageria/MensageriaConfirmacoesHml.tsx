@@ -10,6 +10,11 @@ type Diagnostico = {
   cliques_processados: number
   remarcacoes_pendentes: number
   respostas_aguardando: number
+  respostas_prontas: number
+  respostas_reservadas: number
+  respostas_aceitas_meta: number
+  respostas_recusadas_meta: number
+  respostas_indeterminadas: number
   templates_meta_cadastrados: number
   agendamentos_hml: number
   processamento_habilitado: boolean
@@ -22,6 +27,11 @@ const cards: {campo:keyof Diagnostico;titulo:string;descricao:string}[] = [
   {campo:'remarcacoes_pendentes',titulo:'Pedidos de remarcação',descricao:'Horários ainda não alterados'},
   {campo:'cliques_processados',titulo:'Cliques processados',descricao:'Registros auditáveis, sem duplicação'},
   {campo:'respostas_aguardando',titulo:'Respostas na fila',descricao:'Agradecimentos/orientações ainda não enviados'},
+  {campo:'respostas_prontas',titulo:'Respostas prontas',descricao:'Modelo publicado e reserva ainda não iniciada'},
+  {campo:'respostas_reservadas',titulo:'Envios reservados',descricao:'Tentativa única em andamento; não reenviar'},
+  {campo:'respostas_aceitas_meta',titulo:'Aceitas pela Meta',descricao:'API aceitou; entrega não comprovada'},
+  {campo:'respostas_recusadas_meta',titulo:'Recusas da Meta',descricao:'Necessitam investigação antes de nova ação'},
+  {campo:'respostas_indeterminadas',titulo:'Envios indeterminados',descricao:'Não reenviar sem reconciliação segura'},
   {campo:'templates_meta_cadastrados',titulo:'Templates cadastrados',descricao:'Ainda dependem de aprovação/ligação com a Meta'},
   {campo:'convites_expirados',titulo:'Convites expirados',descricao:'Não podem alterar agendamentos'},
 ]
@@ -38,7 +48,9 @@ export default function MensageriaConfirmacoesHml() {
       const {data,error}=await supabase.functions.invoke<Diagnostico>(
         'mensageria-confirmacao-hml',{body:{acao:'diagnostico'}})
       if(error||!data||data.ambiente!=='homologacao'||
-         typeof data.convites_ativos!=='number'||typeof data.envio_automatico_habilitado!=='boolean')
+         typeof data.convites_ativos!=='number'||
+         typeof data.respostas_indeterminadas!=='number'||
+         typeof data.envio_automatico_habilitado!=='boolean')
         throw Error('DIAGNOSTICO_INDISPONIVEL')
       setDados(data)
     }catch {
