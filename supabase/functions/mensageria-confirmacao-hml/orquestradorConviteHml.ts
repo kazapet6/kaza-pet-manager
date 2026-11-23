@@ -36,7 +36,7 @@ export type AutorizacaoHml={
   envioHabilitado:boolean
   expiraEm:string|null
   destinatarioPermitidoE164:string
-  agora:Date
+  relogio:()=>Date
 }
 export type EstadoEnvioConvite=
  'bloqueado'|'preparo_rejeitado'|'preparo_repetido'|'meta_rejeitada'|
@@ -45,7 +45,7 @@ export type EstadoEnvioConvite=
 export async function orquestrarConviteHml(
   auth:AutorizacaoHml,ctx:ContextoConvite,ops:OperacoesConvite,
 ):Promise<{estado:EstadoEnvioConvite;codigo:string}> {
-  const resto=auth.expiraEm?Date.parse(auth.expiraEm)-auth.agora.getTime():NaN
+  const resto=auth.expiraEm?Date.parse(auth.expiraEm)-auth.relogio().getTime():NaN
   if(auth.projectRef!==REF || auth.envioHabilitado!==true ||
      !Number.isFinite(resto)||resto<=0||resto>180_000) {
     return {estado:'bloqueado',codigo:'SEM_JANELA_DE_TESTE'}
@@ -87,6 +87,15 @@ export async function orquestrarConviteHml(
   // Depois de uma chamada à Meta, resposta perdida significa envio INDETERMINADO.
   // Nunca repetir automaticamente neste cenário — um segundo POST duplicaria
   // o convite e os segredos gerados na chamada anterior seriam perdidos.
+  // Segunda verificação imediatamente antes de cada POST externo.
+  // Se a reserva demorou, não basta a autorização válida no início da operação.
+  const restanteAntesDoPost=auth.expiraEm
+    ? Date.parse(auth.expiraEm)-auth.relogio().getTime():NaN
+  if(!Number.isFinite(restanteAntesDoPost) ||
+      restanteAntesDoPost<=0 || restanteAntesDoPost>180_000){
+    await ops.abandonar({preparoId}).catch(()=>null)
+    return {estado:'bloqueado',codigo:'JANELA_DE_TESTE_ENCERROU_ANTES_DO_ENVIO'}
+  }
   let meta:RespostaTransporte
   try{
     meta=await ops.enviar(template.corpoApi)
