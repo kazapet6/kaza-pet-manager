@@ -43,7 +43,7 @@ export default function TemplateMetaHml() {
     </div>
     <div className="msg-panel-heading" style={{marginTop:24}}>
       <div><h2>Mensagem para revisão</h2>
-        <p>Os campos {{'{{1}}'}}, {{'{{2}}'}}, {{'{{3}}'}} e {{'{{4}}'}} serão preenchidos a partir da agenda.</p>
+        <p>Os campos {'{{1}}'}, {'{{2}}'}, {'{{3}}'} e {'{{4}}'} serão preenchidos a partir da agenda.</p>
       </div>
       <button type="button" className="msg-quiet" onClick={()=>void copiar(CORPO)}>Copiar texto</button>
     </div>
