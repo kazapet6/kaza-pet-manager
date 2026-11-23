@@ -20,6 +20,16 @@ assert.equal(result.corpo.context.message_id,base.mensagemCliqueId)
 assert.equal(result.corpo.text.preview_url,false)
 assert.match(result.corpo.text.body,/24\/11\/2026 às 09:00/)
 assert.match(result.corpo.text.body,/Mariana/)
+const legado=prepararAgradecimentoHml({...base,textoModelo:
+  'Obrigado, {NOME_TUTOR}! {NOME_PET} está confirmado para {DATA_AGENDAMENTO} às {HORARIO_AGENDAMENTO}. {NOME_EMPRESA}'})
+assert.equal(legado.status,'pronto')
+if(legado.status!=='pronto')throw Error('MODELO_LEGADO_INVALIDO')
+assert.match(legado.corpo.text.body,/24\/11\/2026 às 09:00/)
+assert.ok(!legado.corpo.text.body.includes('{NOME_TUTOR}'))
+const misto=prepararAgradecimentoHml({...base,textoModelo:
+  'Obrigado {NOME_TUTOR}! {{NOME_PET}} confirmado. {{NOME_EMPRESA}}'})
+assert.equal(misto.status,'pronto')
+
 assert.equal(prepararAgradecimentoHml({...base,statusAtendimento:'agendado'}).status,'bloqueado')
 assert.equal(prepararAgradecimentoHml({...base,statusAtendimento:'cancelado'}).status,'bloqueado')
 assert.equal(prepararAgradecimentoHml({...base,statusConvite:'invalido'}).status,'bloqueado')
