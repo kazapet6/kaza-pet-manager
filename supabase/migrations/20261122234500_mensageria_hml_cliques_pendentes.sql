@@ -57,32 +57,7 @@ begin
       and (case m.mensagem->>'type'
         when 'button' then m.mensagem->'button'->>'payload'
         when 'interactive' then m.mensagem->'interactive'->'button_reply'->>'id'
-        else null end) ~* '^KPAG1_[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}      and m.mensagem->>'from' in (
-        ltrim(c.destinatario_e164,'+'),
-        case when length(ltrim(c.destinatario_e164,'+'))=13
-               and substring(ltrim(c.destinatario_e164,'+') from 5 for 1)='9'
-          then substring(ltrim(c.destinatario_e164,'+') from 1 for 4)
-               ||substring(ltrim(c.destinatario_e164,'+') from 6)
-          else ltrim(c.destinatario_e164,'+') end
-      )
-      and not exists(
-        select 1 from public.mensageria_hml_convite_processamentos proc
-        where proc.webhook_item_id=i.id or proc.meta_resposta_id=i.mensagem_externa_id
-      )
-    order by i.created_at,i.id
-    limit p_limite
-  )
-  select coalesce(jsonb_agg(id order by created_at,id),'[]'::jsonb)
-  into v_itens
-  from candidatos;
-  return jsonb_build_object('status','ok','itens',v_itens);
-end;
-$body$;
-revoke all on function public.mensageria_hml_listar_cliques_pendentes(uuid,integer)
-  from public,anon,authenticated;
-grant execute on function public.mensageria_hml_listar_cliques_pendentes(uuid,integer)
-  to service_role;
-
+        else null end) ~* '^KPAG1_[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
       and m.mensagem->>'from' in (
         ltrim(c.destinatario_e164,'+'),
         case when length(ltrim(c.destinatario_e164,'+'))=13
