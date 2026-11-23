@@ -89,6 +89,44 @@ export function criarConsumidorSimulado(env:Env,fetcher:Fetch=fetch) {
       // Uma flag true acidental NÃO altera a segurança desta versão.
       return responder(503,{codigo:'ENVIO_INDISPONIVEL_NA_HOMOLOGACAO'},origem)
     }
+    if(payload.acao==='listar_casos_investigacao'){
+      // Retorna somente identificador da tentativa, categoria e data.
+      // Nunca inclui telefone, corpo, wamid, chaves ou dados do cliente.
+      const permitido=new Set([
+        'reserva_antiga','resultado_indeterminado','status_contraditorio',
+        'status_falhou','aceite_sem_status','entrega_sem_confirmacao'
+      ])
+      const limite=payload.limite===undefined?10:payload.limite
+      if(typeof limite!=='number'||!Number.isInteger(limite)||
+          limite<1||limite>20)
+        return responder(400,{codigo:'LIMITE_INVALIDO'},origem)
+      try {
+        const r=await api(c,'/rest/v1/rpc/mensageria_hml_outbox_casos_investigacao',
+          c.key,'POST',fetcher,{p_operador:c.adminId,p_limite:limite})
+        if(!r.ok||r.data?.status!=='ok'||
+          r.data.reenvio_automatico_autorizado!==false||
+          !Array.isArray(r.data.casos)||
+          r.data.casos.length>limite||
+          r.data.quantidade!==r.data.casos.length||
+          !r.data.casos.every((item:unknown)=>{
+            if(!item||typeof item!=='object'||Array.isArray(item))return false
+            const x=item as Record<string,unknown>
+            return typeof x.tentativa_id==='string'&&UUID.test(x.tentativa_id)&&
+              typeof x.categoria==='string'&&permitido.has(x.categoria)&&
+              typeof x.reservado_em==='string'&&
+              x.reservado_em.length<80&&Number.isFinite(Date.parse(x.reservado_em))
+          }))return responder(503,{codigo:'CASOS_NAO_VERIFICADOS'},origem)
+        return responder(200,{
+          status:'triagem_somente_leitura',
+          casos:r.data.casos.map((item:{tentativa_id:string;categoria:string;reservado_em:string})=>({
+            tentativa_id:item.tentativa_id,categoria:item.categoria,
+            reservado_em:item.reservado_em
+          })),
+          quantidade:r.data.quantidade,
+          reenvio_automatico_autorizado:false
+        },origem)
+      }catch{return responder(503,{codigo:'CASOS_NAO_VERIFICADOS'},origem)}
+    }
     if(payload.acao==='diagnosticar_reconciliacao') {
       // Agregado de eventos Meta assinados; não altera estados ou reenvia.
       const chaves=[
