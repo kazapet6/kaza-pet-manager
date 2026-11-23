@@ -1,14 +1,17 @@
 import Paginacao from '../components/ui/Paginacao'
 import { usePaginacao } from '../components/ui/usePaginacao'
-import { useContext, useMemo, useState, type FormEvent } from 'react'
+import { useContext, useMemo, useState, useEffect, type FormEvent } from 'react'
 import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
 import Card from '../components/ui/Card'
 import Modal from '../components/ui/Modal'
 import { SistemaContext } from '../context/SistemaContext'
 import type { Cliente } from '../types/Cliente'
+import EnvioManualWhatsAppHml from '../whatsappHml/EnvioManualWhatsAppHml'
+import { WHATSAPP_HML_HABILITADO } from '../whatsappHml/configuracao'
+import { supabase } from '../lib/supabase'
 
-export default function Clientes() {
+export default function Clientes({ whatsappHmlAdmin = false }: { whatsappHmlAdmin?: boolean } = {}) {
   const { clientes, pets, adicionarCliente, atualizarCliente } =
     useContext(SistemaContext)
   const [modalAberto, setModalAberto] = useState(false)
@@ -18,7 +21,37 @@ export default function Clientes() {
   const [clienteSelecionadoId, setClienteSelecionadoId] = useState<
     string | null
   >(null)
+  const [clienteWhatsAppId, setClienteWhatsAppId] = useState<string | null>(null)
   const [pesquisa, setPesquisa] = useState('')
+  const [clientePiloto, setClientePiloto] = useState<Cliente | null>(null)
+  const [erroPiloto, setErroPiloto] = useState('')
+
+  useEffect(() => {
+    if (!WHATSAPP_HML_HABILITADO || !whatsappHmlAdmin) return
+    let ativo = true
+    async function carregarPiloto() {
+      const { data, error } = await supabase.functions.invoke<{ cliente?: Cliente }>(
+        'enviar-whatsapp-hml', { body: { acao: 'cliente_piloto' } },
+      )
+      if (!ativo) return
+      if (error || !data?.cliente) {
+        setErroPiloto('Não foi possível carregar o cliente de teste autorizado.')
+      } else {
+        setClientePiloto(data.cliente)
+        setErroPiloto('')
+      }
+    }
+    void carregarPiloto()
+    return () => { ativo = false }
+  }, [whatsappHmlAdmin])
+
+  // A ficha HML é obtida pela função autorizada; nunca ampliamos SELECT/RLS de clientes.
+  const clientesVisiveis = useMemo(
+    () => clientePiloto && WHATSAPP_HML_HABILITADO && whatsappHmlAdmin
+      ? [clientePiloto, ...clientes.filter(c => c.id !== clientePiloto.id)]
+      : clientes,
+    [clientes, clientePiloto, whatsappHmlAdmin],
+  )
 
   const [nome, setNome] = useState('')
   const [whatsapp, setWhatsapp] = useState('')
@@ -31,23 +64,25 @@ export default function Clientes() {
     const termo = pesquisa.trim().toLowerCase()
 
     if (!termo) {
-      return clientes
+      return clientesVisiveis
     }
 
-    return clientes.filter((cliente) => {
+    return clientesVisiveis.filter((cliente) => {
       return (
         cliente.nome.toLowerCase().includes(termo) ||
         cliente.whatsapp.toLowerCase().includes(termo) ||
         cliente.id.toLowerCase().includes(termo)
       )
     })
-  }, [clientes, pesquisa])
+  }, [clientesVisiveis, pesquisa])
 
   const paginacao = usePaginacao(clientesFiltrados, pesquisa)
 
-  const clienteSelecionado = clientes.find(
+  const clienteSelecionado = clientesVisiveis.find(
     (cliente) => cliente.id === clienteSelecionadoId,
   )
+
+  const clienteWhatsApp = clientesVisiveis.find((c) => c.id === clienteWhatsAppId) ?? null
 
   const petsDoClienteSelecionado = clienteSelecionado
     ? pets.filter((pet) => pet.clienteId === clienteSelecionado.id)
@@ -161,6 +196,18 @@ export default function Clientes() {
         </Button>
       </div>
 
+      {erroPiloto && WHATSAPP_HML_HABILITADO && whatsappHmlAdmin && (
+        <p role="alert" style={{ color: 'var(--color-error)', margin: '0 0 16px' }}>
+          {erroPiloto}
+        </p>
+      )}
+      {clientePiloto && WHATSAPP_HML_HABILITADO && whatsappHmlAdmin && (
+        <Card style={{ marginBottom: 20, border: '1px solid #a8cba9', background: '#f1f8ee' }}>
+          <strong>🧪 WhatsApp — Cliente fictício autorizado</strong>
+          <p style={{ color: '#64726b' }}>{clientePiloto.nome} • número final {clientePiloto.whatsapp.slice(-4)}</p>
+          <Button onClick={() => setClienteSelecionadoId(clientePiloto.id)}>Abrir ficha de teste</Button>
+        </Card>
+      )}
       <Input
         placeholder="🔍 Pesquisar por nome, WhatsApp ou código..."
         value={pesquisa}
@@ -183,7 +230,7 @@ export default function Clientes() {
           </div>
 
           <strong style={{ fontSize: '18px' }}>
-            {clientes.length === 0
+            {clientesVisiveis.length === 0
               ? 'Nenhum cliente cadastrado'
               : 'Nenhum cliente encontrado'}
           </strong>
@@ -194,7 +241,7 @@ export default function Clientes() {
               color: 'var(--color-text-muted)',
             }}
           >
-            {clientes.length === 0
+            {clientesVisiveis.length === 0
               ? 'Cadastre o primeiro cliente para começar.'
               : 'Tente pesquisar usando outro nome ou telefone.'}
           </p>
@@ -503,6 +550,12 @@ export default function Clientes() {
 
             <div>
               <Button onClick={editarCliente}>Editar cliente</Button>
+              {WHATSAPP_HML_HABILITADO && whatsappHmlAdmin && (
+                <Button variant="secondary" onClick={() => {
+                  setClienteWhatsAppId(clienteSelecionado.id)
+                  setClienteSelecionadoId(null)
+                }}>WhatsApp (teste HML)</Button>
+              )}
             </div>
 
             <div>
@@ -550,6 +603,17 @@ export default function Clientes() {
           </div>
         )}
       </Modal>
+      {WHATSAPP_HML_HABILITADO && whatsappHmlAdmin && (
+        <Modal
+          aberto={Boolean(clienteWhatsApp)}
+          titulo="WhatsApp • Envio manual (homologação)"
+          onClose={() => setClienteWhatsAppId(null)}
+        >
+          {clienteWhatsApp && (
+            <EnvioManualWhatsAppHml key={clienteWhatsApp.id} cliente={clienteWhatsApp} />
+          )}
+        </Modal>
+      )}
     </div>
   )
 }

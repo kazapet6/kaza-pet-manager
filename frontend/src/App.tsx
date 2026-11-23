@@ -17,6 +17,8 @@ import Importacao from './importacao/Importacao'
 import { supabase } from './lib/supabase'
 import { classificarUsuarioInterno, type EstadoAutenticacao } from './auth/interna'
 import { SistemaProvider } from './context/SistemaProvider'
+import WhatsAppHmlPiloto from './whatsappHml/WhatsAppHmlPiloto'
+import { WHATSAPP_HML_HABILITADO } from './whatsappHml/configuracao'
 
 function App() {
   const [estadoAutenticacao, setEstadoAutenticacao] = useState<EstadoAutenticacao>('carregando')
@@ -133,7 +135,7 @@ function App() {
         return <Agenda onVerContrato={(contratoId) => { setContratoEmFocoId(contratoId); setPaginaAtual('contratos') }} />
 
       case 'clientes':
-        return <Clientes />
+        return <Clientes whatsappHmlAdmin={usuarioAtual?.app_metadata?.whatsapp_admin === true} />
 
       case 'pets':
         return <Pets />
@@ -237,6 +239,17 @@ function App() {
           </p>
         </section>
       </main>
+    )
+  }
+
+  // A homologação WhatsApp nunca instancia o provedor operacional de produção.
+  if (WHATSAPP_HML_HABILITADO) {
+    return (
+      <WhatsAppHmlPiloto
+        email={usuarioAtual?.email ?? ''}
+        autorizado={usuarioAtual?.app_metadata?.whatsapp_admin === true}
+        onSair={sairDoSistema}
+      />
     )
   }
 
