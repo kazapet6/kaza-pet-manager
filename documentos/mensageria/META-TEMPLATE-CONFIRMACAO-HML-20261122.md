@@ -56,3 +56,7 @@ O código ainda não fornece mecanismo de **recuperação durável** em caso de 
 Todos os testes do orquestrador são com **fakes**, sem chamadas de rede. A suíte foi adicionada à `npm run test:mensageria`, mas precisa ser validada no worktree Windows.
 
 Nenhum template foi criado na Meta, nenhuma API de envio real foi acionada e nenhuma alteração ocorreu no GitHub `main`, Supabase de produção ou Vercel oficial.
+
+**Revisão de segurança do orquestrador:** a validade da autorização de até 3 minutos é conferida novamente imediatamente antes do POST externo. Se a reserva de banco consumir a janela, o orquestrador abandona o preparo e bloqueia o envio. O teste offline inclui esse cenário.
+
+**Integração visual:** a aba **Integrações** da Central HML exibe nome, categoria, placeholders e botões, com opção de copiar texto. O status mostrado é explicitamente `Não submetido à Meta`, sem API ou envio. A proposta na tela é estática e precisa ser reconciliada com a configuração realmente aprovada antes da publicação.
