@@ -89,6 +89,32 @@ export function criarConsumidorSimulado(env:Env,fetcher:Fetch=fetch) {
       // Uma flag true acidental NÃO altera a segurança desta versão.
       return responder(503,{codigo:'ENVIO_INDISPONIVEL_NA_HOMOLOGACAO'},origem)
     }
+    if(payload.acao==='diagnosticar_reconciliacao') {
+      // Agregado de eventos Meta assinados; não altera estados ou reenvia.
+      const chaves=[
+        'reservas_antigas','indeterminadas','recusadas','aceitas',
+        'aceitas_sem_status','status_enviado','status_entregue',
+        'status_lido','status_falha','status_contraditorio',
+        'webhooks_sem_vinculo_outbox'
+      ] as const
+      try {
+        const r=await api(c,'/rest/v1/rpc/mensageria_hml_outbox_diagnosticar_reconciliacao',
+          c.key,'POST',fetcher,{p_operador:c.adminId})
+        if(!r.ok||r.data?.status!=='ok'||
+           r.data.reenvio_automatico_autorizado!==false||
+           chaves.some(k=>typeof r.data[k]!=='number'||
+              !Number.isSafeInteger(r.data[k])||r.data[k]<0))
+          return responder(503,{codigo:'DIAGNOSTICO_NAO_CONFIRMADO'},origem)
+        const resumo:Record<string,unknown>={
+          status:'diagnostico_somente_leitura',
+          reenvio_automatico_autorizado:false
+        }
+        for(const k of chaves)resumo[k]=r.data[k]
+        return responder(200,resumo,origem)
+      }catch{
+        return responder(503,{codigo:'DIAGNOSTICO_NAO_CONFIRMADO'},origem)
+      }
+    }
     if(payload.acao!=='simular_lote')
       return responder(400,{codigo:'ACAO_INVALIDA'},origem)
     const limite=payload.limite===undefined?5:payload.limite
