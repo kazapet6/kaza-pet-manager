@@ -315,6 +315,68 @@ begin
  end if;
  insert into hml_resultados_selector values('reconciliacao_read_prioritario','PASS');
 
+ -- Um status com WABA diferente, mesmo WAMID, não pode servir de prova.
+ v_payload:=jsonb_build_object('object','whatsapp_business_account',
+   'entry',jsonb_build_array(jsonb_build_object(
+     'id','999999999998887777',
+     'changes',jsonb_build_array(jsonb_build_object('field','messages',
+       'value',jsonb_build_object(
+         'metadata',jsonb_build_object('phone_number_id','309132033809134'),
+         'statuses',jsonb_build_array(jsonb_build_object(
+           'id','wamid.hml.agradecimento-12345','status','failed'))
+       )
+     ))
+   )));
+ insert into public.mensageria_webhooks_meta(
+   payload_sha256,payload,classificacao,assinatura_validada_at,
+   primeiro_recebimento_at,ultimo_recebimento_at,payload_expires_at,
+   created_at,updated_at)
+ values(encode(sha256(convert_to(v_payload::text,'UTF8')),'hex'),v_payload,
+  'processavel',now(),now(),now(),now()+interval '30 days',now(),now())
+ returning id into v_wh;
+ insert into public.mensageria_webhook_itens_meta(
+  webhook_id,dedupe_key,tipo,mensagem_externa_id,status_meta,created_at,updated_at)
+ values(v_wh,'status:other-waba:'||gen_random_uuid()::text,'status',
+  'wamid.hml.agradecimento-12345','failed',now(),now());
+ v_retorno:=public.mensageria_hml_outbox_diagnosticar_reconciliacao(v_admin);
+ if (v_retorno->>'status_contraditorio')::int<>0
+  or (v_retorno->>'status_lido')::int<>1 then
+  raise exception 'OUTRA_WABA_CONSIDERADA %',v_retorno;
+ end if;
+ insert into hml_resultados_selector values('reconciliacao_outra_waba_ignorada','PASS');
+
+ -- Mesmo WABA e WAMID com delivery e failed: evidência contraditória,
+ -- nunca reabrir a fila nem concluir que a entrega não ocorreu.
+ v_payload:=jsonb_build_object('object','whatsapp_business_account',
+   'entry',jsonb_build_array(jsonb_build_object(
+     'id','377176189908880',
+     'changes',jsonb_build_array(jsonb_build_object('field','messages',
+       'value',jsonb_build_object(
+         'metadata',jsonb_build_object('phone_number_id','309132033809134'),
+         'statuses',jsonb_build_array(jsonb_build_object(
+           'id','wamid.hml.agradecimento-12345','status','failed'))
+       )
+     ))
+   )));
+ insert into public.mensageria_webhooks_meta(
+   payload_sha256,payload,classificacao,assinatura_validada_at,
+   primeiro_recebimento_at,ultimo_recebimento_at,payload_expires_at,
+   created_at,updated_at)
+ values(encode(sha256(convert_to(v_payload::text,'UTF8')),'hex'),v_payload,
+  'processavel',now(),now(),now(),now()+interval '30 days',now(),now())
+ returning id into v_wh;
+ insert into public.mensageria_webhook_itens_meta(
+  webhook_id,dedupe_key,tipo,mensagem_externa_id,status_meta,created_at,updated_at)
+ values(v_wh,'status:conflicting:'||gen_random_uuid()::text,'status',
+  'wamid.hml.agradecimento-12345','failed',now(),now());
+ v_retorno:=public.mensageria_hml_outbox_diagnosticar_reconciliacao(v_admin);
+ if (v_retorno->>'status_contraditorio')::int<>1
+   or v_retorno->>'reenvio_automatico_autorizado'<>'false' then
+   raise exception 'CONTRADICAO_NAO_MARCADA %',v_retorno;
+ end if;
+ insert into hml_resultados_selector values('reconciliacao_status_contraditorio_sem_reenvio','PASS');
+
+
  -- Resultado indeterminado sem WAMID permanece NÃO CORRELACIONÁVEL,
  -- mesmo quando existe webhook órfão com o mesmo destino de teste.
  update public.mensageria_hml_respostas_tentativas
