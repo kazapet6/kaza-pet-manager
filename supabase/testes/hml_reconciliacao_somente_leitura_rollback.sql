@@ -228,11 +228,11 @@ begin
  insert into public.mensageria_webhook_itens_meta(
   webhook_id,dedupe_key,tipo,mensagem_externa_id,status_meta,created_at,updated_at)
  values
- (v_wh,'status:sent:'||gen_random_uuid()::text,'status_outbound',
+ (v_wh,'status:sent:'||gen_random_uuid()::text,'status',
     'wamid.hml.agradecimento-12345','sent',now(),now()),
- (v_wh,'status:delivered:'||gen_random_uuid()::text,'status_outbound',
+ (v_wh,'status:delivered:'||gen_random_uuid()::text,'status',
     'wamid.hml.agradecimento-12345','delivered',now(),now()),
- (v_wh,'status:orphan:'||gen_random_uuid()::text,'status_outbound',
+ (v_wh,'status:orphan:'||gen_random_uuid()::text,'status',
     'wamid.hml.orfa-0123456789','sent',now(),now());
 
  v_retorno:=public.mensageria_hml_outbox_diagnosticar_reconciliacao(v_admin);
@@ -247,7 +247,7 @@ begin
  -- Repetição exata de status assinado não pode inflar contagens.
  insert into public.mensageria_webhook_itens_meta(
   webhook_id,dedupe_key,tipo,mensagem_externa_id,status_meta,created_at,updated_at)
- values(v_wh,'status:duplicate:'||gen_random_uuid()::text,'status_outbound',
+ values(v_wh,'status:duplicate:'||gen_random_uuid()::text,'status',
     'wamid.hml.agradecimento-12345','delivered',now(),now());
  v_retorno:=public.mensageria_hml_outbox_diagnosticar_reconciliacao(v_admin);
  if (v_retorno->>'status_entregue')::int<>1 then
@@ -276,7 +276,7 @@ begin
  returning id into v_wh;
  insert into public.mensageria_webhook_itens_meta(
   webhook_id,dedupe_key,tipo,mensagem_externa_id,status_meta,created_at,updated_at)
- values(v_wh,'status:irrelevant:'||gen_random_uuid()::text,'status_outbound',
+ values(v_wh,'status:irrelevant:'||gen_random_uuid()::text,'status',
   'wamid.hml.agradecimento-12345','failed',now(),now());
  v_retorno:=public.mensageria_hml_outbox_diagnosticar_reconciliacao(v_admin);
  if (v_retorno->>'status_contraditorio')::int<>0
@@ -306,7 +306,7 @@ begin
  returning id into v_wh;
  insert into public.mensageria_webhook_itens_meta(
   webhook_id,dedupe_key,tipo,mensagem_externa_id,status_meta,created_at,updated_at)
- values(v_wh,'status:read:'||gen_random_uuid()::text,'status_outbound',
+ values(v_wh,'status:read:'||gen_random_uuid()::text,'status',
   'wamid.hml.agradecimento-12345','read',now(),now());
  v_retorno:=public.mensageria_hml_outbox_diagnosticar_reconciliacao(v_admin);
  if (v_retorno->>'status_lido')::int<>1
