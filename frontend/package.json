@@ -26,7 +26,7 @@
     "test:importacao": "node --experimental-strip-types src/importacao/testes.ts && node --experimental-strip-types src/importacao/testesStaging.ts && node --experimental-strip-types src/importacao/testesGrupos.ts && node --experimental-strip-types src/importacao/testesSugestoesRacas.ts",
     "preview": "vite preview",
     "test:whatsapp-hml": "node --experimental-strip-types src/whatsappHml/testes.ts",
-    "test:mensageria": "node --experimental-strip-types src/mensageria/testes.ts && npm run test:confirmacao-whatsapp-hml && npm run test:retornos-whatsapp-hml && npm run test:api-confirmacao-hml && npm run test:template-confirmacao-hml && npm run test:template-aprovacao-meta && npm run test:orquestrador-convite-hml && npm run test:resposta-outbox-hml && npm run test:orquestrador-resposta-hml && npm run test:publicacao-modelo-hml && npm run test:contexto-outbox-hml && npm run test:outbox-consumidor-hml",
+    "test:mensageria": "node --experimental-strip-types src/mensageria/testes.ts && npm run test:confirmacao-whatsapp-hml && npm run test:retornos-whatsapp-hml && npm run test:api-confirmacao-hml && npm run test:template-confirmacao-hml && npm run test:template-aprovacao-meta && npm run test:orquestrador-convite-hml && npm run test:resposta-outbox-hml && npm run test:orquestrador-resposta-hml && npm run test:publicacao-modelo-hml && npm run test:contexto-outbox-hml && npm run test:outbox-consumidor-hml && npm run test:outbox-orquestracao-hml",
     "test:confirmacao-whatsapp-hml": "node --experimental-strip-types src/mensageria/testesConfirmacaoWhatsapp.ts",
     "test:retornos-whatsapp-hml": "node --experimental-strip-types src/mensageria/testesRespostaAoCliqueWhatsapp.ts",
     "test:api-confirmacao-hml": "node --experimental-strip-types ../supabase/functions/mensageria-confirmacao-hml/testes.ts",
@@ -37,7 +37,8 @@
     "test:orquestrador-resposta-hml": "node --experimental-strip-types ../supabase/functions/mensageria-confirmacao-hml/testesOrquestradorRespostaOutboxHml.ts",
     "test:publicacao-modelo-hml": "node --experimental-strip-types ../supabase/functions/mensageria-editor-hml/testesPublicacaoGuard.ts",
     "test:contexto-outbox-hml": "node --experimental-strip-types ../supabase/functions/mensageria-confirmacao-hml/testesContextoOutboxBackendHml.ts",
-    "test:outbox-consumidor-hml": "node --experimental-strip-types ../supabase/functions/mensageria-outbox-hml/testes.ts"
+    "test:outbox-consumidor-hml": "node --experimental-strip-types ../supabase/functions/mensageria-outbox-hml/testes.ts",
+    "test:outbox-orquestracao-hml": "node --experimental-strip-types ../supabase/functions/mensageria-outbox-hml/testesOrquestradorDespachoHml.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",
