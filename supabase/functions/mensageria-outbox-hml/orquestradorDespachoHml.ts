@@ -44,7 +44,8 @@ export type ResultadoDespachoHml={
   estado:'bloqueado'|'fila_vazia'|'concorrencia'|'preparo_bloqueado'|
     'indeterminado'|'recusado'|'aceito'|'aceito_sem_registro'
   codigo:string
-  enviados:number
+  aceitosMeta:number
+  entregues:number
 }
 
 function validacao(cfg:ConfigDespachoHml):boolean{
@@ -58,7 +59,7 @@ export async function executarUmAgradecimentoHml(
   cfg:ConfigDespachoHml,ops:OperacoesDespachoHml
 ):Promise<ResultadoDespachoHml>{
   const resultado=(estado:ResultadoDespachoHml['estado'],codigo:string):ResultadoDespachoHml=>
-    ({estado,codigo,enviados:0})
+    ({estado,codigo,aceitosMeta:0,entregues:0})
   if(!validacao(cfg))return resultado('bloqueado','AUTORIZACAO_DE_ENVIO_AUSENTE')
   let itens:unknown[]
   try{
@@ -126,5 +127,5 @@ export async function executarUmAgradecimentoHml(
   }
   const salvo=await finalizar('aceito_meta',null,meta.wamid)
   if(!salvo)return resultado('aceito_sem_registro','ACEITE_META_RECONCILIACAO_MANUAL')
-  return {estado:'aceito',codigo:'META_ACEITOU_NAO_E_ENTREGA',enviados:1}
+  return {estado:'aceito',codigo:'META_ACEITOU_NAO_E_ENTREGA',aceitosMeta:1,entregues:0}
 }
