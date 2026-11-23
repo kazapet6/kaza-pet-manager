@@ -18,6 +18,14 @@ const fakeFetch=async (url:string|URL|Request):Promise<Response>=>{
   })
   if(uri.endsWith('/rest/v1/rpc/mensageria_hml_autorizar_operador'))
     return Response.json(true)
+  if(uri.endsWith('/rest/v1/rpc/mensageria_hml_outbox_casos_investigacao'))
+    return Response.json({
+      status:'ok',casos:[{
+        tentativa_id:'44444444-4444-4444-8444-444444444444',
+        categoria:'resultado_indeterminado',
+        reservado_em:'2026-11-23T18:00:00Z'
+      }],quantidade:1,reenvio_automatico_autorizado:false
+    })
   if(uri.endsWith('/rest/v1/rpc/mensageria_hml_outbox_diagnosticar_reconciliacao'))
     return Response.json({
       status:'ok',reservas_antigas:0,indeterminadas:1,recusadas:0,
@@ -62,6 +70,18 @@ assert.equal(numeros.aceitas_sem_status,1)
 assert.equal(numeros.webhooks_sem_vinculo_outbox,2)
 assert.equal(numeros.reenvio_automatico_autorizado,false)
 assert.equal(numeros.numero,undefined,'Diagnóstico não deve expor telefone')
+const triagem=await handler(request({acao:'listar_casos_investigacao',limite:10}))
+assert.equal(triagem.status,200)
+const casos=await triagem.json()
+assert.equal(casos.status,'triagem_somente_leitura')
+assert.equal(casos.quantidade,1)
+assert.equal(casos.casos[0].categoria,'resultado_indeterminado')
+assert.equal(casos.casos[0].tentativa_id,'44444444-4444-4444-8444-444444444444')
+assert.equal(casos.reenvio_automatico_autorizado,false)
+assert.equal(casos.casos[0].numero,undefined)
+assert.equal(casos.casos[0].wamid,undefined)
+const fora=await handler(request({acao:'listar_casos_investigacao',limite:21}))
+assert.equal(fora.status,400)
 const prior=chamadasDeFila()
 r=await handler(request({acao:'processar_lote',limite:1}))
 assert.equal(r.status,503)
@@ -89,7 +109,8 @@ assert.ok(called.every(x=>
   x.endsWith('/auth/v1/user')||
   x.endsWith('/rest/v1/rpc/mensageria_hml_autorizar_operador')||
   x.endsWith('/rest/v1/rpc/mensageria_hml_outbox_listar_pendentes')||
-  x.endsWith('/rest/v1/rpc/mensageria_hml_outbox_diagnosticar_reconciliacao')
+  x.endsWith('/rest/v1/rpc/mensageria_hml_outbox_diagnosticar_reconciliacao')||
+  x.endsWith('/rest/v1/rpc/mensageria_hml_outbox_casos_investigacao')
 ),'Somente autenticação administrativa e consultas de leitura são permitidas')
 assert.ok(called.every(x=>x.startsWith(base)),'Não pode acessar Meta ou produção')
 assert.ok(called.every(x=>!/\/(messag|graph)/.test(x)),'Não pode enviar nada')
