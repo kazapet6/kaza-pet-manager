@@ -128,7 +128,8 @@ begin
     and msg.message->>'id'=i.mensagem_externa_id
     and msg.message->>'type' in ('button','interactive')
   limit 1;
-  if not found or v_meta.id_resposta is null or v_meta.id_original is null
+  if not found then return jsonb_build_object('status','ignorado','codigo','WEBHOOK_NAO_VALIDADO'); end if;
+  if v_meta.id_resposta is null or v_meta.id_original is null
      or v_meta.origem !~ '^[0-9]{10,15}$'
      or v_meta.token !~* '^KPAG1_[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
   then return jsonb_build_object('status','ignorado','codigo','CLIQUE_INVALIDO_OU_NAO_VERIFICADO'); end if;
@@ -136,7 +137,7 @@ begin
     return jsonb_build_object('status','ja_processado');
   end if;
 
-  select c.*, ac.acao into v_convite, v_acao
+  select c.* into v_convite
   from public.mensageria_hml_convites_confirmacao c
   join public.mensageria_hml_convite_acoes ac on ac.convite_id=c.id
   where ac.token_sha256=encode(sha256(convert_to(v_meta.token,'UTF8')),'hex')
@@ -145,6 +146,11 @@ begin
     and c.meta_phone_number_id=v_meta.phone_number_id
   for update of c;
   if not found then return jsonb_build_object('status','ignorado','codigo','CONVITE_NAO_CORRESPONDE'); end if;
+  select ac.acao into v_acao
+  from public.mensageria_hml_convite_acoes ac
+  where ac.convite_id=v_convite.id
+    and ac.token_sha256=encode(sha256(convert_to(v_meta.token,'UTF8')),'hex');
+  if not found then return jsonb_build_object('status','ignorado','codigo','ACAO_NAO_CORRESPONDE'); end if;
 
   v_destino := ltrim(v_convite.destinatario_e164,'+');
   v_alternativo:=case when length(v_destino)=13 and substring(v_destino from 5 for 1)='9'
