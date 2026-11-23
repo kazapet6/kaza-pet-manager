@@ -219,11 +219,11 @@ begin
  where atendimento_id=v_atendimento;
  v_retorno:=public.mensageria_hml_outbox_contexto(
    v_outbox,v_chave_tentativa,v_admin,'+'||v_numero);
- if v_retorno->>'status'<>'pronto' then
-   raise exception 'CONTEXTO_SNAPSHOT_NAO_DEVE_MODIFICAR_DADOS';
+ if v_retorno->>'status'<>'contexto_nao_elegivel' then
+   raise exception 'ALTERACAO_SNAPSHOT_NAO_FOI_BLOQUEADA';
  end if;
- insert into hml_resultados_selector values('contexto_snapshot_nao_contamina_resultado','PASS');
- -- O renderizador posterior deve bloquear snapshot divergente.
+ insert into hml_resultados_selector values('contexto_snapshot_alterado_bloqueado','PASS');
+ -- O renderizador também confirma este bloqueio como defesa adicional.
  update public.mensageria_hml_convites_confirmacao
    set inicio_snapshot=inicio_snapshot-interval '1 hour'
  where atendimento_id=v_atendimento;
