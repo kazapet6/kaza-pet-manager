@@ -1,3 +1,4 @@
+import { validarPublicacaoModeloHml } from './publicacaoGuard.ts'
 // Editor de mensagens: API exclusiva do projeto de HOMOLOGAÇÃO.
 // Não envia WhatsApp nem publica templates na Meta.
 // Autenticação e autorização são realizadas antes de executar a RPC invoker.
@@ -99,6 +100,34 @@ export async function criarHandler(req:Request,env:Env=Deno.env):Promise<Respons
     b=obj as Record<string,unknown>
   }catch{return resposta(400,{codigo:'CORPO_INVALIDO'},origem)}
   const acao=b.acao
+  if(acao==='publicar') {
+    // Publicação administrativa HML exige autorização própria; por padrão OFF.
+    // Nunca chama a Cloud API ou o consumidor da outbox.
+    const guard=validarPublicacaoModeloHml(b,env.get('HML_MODEL_PUBLISH_ENABLED')==='true')
+    if(!guard.ok)return resposta(guard.status,{codigo:guard.codigo},origem)
+    try{
+      const pub=await chamada(conf,'/rest/v1/rpc/mensageria_hml_publicar_modelo',
+        conf.serviceKey,'POST',{
+          p_operador:conf.adminId,
+          p_rascunho:guard.pedido.id,
+          p_versao_esperada:guard.pedido.versaoEsperada,
+          p_chave:guard.pedido.chaveIdempotencia
+        })
+      if(!pub.ok || !pub.dados || typeof pub.dados?.status!=='string')
+        return resposta(503,{codigo:'PUBLICACAO_NAO_CONFIRMADA'},origem)
+      if(pub.dados.status==='publicado'||pub.dados.status==='ja_publicado') {
+        return resposta(200,{
+          status:pub.dados.status,
+          modeloVersaoId:pub.dados.modelo_versao_id,
+          numeroVersao:pub.dados.numero_versao??null
+        },origem)
+      }
+      if(pub.dados.status==='chave_reutilizada'||pub.dados.status==='versao_ja_publicada'
+          ||pub.dados.status==='rascunho_indisponivel_ou_versao_alterada')
+        return resposta(409,{codigo:pub.dados.status},origem)
+      return resposta(422,{codigo:pub.dados.status},origem)
+    }catch{return resposta(503,{codigo:'PUBLICACAO_NAO_CONFIRMADA'},origem)}
+  }
   if(!['listar','salvar','excluir'].includes(String(acao)))
     return resposta(400,{codigo:'ACAO_INVALIDA'},origem)
   const documento=acao==='listar'?{}:documentoValido(b,String(acao))
