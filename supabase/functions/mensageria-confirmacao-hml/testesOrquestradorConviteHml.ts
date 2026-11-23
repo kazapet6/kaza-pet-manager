@@ -9,7 +9,7 @@ const auth={
   projectRef:'jgtctzqieyorhvqxjbpk',
   envioHabilitado:true,
   destinatarioPermitidoE164:'+5511999999999',
-  agora:new Date('2026-11-22T23:00:00Z'),
+  relogio:()=>new Date('2026-11-22T23:00:00Z'),
   expiraEm:'2026-11-22T23:02:00Z'
 }
 const logs:string[]=[]
@@ -59,6 +59,21 @@ const rejeitada:OperacoesConvite={...ops,async enviar(){logs.push('meta');return
 r=await orquestrarConviteHml(auth,ctx,rejeitada)
 assert.equal(r.estado,'meta_rejeitada')
 assert.deepEqual(logs,['preparo','meta','abandono'])
+logs.length=0
+// A janela pode vencer DURANTE a reserva: revalidar antes do POST.
+logs.length=0
+let consultasRelogio=0
+const expirouDuranteReserva={
+  ...auth,
+  relogio:()=> {
+    consultasRelogio++
+    return new Date(consultasRelogio===1?'2026-11-22T23:00:00Z':'2026-11-22T23:03:00Z')
+  }
+}
+r=await orquestrarConviteHml(expirouDuranteReserva,ctx,ops)
+assert.equal(r.estado,'bloqueado')
+assert.equal(r.codigo,'JANELA_DE_TESTE_ENCERROU_ANTES_DO_ENVIO')
+assert.deepEqual(logs,['preparo','abandono'],'Expiração antes do POST não envia Meta')
 logs.length=0
 const timeout:OperacoesConvite={...ops,async enviar(){logs.push('meta');throw Error('timeout')}}
 r=await orquestrarConviteHml(auth,ctx,timeout)
