@@ -84,6 +84,8 @@ export function criarHandler(env:Env,fetchImpl:Fetch=fetch) {
         const campos=[
           'convites_ativos','convites_confirmados','convites_expirados',
           'cliques_processados','remarcacoes_pendentes','respostas_aguardando',
+          'respostas_prontas','respostas_reservadas','respostas_aceitas_meta',
+          'respostas_recusadas_meta','respostas_indeterminadas',
           'templates_meta_cadastrados','agendamentos_hml',
         ] as const
         const resultado:Record<string,unknown>={}
