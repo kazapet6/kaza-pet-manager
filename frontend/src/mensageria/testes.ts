@@ -15,7 +15,7 @@ const pedido = modelosExemplo.find(m => m.eventoCodigo==='REMARCACAO_SOLICITADA_
 assert.ok(agradecimento && pedido, 'Dois modelos de retorno precisam estar visíveis na biblioteca')
 assert.equal(validarModelo(agradecimento).length,0)
 assert.equal(validarModelo(pedido).length,0)
-assert.ok(agradecimento.texto.includes('\\n'), 'O agradecimento tem quebras de linha legíveis')
+assert.ok(agradecimento.texto.includes('\n'), 'O agradecimento tem quebras de linha legíveis')
 assert.ok(!pedido.texto.includes('https://'), 'Não gerar URL antes do portal existir')
 assert.ok(validarModelo({nome:'Portal futuro',eventoCodigo:'REMARCACAO_SOLICITADA_WHATSAPP',contexto:'agenda',texto:'{{LINK_REMARCACAO}}'}).some(x=>x.codigo==='TAG_NAO_CONECTADA'))
 assert.deepEqual(lerRascunhosLocal('não é json'),[])
