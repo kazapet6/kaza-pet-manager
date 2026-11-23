@@ -26,9 +26,10 @@
     "test:importacao": "node --experimental-strip-types src/importacao/testes.ts && node --experimental-strip-types src/importacao/testesStaging.ts && node --experimental-strip-types src/importacao/testesGrupos.ts && node --experimental-strip-types src/importacao/testesSugestoesRacas.ts",
     "preview": "vite preview",
     "test:whatsapp-hml": "node --experimental-strip-types src/whatsappHml/testes.ts",
-    "test:mensageria": "node --experimental-strip-types src/mensageria/testes.ts && npm run test:confirmacao-whatsapp-hml && npm run test:retornos-whatsapp-hml",
+    "test:mensageria": "node --experimental-strip-types src/mensageria/testes.ts && npm run test:confirmacao-whatsapp-hml && npm run test:retornos-whatsapp-hml && npm run test:api-confirmacao-hml",
     "test:confirmacao-whatsapp-hml": "node --experimental-strip-types src/mensageria/testesConfirmacaoWhatsapp.ts",
-    "test:retornos-whatsapp-hml": "node --experimental-strip-types src/mensageria/testesRespostaAoCliqueWhatsapp.ts"
+    "test:retornos-whatsapp-hml": "node --experimental-strip-types src/mensageria/testesRespostaAoCliqueWhatsapp.ts",
+    "test:api-confirmacao-hml": "node --experimental-strip-types ../supabase/functions/mensageria-confirmacao-hml/testes.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",
