@@ -29,6 +29,8 @@ begin
     ) order by z.reservado_em,z.tentativa_id
   ),'[]'::jsonb) into v_casos
   from (
+    select z.tentativa_id,z.reservado_em,z.categoria
+    from (
     select
       t.id as tentativa_id,
       t.reservado_em,
@@ -88,10 +90,11 @@ begin
             and st->>'status'=i.status_meta
         )
     ) e on true
-  ) z
-  where z.categoria is not null
-  order by z.reservado_em,z.tentativa_id
-  limit p_limite;
+    ) z
+    where z.categoria is not null
+    order by z.reservado_em,z.tentativa_id
+    limit p_limite
+  ) z;
 
   -- Nenhum UUID de cliente/agenda, texto, telefone ou wamid sai da RPC.
   return jsonb_build_object(
