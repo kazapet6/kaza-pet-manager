@@ -100,6 +100,44 @@ export function criarHandler(env:Env,fetchImpl:Fetch=fetch) {
         },origem)
       }catch{return resposta(503,{codigo:'DIAGNOSTICO_INDISPONIVEL'},origem)}
     }
+    if(body.acao==='processar_lote') {
+      // Execução separada do consumidor antigo. Desativada até autorização e E2E.
+      if(env.get('HML_CONFIRMATION_PROCESSOR_ENABLED')!=='true')
+        return resposta(503,{codigo:'PROCESSAMENTO_DESATIVADO'},origem)
+      const limite=body.limite===undefined?5:body.limite
+      if(typeof limite!=='number'||!Number.isInteger(limite)||limite<1||limite>10)
+        return resposta(400,{codigo:'LIMITE_INVALIDO'},origem)
+      try{
+        const lista=await backend(c,'/rest/v1/rpc/mensageria_hml_listar_cliques_pendentes',
+          c.key,'POST',fetchImpl,{p_operador:c.adminId,p_limite:limite})
+        if(!lista.ok||lista.data?.status!=='ok'||!Array.isArray(lista.data?.itens)||
+            lista.data.itens.length>limite||
+            !lista.data.itens.every((id:unknown)=>typeof id==='string'&&uuid.test(id)))
+          return resposta(503,{codigo:'FILA_INDISPONIVEL'},origem)
+        const contagem:Record<string,number>={}
+        let erros=0
+        for(const itemId of lista.data.itens as string[]){
+          try{
+            const resultado=await backend(c,'/rest/v1/rpc/mensageria_hml_processar_confirmacao',
+              c.key,'POST',fetchImpl,{p_item:itemId,p_operador:c.adminId})
+            if(!resultado.ok||typeof resultado.data?.status!=='string'){
+              erros++;continue
+            }
+            const status=resultado.data.status as string
+            if(!new Set(['confirmado','remarcacao_pendente','ja_processado',
+              'ignorado','rejeitado','expirado','conflito','ja_resolvido']).has(status)){
+              erros++;continue
+            }
+            contagem[status]=(contagem[status]??0)+1
+          }catch{erros++}
+        }
+        return resposta(erros>0?503:200,{
+          codigo:erros>0?'LOTE_PARCIAL':'LOTE_CONCLUIDO',
+          encontrados:lista.data.itens.length,erros,contagem,
+          envio_automatico_habilitado:false
+        },origem)
+      }catch{return resposta(503,{codigo:'FILA_INDISPONIVEL'},origem)}
+    }
     if(body.acao==='processar_item') {
       if(env.get('HML_CONFIRMATION_PROCESSOR_ENABLED')!=='true')
         return resposta(503,{codigo:'PROCESSAMENTO_DESATIVADO'},origem)
