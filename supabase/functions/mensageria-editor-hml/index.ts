@@ -10,6 +10,8 @@ type Config = { serviceKey: string; adminId: string }
 type Documento = {id:string;versao_esperada:number;nome?:string;texto?:string;evento_codigo?:string;contexto?:string}
 const eventoContexto: Record<string,string> = {
   CONFIRMACAO_AGENDAMENTO:'agenda',
+  AGENDAMENTO_CONFIRMADO_WHATSAPP:'agenda',
+  REMARCACAO_SOLICITADA_WHATSAPP:'agenda',
   NOVO_AGENDAMENTO:'agenda',
   LEMBRETE_AGENDAMENTO:'agenda',
   PET_PRONTO:'atendimento',
