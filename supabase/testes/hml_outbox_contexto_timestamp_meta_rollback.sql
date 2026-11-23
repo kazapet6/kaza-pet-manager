@@ -204,17 +204,17 @@ begin
  where w.id=(select i.webhook_id from public.mensageria_webhook_itens_meta i
    where i.id=v_item_valido);
  update public.mensageria_webhooks_meta w
- set assinatura_validada_at=null
+ set classificacao='irrelevante'
  where w.id=(select i.webhook_id from public.mensageria_webhook_itens_meta i
    where i.id=v_item_valido);
  v_retorno:=public.mensageria_hml_outbox_contexto(
    v_outbox,v_chave_tentativa,v_admin,'+'||v_numero);
  if v_retorno->>'status'<>'contexto_nao_elegivel' then
-   raise exception 'ASSINATURA_INVALIDA_DEVERIA_BLOQUEAR';
+   raise exception 'WEBHOOK_IRRELEVANTE_DEVERIA_BLOQUEAR';
  end if;
- insert into hml_resultados_selector values('webhook_sem_assinatura_bloqueado','PASS');
+ insert into hml_resultados_selector values('webhook_irrelevante_bloqueado','PASS');
  update public.mensageria_webhooks_meta w
- set assinatura_validada_at=now()
+ set classificacao='processavel'
  where w.id=(select i.webhook_id from public.mensageria_webhook_itens_meta i
    where i.id=v_item_valido);
 
