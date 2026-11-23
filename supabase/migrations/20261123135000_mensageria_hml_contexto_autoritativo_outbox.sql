@@ -125,7 +125,38 @@ begin
     or v.inicio_planejado is null or v.inicio_planejado<=now()
     or v.clique_recebido_em>now()+interval '1 minute'
     or v.clique_recebido_em<now()-interval '23 hours 55 minutes'
-    or v.mensagem_clique_id !~ '^wamid\.[A-Za-z0-9._-]{4,290}$'
+    or length(v.mensagem_clique_id) not between 10 and 300
+    or v.mensagem_clique_id !~ '^wamid\.[A-Za-z0-9._-]+
+    or length(btrim(v.texto)) not between 1 and 4096
+  then
+    return jsonb_build_object('status','contexto_nao_elegivel');
+  end if;
+  return jsonb_build_object(
+    'status','pronto',
+    'eventoCodigo',v.evento_codigo,
+    'statusAtendimento',v.atendimento_estado,
+    'statusConvite',v.convite_estado,
+    'modeloPublicado',true,
+    'textoModelo',v.texto,
+    'destinatarioE164',v.destinatario_e164,
+    'remetenteClique',v.remetente_clique,
+    'mensagemCliqueId',v.mensagem_clique_id,
+    'inicioAtualIso',v.inicio_planejado,
+    'inicioConviteIso',v.inicio_snapshot,
+    'cliqueRecebidoIso',v.clique_recebido_em,
+    'agoraIso',now(),
+    'nomeTutor',v.nome_tutor,
+    'nomePet',v.nome_pet,
+    'nomeEmpresa',v.nome_empresa
+  );
+end;
+$body$;
+
+revoke all on function public.mensageria_hml_outbox_contexto(uuid,uuid,uuid,text)
+  from public,anon,authenticated;
+grant execute on function public.mensageria_hml_outbox_contexto(uuid,uuid,uuid,text)
+  to service_role;
+
     or length(btrim(v.texto)) not between 1 and 4096
   then
     return jsonb_build_object('status','contexto_nao_elegivel');
