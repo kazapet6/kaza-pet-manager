@@ -40,7 +40,7 @@ export type PreparacaoRespostaHml =
   | {status:'pronto';corpo:EnvioTextoMeta}
   | {status:'bloqueado';codigo:string}
 
-const MARCADOR=/{{\s*([A-Z_0-9]+)\s*}}/g
+const MARCADOR=/\{\{\s*([A-Z_0-9]+)\s*\}\}|\{\s*([A-Z_0-9]+)\s*\}/g
 const TEXTO_TAG_INCONHECIDA=/{{[^{}]*}}/
 const TELEFONE=/^\+55[1-9][0-9]{9,10}$/
 const META_ID=/^wamid\.[A-Za-z0-9._-]{4,290}$/
@@ -93,7 +93,8 @@ export function prepararAgradecimentoHml(c:ContextoRespostaHml):PreparacaoRespos
     DATA_AGENDAMENTO:dia,HORARIO_AGENDAMENTO:hora,
   }
   let desconhecida=false
-  const texto=c.textoModelo.replace(MARCADOR,(_,key:string)=>{
+  const texto=c.textoModelo.replace(MARCADOR,(_match,keyDuplo:string|undefined,keySimples:string|undefined)=>{
+    const key=keyDuplo??keySimples??''
     if(!Object.hasOwn(tags,key)){desconhecida=true;return ''}
     return tags[key]
   }).trim()
