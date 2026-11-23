@@ -26,7 +26,8 @@
     "test:importacao": "node --experimental-strip-types src/importacao/testes.ts && node --experimental-strip-types src/importacao/testesStaging.ts && node --experimental-strip-types src/importacao/testesGrupos.ts && node --experimental-strip-types src/importacao/testesSugestoesRacas.ts",
     "preview": "vite preview",
     "test:whatsapp-hml": "node --experimental-strip-types src/whatsappHml/testes.ts",
-    "test:mensageria": "node --experimental-strip-types src/mensageria/testes.ts"
+    "test:mensageria": "node --experimental-strip-types src/mensageria/testes.ts && npm run test:confirmacao-whatsapp-hml",
+    "test:confirmacao-whatsapp-hml": "node --experimental-strip-types src/mensageria/testesConfirmacaoWhatsapp.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",
