@@ -38,17 +38,23 @@ assert.equal(data.enviados,0)
 assert.equal(data.reservados,0)
 assert.equal(data.envio_automatico_habilitado,false)
 assert.equal(called.filter(x=>x.endsWith('/rest/v1/rpc/mensageria_hml_outbox_listar_pendentes')).length,1)
-const prior=called.length
+// O handler autentica o administrador antes de negar qualquer ação proibida.
+ // Essas consultas /auth/v1/user e /rpc/...autorizar_operador são esperadas.
+ // A garantia de segurança relevante é: NENHUMA nova consulta à fila e
+ // NENHUMA chamada de escrita ou envio, mesmo quando a ação é bloqueada.
+const chamadasDeFila=()=>called.filter(x=>
+  x.endsWith('/rest/v1/rpc/mensageria_hml_outbox_listar_pendentes')).length
+const prior=chamadasDeFila()
 r=await handler(request({acao:'processar_lote',limite:1}))
 assert.equal(r.status,503)
 assert.equal((await r.json()).codigo,'ENVIO_INDISPONIVEL_NA_HOMOLOGACAO')
-assert.equal(called.length,prior,'Processamento não pode realizar nem consulta adicional')
+assert.equal(chamadasDeFila(),prior,'Processamento não pode realizar nem consulta adicional')
 r=await handler(request({acao:'enviar'}))
 assert.equal(r.status,503)
-assert.equal(called.length,prior)
+assert.equal(chamadasDeFila(),prior)
 r=await handler(request({acao:'simular_lote',limite:20}))
 assert.equal(r.status,400)
-assert.equal(called.length,prior)
+assert.equal(chamadasDeFila(),prior)
 r=await handler(request({acao:'simular_lote'},'',origin))
 assert.equal(r.status,403)
 r=await handler(request({acao:'simular_lote'},jwt,'https://site-externo.example'))
@@ -59,6 +65,13 @@ assert.equal(r.status,503)
 const ativado:Env={get:key=>key==='HML_OUTBOX_SEND_ENABLED'?'true':env.get(key)}
 r=await criarConsumidorSimulado(ativado,fakeFetch as typeof fetch)(request({acao:'processar_lote'}))
 assert.equal(r.status,503,'Flag acidental não permite envios')
+assert.equal(chamadasDeFila(),prior,
+ 'Nenhuma ação bloqueada deve consultar novos itens da fila')
+assert.ok(called.every(x=>
+  x.endsWith('/auth/v1/user')||
+  x.endsWith('/rest/v1/rpc/mensageria_hml_autorizar_operador')||
+  x.endsWith('/rest/v1/rpc/mensageria_hml_outbox_listar_pendentes')
+),'Somente autenticação administrativa e seletor de leitura são permitidos')
 assert.ok(called.every(x=>x.startsWith(base)),'Não pode acessar Meta ou produção')
 assert.ok(called.every(x=>!/\/(messag|graph)/.test(x)),'Não pode enviar nada')
 console.log('CONSUMIDOR OUTBOX HML - SIMULACAO SOMENTE LEITURA E ENVIO BLOQUEADO - PASS')
