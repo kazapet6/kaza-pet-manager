@@ -87,7 +87,8 @@ export function criarAdaptadorRpcOutboxHml({
       if(!autorizado(op))throw Error('OPERADOR_RPC_INVALIDO')
       const r=await rpc('listar',{p_operador:op,p_limite:limite})
       if(r.status!=='ok'||!Array.isArray(r.itens)||
-         !Number.isInteger(r.quantidade)||r.quantidade!==r.itens.length||
+         typeof r.quantidade!=='number'||!Number.isInteger(r.quantidade)||
+         r.quantidade!==r.itens.length||
          r.itens.length>limite||
          !r.itens.every(id=>typeof id==='string'&&UUID.test(id)))
         throw Error('FILA_RPC_INCONSISTENTE')
