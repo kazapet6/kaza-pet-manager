@@ -88,8 +88,9 @@ assert.equal(chamadasDeFila(),prior,
 assert.ok(called.every(x=>
   x.endsWith('/auth/v1/user')||
   x.endsWith('/rest/v1/rpc/mensageria_hml_autorizar_operador')||
-  x.endsWith('/rest/v1/rpc/mensageria_hml_outbox_listar_pendentes')
-),'Somente autenticação administrativa e seletor de leitura são permitidos')
+  x.endsWith('/rest/v1/rpc/mensageria_hml_outbox_listar_pendentes')||
+  x.endsWith('/rest/v1/rpc/mensageria_hml_outbox_diagnosticar_reconciliacao')
+),'Somente autenticação administrativa e consultas de leitura são permitidas')
 assert.ok(called.every(x=>x.startsWith(base)),'Não pode acessar Meta ou produção')
 assert.ok(called.every(x=>!/\/(messag|graph)/.test(x)),'Não pode enviar nada')
 console.log('CONSUMIDOR OUTBOX HML - SIMULACAO SOMENTE LEITURA E ENVIO BLOQUEADO - PASS')
