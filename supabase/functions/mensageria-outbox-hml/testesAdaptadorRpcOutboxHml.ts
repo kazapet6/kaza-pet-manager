@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import {criarAdaptadorRpcOutboxHml} from './adaptadorRpcOutboxHml.ts'
 import {executarUmAgradecimentoHml} from './orquestradorDespachoHml.ts'
+import {criarTransporteMetaHml} from './transporteMetaHml.ts'
 import type {EnvioTextoMeta} from '../mensageria-confirmacao-hml/respostaOutboxHml.ts'
 
 const HML='jgtctzqieyorhvqxjbpk'
@@ -152,7 +153,7 @@ vars.HML_OUTBOX_RPC_ENABLED='false'
 assert.equal(newAdapter().configurado(),false)
 result=await executarUmAgradecimentoHml(config,newAdapter())
 assert.equal(result.estado,'bloqueado')
-assert.deepEqual(chamadas,['mensageria_hml_outbox_listar_pendentes'].filter(()=>false))
+assert.deepEqual(chamadas,[])
 assert.equal(aceites,0)
 vars.HML_OUTBOX_RPC_ENABLED=original
 
@@ -181,5 +182,56 @@ try{
 }catch{rejeitou=true}
 assert.equal(rejeitou,true)
 assert.deepEqual(chamadas,[])
+
+
+// Integração real entre os módulos implementados, mas com TODA a rede
+// simulada. A função transportadora conhece o URL da Meta, o mock valida
+// o payload, e nenhuma requisição de verdade é executada.
+reset()
+vars.HML_OUTBOX_SEND_ENABLED='true'
+vars.HML_OUTBOX_SEND_EXPIRES_AT='2026-11-23T18:01:30Z'
+vars.HML_META_PHONE_NUMBER_ID='309132033809134'
+vars.HML_META_ACCESS_TOKEN='TOKEN_FICTICIO_TESTE_'+('z'.repeat(70))
+const logRede:string[]=[]
+const transporte=criarTransporteMetaHml({
+  ambiente:env,agora:()=>agora.getTime(),
+  requisitar:async(url,opts)=>{
+    logRede.push(url)
+    assert.equal(url,'https://graph.facebook.com/v27.0/309132033809134/messages')
+    assert.equal(opts.method,'POST')
+    assert.equal((opts.headers as Record<string,string>).authorization,
+      'Bearer '+vars.HML_META_ACCESS_TOKEN)
+    const payload=JSON.parse(String(opts.body))
+    assert.equal(payload.to,numero)
+    assert.equal(payload.context.message_id,fakeContexto.mensagemCliqueId)
+    return Response.json({
+      messaging_product:'whatsapp',
+      contacts:[{input:numero,wa_id:numero}],
+      messages:[{id:'wamid.meta-aceite-ficticio-0001'}]
+    })
+  }
+})
+const integrado=criarAdaptadorRpcOutboxHml({
+  ambiente:env,requisitar:fakeRPC,
+  enviar:transporte
+})
+result=await executarUmAgradecimentoHml(config,integrado)
+assert.equal(result.estado,'aceito')
+assert.equal(result.aceitosMeta,1)
+assert.equal(result.entregues,0)
+assert.deepEqual(logRede,[
+ 'https://graph.facebook.com/v27.0/309132033809134/messages'
+])
+assert.equal(finalizado,'aceito_meta')
+assert.deepEqual(chamadas,[
+ 'mensageria_hml_outbox_listar_pendentes',
+ 'mensageria_hml_outbox_reservar',
+ 'mensageria_hml_outbox_contexto',
+ 'mensageria_hml_outbox_finalizar'
+])
+delete vars.HML_OUTBOX_SEND_ENABLED
+delete vars.HML_OUTBOX_SEND_EXPIRES_AT
+delete vars.HML_META_PHONE_NUMBER_ID
+delete vars.HML_META_ACCESS_TOKEN
 
 console.log('OUTBOX HML - RPCS E TRANSPORTE MOCK INTEGRADOS, SEM ENVIO REAL - PASS')
