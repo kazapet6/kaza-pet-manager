@@ -6,7 +6,7 @@ import {
 const outboxId='11111111-1111-4111-8111-111111111111'
 const operadorId='22222222-2222-4222-8222-222222222222'
 const chave='33333333-3333-4333-8333-333333333333'
-const numero='5531999573653'
+const numero='5511999999999'
 const agora=new Date('2026-11-23T18:00:00Z')
 const cfg:ConfigDespachoHml={
  projeto:'jgtctzqieyorhvqxjbpk',operadorId,permitidoE164:numero,
