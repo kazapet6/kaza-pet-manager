@@ -167,6 +167,10 @@ begin
     return jsonb_build_object('status','expirado');
   end if;
 
+  -- Ordem idêntica à alteração manual de status: advisory lock antes
+  -- de lock de linha, também para o pedido de remarcação.
+  perform pg_advisory_xact_lock(hashtextextended('atendimento:status:'||v_convite.atendimento_id::text,0));
+
   select a.* into v_agenda from public.atendimentos a
   join public.grupos_agendamento g on g.id=a.grupo_agendamento_id
   join mensageria_interna.agenda_grupos ag on ag.grupo_id=g.id
@@ -188,7 +192,6 @@ begin
   if v_acao='confirmar' then
     -- Respeita o mesmo advisory lock usado pelo RPC de status operacional
     -- e todos os triggers comerciais da tabela atendimentos.
-    perform pg_advisory_xact_lock(hashtextextended('atendimento:status:'||v_agenda.id::text,0));
     perform set_config('kaza.credito_usuario_id',p_operador::text,true);
     perform set_config('kaza.credito_origem','whatsapp_meta',true);
     perform set_config('kaza.credito_motivo','Clique no botao Confirmar',true);
