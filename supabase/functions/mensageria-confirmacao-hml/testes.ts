@@ -57,4 +57,23 @@ r=await criarHandler(envErrado,fakeFetch as typeof fetch)(req({acao:'diagnostico
 assert.equal(r.status,503)
 assert.ok(rotas.every(x=>x.startsWith(base)),
   'Nenhuma chamada para produção, Meta ou domínio externo')
+const opts=await handler(new Request(base+'/functions/v1/mensageria-confirmacao-hml',{
+  method:'OPTIONS',headers:{origin:'http://127.0.0.1:5173'}
+}))
+assert.equal(opts.status,204)
+assert.equal(await opts.text(),'')
+assert.equal(opts.headers.get('access-control-allow-origin'),'http://127.0.0.1:5173')
+const envAberto:Env={get(name){
+  return name==='HML_CONFIRMATION_PROCESSOR_ENABLED'?'true':env.get(name)
+}}
+const handlerAberto=criarHandler(envAberto,fakeFetch as typeof fetch)
+r=await handlerAberto(req({acao:'processar_item',itemId:'invalido'}))
+assert.equal(r.status,400)
+const processadosAntes=rotas.filter(x=>x.includes('/rpc/mensageria_hml_processar_confirmacao')).length
+r=await handlerAberto(req({acao:'processar_item',itemId:'22222222-2222-4222-8222-222222222222'}))
+assert.equal(r.status,200)
+assert.equal((await r.json()).status,'confirmado')
+assert.equal(rotas.filter(x=>x.includes('/rpc/mensageria_hml_processar_confirmacao')).length,processadosAntes+1,
+ 'Processar somente quando a flag explícita estiver habilitada')
+assert.ok(rotas.every(x=>x.startsWith(base)), 'Todas as chamadas devem ficar na HML')
 console.log('MENSAGERIA CONFIRMACAO HML - API DIAGNOSTICO E FLAG OFF - PASS')
