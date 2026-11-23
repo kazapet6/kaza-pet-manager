@@ -18,6 +18,14 @@ const fakeFetch=async (url:string|URL|Request):Promise<Response>=>{
   })
   if(uri.endsWith('/rest/v1/rpc/mensageria_hml_autorizar_operador'))
     return Response.json(true)
+  if(uri.endsWith('/rest/v1/rpc/mensageria_hml_outbox_diagnosticar_reconciliacao'))
+    return Response.json({
+      status:'ok',reservas_antigas:0,indeterminadas:1,recusadas:0,
+      aceitas:1,aceitas_sem_status:1,status_enviado:0,
+      status_entregue:0,status_lido:0,status_falha:0,
+      status_contraditorio:0,webhooks_sem_vinculo_outbox:2,
+      reenvio_automatico_autorizado:false
+    })
   if(uri.endsWith('/rest/v1/rpc/mensageria_hml_outbox_listar_pendentes'))
     return Response.json({status:'ok',itens:['22222222-2222-4222-8222-222222222222'],quantidade:1})
   assert.fail('Chamada externa inesperada: '+uri)
@@ -43,7 +51,17 @@ assert.equal(called.filter(x=>x.endsWith('/rest/v1/rpc/mensageria_hml_outbox_lis
 // A garantia de segurança relevante é: NENHUMA nova consulta à fila e
 // NENHUMA chamada de escrita ou envio, mesmo quando a ação é bloqueada.
 const chamadasDeFila=()=>called.filter(x=>
+  x.endsWith('/rest/v1/rpc/mensageria_hml_outbox_diagnosticar_reconciliacao')||
   x.endsWith('/rest/v1/rpc/mensageria_hml_outbox_listar_pendentes')).length
+const diag=await handler(request({acao:'diagnosticar_reconciliacao'}))
+assert.equal(diag.status,200)
+const numeros=await diag.json()
+assert.equal(numeros.status,'diagnostico_somente_leitura')
+assert.equal(numeros.indeterminadas,1)
+assert.equal(numeros.aceitas_sem_status,1)
+assert.equal(numeros.webhooks_sem_vinculo_outbox,2)
+assert.equal(numeros.reenvio_automatico_autorizado,false)
+assert.equal(numeros.numero,undefined,'Diagnóstico não deve expor telefone')
 const prior=chamadasDeFila()
 r=await handler(request({acao:'processar_lote',limite:1}))
 assert.equal(r.status,503)
