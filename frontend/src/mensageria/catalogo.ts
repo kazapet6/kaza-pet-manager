@@ -41,6 +41,7 @@ export const tagsMensageria: Tag[] = [
   tag('VALOR_CONTRATO','Valor do contrato',['contrato'],'R$ 240,00','moeda'),
   tag('DIA_FIXO','Dia fixo',['contrato'],'Sexta-feira'),
   tag('HORARIO_FIXO','Horário fixo',['contrato'],'15:00','hora'),
+  futura('LINK_REMARCACAO','Link de remarcação',['agenda'],'https://portal-exemplo.invalid/remarcar'),
   futura('BANHOS_UTILIZADOS','Banhos utilizados',['pacotes','contrato'],'3','numero'),
   futura('BANHOS_RESTANTES','Banhos restantes',['pacotes','contrato'],'1','numero'),
   futura('SALDO_CREDITOS','Créditos disponíveis',['pacotes','contrato'],'1','numero'),
@@ -57,6 +58,8 @@ export const tagsMensageria: Tag[] = [
 ]
 
 export const eventosMensageria: EventoModelo[] = [
+  { codigo:'AGENDAMENTO_CONFIRMADO_WHATSAPP',nome:'Agradecimento após confirmação',contexto:'agenda',disponivel:false,descricao:'Mensagem de resposta na mesma conversa, somente após confirmação persistida; envio desligado' },
+  { codigo:'REMARCACAO_SOLICITADA_WHATSAPP',nome:'Solicitação de remarcação',contexto:'agenda',disponivel:false,descricao:'Hoje orienta o cliente a aguardar a equipe; futuro link de autoatendimento ainda não existe' },
   { codigo:'CONFIRMACAO_AGENDAMENTO',nome:'Confirmação de agendamento',contexto:'agenda',disponivel:false,descricao:'Botões Confirmar e Remarcar; webhook e transação ainda em desenvolvimento' },
   { codigo:'NOVO_AGENDAMENTO',nome:'Novo agendamento',contexto:'agenda',disponivel:false,descricao:'Evento existente no banco; envio não habilitado neste editor' },
   { codigo:'LEMBRETE_AGENDAMENTO',nome:'Lembrete de agendamento',contexto:'agenda',disponivel:false,descricao:'Evento reservado, sem disparo automático' },
@@ -68,6 +71,8 @@ export const eventosMensageria: EventoModelo[] = [
 ]
 
 export const modelosExemplo: Array<{id:string;nome:string;eventoCodigo:string;contexto:Contexto;texto:string}> = [
+  { id:'ex-agradecimento-confirmado',nome:'Obrigado pela confirmação',eventoCodigo:'AGENDAMENTO_CONFIRMADO_WHATSAPP',contexto:'agenda',texto:'Perfeito, {{NOME_TUTOR}}! 💚🐾\\n\\nO horário de {{NOME_PET}} está confirmado para {{DATA_AGENDAMENTO}} às {{HORARIO_AGENDAMENTO}}.\\n\\nObrigado por confirmar! Esperamos vocês. 🧡\\n\\nEquipe {{NOME_EMPRESA}}' },
+  { id:'ex-remarcacao-pendente',nome:'Pedido de remarcação recebido',eventoCodigo:'REMARCACAO_SOLICITADA_WHATSAPP',contexto:'agenda',texto:'Olá, {{NOME_TUTOR}}! 🐾\\n\\nRecebemos seu pedido para remarcar o atendimento de {{NOME_PET}}. Nossa equipe vai ajudar você a encontrar outro horário.\\n\\nAtenção: o agendamento atual ainda não foi alterado. 💚' },
   { id:'ex-confirmacao',nome:'Confirmação de agendamento',eventoCodigo:'CONFIRMACAO_AGENDAMENTO',contexto:'agenda',texto:'Olá, {{NOME_TUTOR}}! 💚\n\nO {{NOME_PET}} tem um agendamento em {{DATA_AGENDAMENTO}} às {{HORARIO_AGENDAMENTO}}.\n\nPodemos confirmar?\n\nEquipe {{NOME_EMPRESA}} 🐾' },
   { id:'ex-uso',nome:'Resumo de banhos do pacote',eventoCodigo:'RESUMO_USO_PACOTE',contexto:'pacotes',texto:'Olá, {{NOME_TUTOR}}! 🐶\n\nResumo do pacote {{NOME_PACOTE}} do {{NOME_PET}}:\nBanhos realizados: {{BANHOS_UTILIZADOS}}\nCréditos restantes: {{SALDO_CREDITOS}}\nPróxima visita: {{DATA_PROXIMO_BANHO}}\n\n{{NOME_EMPRESA}} 💚' },
   { id:'ex-assinatura',nome:'Histórico da assinatura',eventoCodigo:'RESUMO_USO_PLANO',contexto:'contrato',texto:'Olá, {{NOME_TUTOR}}!\n\nPlano: {{NOME_PLANO}}\nPet: {{NOME_PET}}\nUso no período: {{HISTORICO_USOS}}\nStatus: {{STATUS_ASSINATURA}}\n\nEquipe {{NOME_EMPRESA}} 🧡' },
