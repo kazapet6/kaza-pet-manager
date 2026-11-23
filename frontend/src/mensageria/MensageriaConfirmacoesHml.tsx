@@ -1,0 +1,87 @@
+import { useEffect, useState } from 'react'
+import { supabase } from '../lib/supabase'
+import { WHATSAPP_HML_HABILITADO } from '../whatsappHml/configuracao'
+
+type Diagnostico = {
+  ambiente: 'homologacao'
+  convites_ativos: number
+  convites_confirmados: number
+  convites_expirados: number
+  cliques_processados: number
+  remarcacoes_pendentes: number
+  respostas_aguardando: number
+  templates_meta_cadastrados: number
+  agendamentos_hml: number
+  processamento_habilitado: boolean
+  envio_automatico_habilitado: boolean
+}
+const cards: {campo:keyof Diagnostico;titulo:string;descricao:string}[] = [
+  {campo:'agendamentos_hml',titulo:'Agendamentos na HML',descricao:'Atendimentos de homologação'},
+  {campo:'convites_ativos',titulo:'Convites aguardando',descricao:'Botões ainda válidos e sem resposta'},
+  {campo:'convites_confirmados',titulo:'Confirmados',descricao:'Confirmações persistidas na agenda'},
+  {campo:'remarcacoes_pendentes',titulo:'Pedidos de remarcação',descricao:'Horários ainda não alterados'},
+  {campo:'cliques_processados',titulo:'Cliques processados',descricao:'Registros auditáveis, sem duplicação'},
+  {campo:'respostas_aguardando',titulo:'Respostas na fila',descricao:'Agradecimentos/orientações ainda não enviados'},
+  {campo:'templates_meta_cadastrados',titulo:'Templates cadastrados',descricao:'Ainda dependem de aprovação/ligação com a Meta'},
+  {campo:'convites_expirados',titulo:'Convites expirados',descricao:'Não podem alterar agendamentos'},
+]
+
+export default function MensageriaConfirmacoesHml() {
+  const [dados,setDados]=useState<Diagnostico|null>(null)
+  const [carregando,setCarregando]=useState(false)
+  const [erro,setErro]=useState('')
+
+  async function atualizar(){
+    if(!WHATSAPP_HML_HABILITADO)return
+    setCarregando(true);setErro('')
+    try{
+      const {data,error}=await supabase.functions.invoke<Diagnostico>(
+        'mensageria-confirmacao-hml',{body:{acao:'diagnostico'}})
+      if(error||!data||data.ambiente!=='homologacao'||
+         typeof data.convites_ativos!=='number'||typeof data.envio_automatico_habilitado!=='boolean')
+        throw Error('DIAGNOSTICO_INDISPONIVEL')
+      setDados(data)
+    }catch {
+      setDados(null)
+      setErro('Não foi possível consultar as confirmações da homologação. Nenhum envio foi realizado.')
+    }finally {setCarregando(false)}
+  }
+  useEffect(()=>{
+    if(WHATSAPP_HML_HABILITADO)void atualizar()
+  },[])
+
+  if(!WHATSAPP_HML_HABILITADO)return <section className="msg-coming">
+    <h2>Confirmações pelo WhatsApp</h2>
+    <p>O painel de teste estará disponível apenas na homologação autorizada.</p>
+  </section>
+  return <section className="msg-coming" style={{textAlign:'left'}}>
+    <div className="msg-panel-heading">
+      <div>
+        <h2>Confirmações pelo WhatsApp</h2>
+        <p>Diagnóstico seguro do fluxo de botões e agendamentos no Supabase HML.</p>
+      </div>
+      <button className="msg-quiet" type="button" onClick={()=>void atualizar()}
+        disabled={carregando}>{carregando?'Consultando…':'↻ Atualizar'}</button>
+    </div>
+    {erro&&<p role="alert" className="msg-issues">{erro}</p>}
+    {!dados&&!erro&&<p role="status" className="msg-hint">Consultando dados da homologação…</p>}
+    {dados&&<>
+      <div className="msg-info">
+        <strong>Estado de segurança</strong>
+        <p>Processamento de cliques: <strong>{dados.processamento_habilitado?'Habilitado para teste controlado':'Bloqueado'}</strong></p>
+        <p>Envio automático de agradecimentos: <strong>{dados.envio_automatico_habilitado?'Habilitado':'Bloqueado'}</strong></p>
+        <p>Não há botões para enviar mensagens neste painel. Os dados são agregados, sem telefones ou nomes de clientes.</p>
+      </div>
+      <div className="msg-event-grid">
+        {cards.map(c=><div key={c.campo}>
+          <strong>{c.titulo}</strong>
+          <span style={{fontSize:26,color:'#24573a'}}>{String(dados[c.campo])}</span>
+          <small>{c.descricao}</small>
+        </div>)}
+      </div>
+    </>}
+    <p className="msg-hint">O funcionamento real dos botões requer template Meta aprovado, convite vinculado a um agendamento,
+      callback com assinatura válida e processamento liberado em uma janela de homologação.
+      O portal de remarcação permanece para etapa futura.</p>
+  </section>
+}
