@@ -354,7 +354,8 @@ begin
        'value',jsonb_build_object(
          'metadata',jsonb_build_object('phone_number_id','309132033809134'),
          'statuses',jsonb_build_array(jsonb_build_object(
-           'id','wamid.hml.agradecimento-12345','status','failed'))
+           'id','wamid.hml.agradecimento-12345','status','failed',
+           'timestamp',floor(extract(epoch from now()))::bigint::text))
        )
      ))
    )));
