@@ -26,11 +26,13 @@
     "test:importacao": "node --experimental-strip-types src/importacao/testes.ts && node --experimental-strip-types src/importacao/testesStaging.ts && node --experimental-strip-types src/importacao/testesGrupos.ts && node --experimental-strip-types src/importacao/testesSugestoesRacas.ts",
     "preview": "vite preview",
     "test:whatsapp-hml": "node --experimental-strip-types src/whatsappHml/testes.ts",
-    "test:mensageria": "node --experimental-strip-types src/mensageria/testes.ts && npm run test:confirmacao-whatsapp-hml && npm run test:retornos-whatsapp-hml && npm run test:api-confirmacao-hml && npm run test:template-confirmacao-hml",
+    "test:mensageria": "node --experimental-strip-types src/mensageria/testes.ts && npm run test:confirmacao-whatsapp-hml && npm run test:retornos-whatsapp-hml && npm run test:api-confirmacao-hml && npm run test:template-confirmacao-hml && npm run test:template-aprovacao-meta && npm run test:orquestrador-convite-hml",
     "test:confirmacao-whatsapp-hml": "node --experimental-strip-types src/mensageria/testesConfirmacaoWhatsapp.ts",
     "test:retornos-whatsapp-hml": "node --experimental-strip-types src/mensageria/testesRespostaAoCliqueWhatsapp.ts",
     "test:api-confirmacao-hml": "node --experimental-strip-types ../supabase/functions/mensageria-confirmacao-hml/testes.ts",
-    "test:template-confirmacao-hml": "node --experimental-strip-types ../supabase/functions/mensageria-confirmacao-hml/testesTemplateConfirmacao.ts"
+    "test:template-confirmacao-hml": "node --experimental-strip-types ../supabase/functions/mensageria-confirmacao-hml/testesTemplateConfirmacao.ts",
+    "test:template-aprovacao-meta": "node --experimental-strip-types ../supabase/functions/mensageria-confirmacao-hml/testesSolicitacaoTemplateMeta.ts",
+    "test:orquestrador-convite-hml": "node --experimental-strip-types ../supabase/functions/mensageria-confirmacao-hml/testesOrquestradorConviteHml.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",
