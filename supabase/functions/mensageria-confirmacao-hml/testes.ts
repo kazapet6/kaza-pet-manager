@@ -23,7 +23,9 @@ const fakeFetch=async (url:string|URL|Request,options?:RequestInit):Promise<Resp
   if(uri.endsWith('/rest/v1/rpc/mensageria_hml_diagnostico_confirmacoes'))
     return Response.json({status:'ok',convites_ativos:0,convites_confirmados:0,
       convites_expirados:0,cliques_processados:0,remarcacoes_pendentes:0,
-      respostas_aguardando:0,templates_meta_cadastrados:0,agendamentos_hml:0})
+      respostas_aguardando:0,respostas_prontas:0,respostas_reservadas:0,
+      respostas_aceitas_meta:0,respostas_recusadas_meta:0,respostas_indeterminadas:0,
+      templates_meta_cadastrados:0,agendamentos_hml:0})
   if(uri.endsWith('/rest/v1/rpc/mensageria_hml_listar_cliques_pendentes'))
     return Response.json({status:'ok',itens:['22222222-2222-4222-8222-222222222222']})
   if(uri.endsWith('/rest/v1/rpc/mensageria_hml_processar_confirmacao'))
@@ -41,6 +43,11 @@ let r=await handler(req({acao:'diagnostico'}))
 assert.equal(r.status,200)
 let data=await r.json()
 assert.equal(data.convites_ativos,0)
+assert.equal(data.respostas_prontas,0)
+assert.equal(data.respostas_reservadas,0)
+assert.equal(data.respostas_aceitas_meta,0)
+assert.equal(data.respostas_recusadas_meta,0)
+assert.equal(data.respostas_indeterminadas,0)
 assert.equal(data.envio_automatico_habilitado,false)
 assert.equal(data.processamento_habilitado,false)
 r=await handler(req({acao:'processar_item',itemId:'22222222-2222-4222-8222-222222222222'}))
