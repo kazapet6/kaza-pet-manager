@@ -35,6 +35,26 @@ type Reconciliacao = {
   webhooks_sem_vinculo_outbox:number
   reenvio_automatico_autorizado:false
 }
+type CasoInvestigacao = {
+  tentativa_id:string
+  categoria:'reserva_antiga'|'resultado_indeterminado'|'status_contraditorio'|
+    'status_falhou'|'aceite_sem_status'|'entrega_sem_confirmacao'
+  reservado_em:string
+}
+type Triagem = {
+  status:'triagem_somente_leitura'
+  casos:CasoInvestigacao[]
+  quantidade:number
+  reenvio_automatico_autorizado:false
+}
+const CATEGORIAS_TRIAGEM:Record<CasoInvestigacao['categoria'],string>={
+  reserva_antiga:'Reserva antiga',
+  resultado_indeterminado:'Resultado indeterminado',
+  status_contraditorio:'Informações contraditórias',
+  status_falhou:'Falha informada pela Meta',
+  aceite_sem_status:'Aceite sem status de entrega',
+  entrega_sem_confirmacao:'Entrega sem confirmação'
+}
 const CAMPOS_RECONCILIACAO = [
  'reservas_antigas','indeterminadas','recusadas','aceitas',
  'aceitas_sem_status','status_enviado','status_entregue','status_lido',
@@ -65,6 +85,9 @@ export default function MensageriaConfirmacoesHml() {
   const [reconciliacao,setReconciliacao]=useState<Reconciliacao|null>(null)
   const [reconciliando,setReconciliando]=useState(false)
   const [erroReconciliacao,setErroReconciliacao]=useState('')
+  const [triagem,setTriagem]=useState<Triagem|null>(null)
+  const [triando,setTriando]=useState(false)
+  const [erroTriagem,setErroTriagem]=useState('')
 
   async function simularFila(){
     if(!WHATSAPP_HML_HABILITADO||simulandoFila)return
@@ -105,6 +128,28 @@ export default function MensageriaConfirmacoesHml() {
       setErroReconciliacao(
        'Diagnóstico de reconciliação indisponível. Nenhum envio foi realizado.')
     }finally{setReconciliando(false)}
+  }
+  async function consultarCasos(){
+    if(!WHATSAPP_HML_HABILITADO||triando)return
+    setTriando(true);setErroTriagem('');setTriagem(null)
+    try{
+      const {data,error}=await supabase.functions.invoke<Triagem>(
+        'mensageria-outbox-hml',
+        {body:{acao:'listar_casos_investigacao',limite:10}})
+      if(error||!data||data.status!=='triagem_somente_leitura'||
+        data.reenvio_automatico_autorizado!==false||
+        !Array.isArray(data.casos)||data.casos.length>10||
+        data.quantidade!==data.casos.length||
+        !data.casos.every(c=>typeof c.tentativa_id==='string'&&
+           /^[0-9a-f-]{36}$/i.test(c.tentativa_id)&&
+           Object.prototype.hasOwnProperty.call(CATEGORIAS_TRIAGEM,c.categoria)&&
+           typeof c.reservado_em==='string'&&
+           Number.isFinite(Date.parse(c.reservado_em))))
+        throw Error('TRIAGEM_INVALIDA')
+      setTriagem(data)
+    }catch{
+      setErroTriagem('Não foi possível consultar os casos de investigação. Nenhuma mensagem foi enviada.')
+    }finally{setTriando(false)}
   }
   async function atualizar(){
     if(!WHATSAPP_HML_HABILITADO)return
@@ -176,6 +221,29 @@ export default function MensageriaConfirmacoesHml() {
           <p>Reenvio automático: <strong>bloqueado</strong>. Um aceite pela Meta
             não significa que o cliente recebeu a mensagem.</p>
         </>}
+      </div>
+      <div className="msg-info">
+        <strong>Casos que precisam de investigação · somente leitura</strong>
+        <p>Identifica tentativas incertas para análise administrativa, sem recuperar automaticamente
+          identificadores perdidos ou oferecer opção de reenvio.</p>
+        <button type="button" className="msg-quiet" disabled={triando}
+          onClick={()=>void consultarCasos()}>
+          {triando?'Consultando…':'Consultar casos pendentes (sem enviar)'}
+        </button>
+        {erroTriagem&&<p role="alert" className="msg-issues">{erroTriagem}</p>}
+        {triagem&&(
+          triagem.quantidade===0
+          ? <p role="status">Nenhuma tentativa exige investigação neste momento.</p>
+          : <div className="msg-event-grid">
+              {triagem.casos.map(c=><div key={c.tentativa_id}>
+                <strong>{CATEGORIAS_TRIAGEM[c.categoria]}</strong>
+                <span style={{fontSize:14}}>{c.tentativa_id.slice(0,8)}…</span>
+                <small>{new Date(c.reservado_em).toLocaleString('pt-BR')}</small>
+              </div>)}
+            </div>
+        )}
+        {triagem&&<p>Reenvio automático: <strong>bloqueado</strong>.
+          Esta lista não altera o estado das mensagens.</p>}
       </div>
       <div className="msg-info">
         <strong>Estado de segurança</strong>
