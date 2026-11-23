@@ -135,7 +135,8 @@ declare
 begin
   if p_preparo is null or p_operador is null
     or p_meta_message_id is null
-    or p_meta_message_id !~ '^wamid\.[A-Za-z0-9._\-]{4,290}$' then
+    or length(p_meta_message_id) not between 10 and 300
+    or p_meta_message_id !~ '^wamid\.[A-Za-z0-9._-]+$' then
     return jsonb_build_object('status','rejeitado','codigo','PARAMETROS_INVALIDOS');
   end if;
   if not exists(select 1 from auth.users u where u.id=p_operador
