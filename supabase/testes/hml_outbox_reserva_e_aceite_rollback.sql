@@ -132,7 +132,7 @@ begin
  returning id into v_modelo;
  insert into public.mensageria_modelo_versoes(modelo_id,numero,estado,texto,criado_por)
  values(v_modelo,1,'rascunho_personalizado',
-   'Obrigado {{NOME_TUTOR}}! Confirmamos {{NOME_PET}} para {{DATA_AGENDAMENTO}} às {{HORARIO_AGENDAMENTO}}.',
+   'Obrigado {{NOME_TUTOR}}! Confirmamos {{NOME_PET}} para {{DATA_AGENDAMENTO}} às {{HORARIO_AGENDAMENTO}}. {{NOME_EMPRESA}}',
    v_admin) returning id into v_versao;
 
  v_retorno:=public.mensageria_hml_outbox_preparar(v_outbox,v_versao,v_admin);
