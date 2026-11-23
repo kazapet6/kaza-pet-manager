@@ -5,6 +5,7 @@ import { eventosMensageria, modelosExemplo, tagsMensageria, type Contexto } from
 import { criarModelo, extrairTags, lerRascunhosLocal, previaModelo, validarModelo, type ModeloRascunho } from './motor'
 import './MensageriaCentral.css'
 import MensageriaConfirmacoesHml from './MensageriaConfirmacoesHml'
+import TemplateMetaHml from './TemplateMetaHml'
 
 const CHAVE = 'kaza-mensageria-hml-rascunhos-v1'
 type Aba = 'modelos' | 'confirmacoes' | 'automacoes' | 'historico' | 'integracoes'
@@ -340,6 +341,8 @@ export default function MensageriaCentral() {
         </div>
       ) : aba==='confirmacoes' ? (
         <MensageriaConfirmacoesHml />
+      ) : aba==='integracoes' ? (
+        <TemplateMetaHml />
       ) : (
         <section className="msg-coming">
           <div className="msg-coming-icon">{aba==='automacoes'?'⚡':aba==='historico'?'🕘':'🔌'}</div>
