@@ -48,8 +48,10 @@ export function planejarRespostaAoClique(
 ): RespostaPlanejada | null {
   // Esta função somente planeja eventos; não é a autoridade sobre o estado.
   // O banco deve garantir COMMIT e deduplicação durável da outbox.
-  if (resultado.tipo === 'repetido' || resultado.tipo === 'conflito' ||
-      resultado.tipo === 'convite_expirado' || resultado.tipo === 'falha') return null
+  // Guard de propriedade: separa os resultados efetivos dos retornos sem
+  // gravadoNoBanco/atendimentoId/conviteId. O tipo residual agrupa quatro
+  // literais em um único membro da união e não é estreitado por exclusões.
+  if (!('gravadoNoBanco' in resultado)) return null
   if (!resultado.gravadoNoBanco || !resultado.atendimentoId || !resultado.conviteId) return null
   if (resultado.tipo === 'confirmado') {
     return {
