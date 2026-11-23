@@ -8,6 +8,7 @@ import MensageriaConfirmacoesHml from './MensageriaConfirmacoesHml'
 import TemplateMetaHml from './TemplateMetaHml'
 
 const CHAVE = 'kaza-mensageria-hml-rascunhos-v1'
+const PUBLICACAO_UI_HML = import.meta.env.VITE_MENSAGERIA_HML_PUBLICAR_UI_ENABLED==='true'
 type Aba = 'modelos' | 'confirmacoes' | 'automacoes' | 'historico' | 'integracoes'
 type RascunhoHml = ModeloRascunho & { versao: number }
 type RespostaApiHml = {
@@ -16,6 +17,8 @@ type RespostaApiHml = {
   rascunho?: RascunhoHml
   rascunhos?: RascunhoHml[]
   excluido?: boolean
+  modeloVersaoId?: string
+  numeroVersao?: number
 }
 
 function carregarLocal(): ModeloRascunho[] {
@@ -43,6 +46,7 @@ export default function MensageriaCentral() {
   const [rascunhosHml,setRascunhosHml] = useState<RascunhoHml[]>([])
   const [carregandoHml,setCarregandoHml] = useState(false)
   const [salvandoHml,setSalvandoHml] = useState(false)
+  const [publicandoHml,setPublicandoHml] = useState(false)
   const [erroHml,setErroHml] = useState('')
   const [selecionado,setSelecionado] = useState(inicial.id)
   const [filtro,setFiltro] = useState('')
@@ -113,6 +117,30 @@ export default function MensageriaCentral() {
         : 'Versão '+novo.versao+' salva na HML. Nenhum disparo foi habilitado.')
     }catch{setMensagem('Falha ao salvar na HML. Não repita sem verificar a lista.')}
     finally{setSalvandoHml(false)}
+  }
+
+  async function publicarModeloHml() {
+    const atual=modeloEscolhido
+    if(!WHATSAPP_HML_HABILITADO || !PUBLICACAO_UI_HML ||
+       publicandoHml || salvandoHml || modificado || problemas.length>0 ||
+       atual?.origem!=='hml' ||
+       atual.eventoCodigo!=='AGENDAMENTO_CONFIRMADO_WHATSAPP')return
+    if(!window.confirm('Publicar esta versão de agradecimento APENAS na homologação? Isso não envia WhatsApp.'))return
+    setPublicandoHml(true);setMensagem('')
+    try {
+      const {data,error}=await supabase.functions.invoke<RespostaApiHml>(
+        'mensageria-editor-hml',{body:{
+          acao:'publicar',id:atual.id,versaoEsperada:atual.versao,
+          chaveIdempotencia:crypto.randomUUID()
+        }})
+      if(error || (data?.status!=='publicado' && data?.status!=='ja_publicado')){
+        setMensagem('Publicação não confirmada. Atualize a biblioteca antes de tentar novamente. Nenhum WhatsApp enviado.')
+        return
+      }
+      setMensagem('Versão '+(data.numeroVersao??'')+' publicada no catálogo HML. Envios automáticos continuam desligados.')
+    }catch {
+      setMensagem('Resultado de publicação indeterminado. Não repita sem verificar o histórico.')
+    }finally {setPublicandoHml(false)}
   }
 
   async function excluirHml() {
@@ -306,12 +334,22 @@ export default function MensageriaCentral() {
               <button type="button" className="msg-quiet" onClick={salvar}>Salvar neste navegador</button>
               <button type="button" className="msg-quiet" onClick={duplicar}>Duplicar localmente</button>
               {modeloEscolhido?.origem==='local' && <button type="button" className="msg-danger" onClick={descartar}>Excluir local</button>}
+              {modeloEscolhido?.origem==='hml' &&
+                modeloEscolhido.eventoCodigo==='AGENDAMENTO_CONFIRMADO_WHATSAPP' &&
+                <button type="button" className="msg-quiet"
+                  disabled={!PUBLICACAO_UI_HML || publicandoHml || salvandoHml ||
+                    carregandoHml || modificado || problemas.length>0}
+                  title={PUBLICACAO_UI_HML?'Publica somente na HML, sem envios':
+                    'Publicação bloqueada até autorização e testes finais'}
+                  onClick={()=>void publicarModeloHml()}>
+                  {publicandoHml?'Publicando…':'Publicar versão na HML'}
+                </button>}
               {modeloEscolhido?.origem==='hml' && <button type="button" className="msg-danger"
                 disabled={salvandoHml} onClick={()=>void excluirHml()}>Arquivar na HML</button>}
               {modificado && <span className="msg-dirty">● Alterações não salvas</span>}
             </div>
             {mensagem && <p role="status" className="msg-save-status">{mensagem}</p>}
-            <p className="msg-hint">O botão de salvar na HML mantém versões no banco isolado. Rascunhos locais permanecem no navegador até você copiá-los explicitamente. Nenhum deles é publicado ou aprovado pela Meta.</p>
+            <p className="msg-hint">Salvar na HML cria um rascunho versionado. A publicação exige ação administrativa separada e permanece desativada até homologação; publicar não envia WhatsApp nem aprova templates na Meta.</p>
           </section>
           <aside className="msg-preview">
             <div className="msg-panel-heading">
