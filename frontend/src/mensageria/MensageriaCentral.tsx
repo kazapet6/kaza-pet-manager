@@ -4,9 +4,10 @@ import { WHATSAPP_HML_HABILITADO } from '../whatsappHml/configuracao'
 import { eventosMensageria, modelosExemplo, tagsMensageria, type Contexto } from './catalogo'
 import { criarModelo, extrairTags, lerRascunhosLocal, previaModelo, validarModelo, type ModeloRascunho } from './motor'
 import './MensageriaCentral.css'
+import MensageriaConfirmacoesHml from './MensageriaConfirmacoesHml'
 
 const CHAVE = 'kaza-mensageria-hml-rascunhos-v1'
-type Aba = 'modelos' | 'automacoes' | 'historico' | 'integracoes'
+type Aba = 'modelos' | 'confirmacoes' | 'automacoes' | 'historico' | 'integracoes'
 type RascunhoHml = ModeloRascunho & { versao: number }
 type RespostaApiHml = {
   status?: string
@@ -224,7 +225,7 @@ export default function MensageriaCentral() {
       </div>
       <nav className="msg-tabs" aria-label="Seções da mensageria">
         {([
-          ['modelos','✏️ Modelos e tags'],['automacoes','⚡ Automações'],
+          ['modelos','✏️ Modelos e tags'],['confirmacoes','✅ Confirmações'],['automacoes','⚡ Automações'],
           ['historico','🕘 Histórico'],['integracoes','🔌 Integrações'],
         ] as const).map(([id,titulo])=><button type="button" key={id}
           aria-current={aba===id?'page':undefined} className={aba===id?'ativo':''}
@@ -337,6 +338,8 @@ export default function MensageriaCentral() {
             </div>
           </aside>
         </div>
+      ) : aba==='confirmacoes' ? (
+        <MensageriaConfirmacoesHml />
       ) : (
         <section className="msg-coming">
           <div className="msg-coming-icon">{aba==='automacoes'?'⚡':aba==='historico'?'🕘':'🔌'}</div>
