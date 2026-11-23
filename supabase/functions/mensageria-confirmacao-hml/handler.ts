@@ -53,7 +53,11 @@ export function criarHandler(env:Env,fetchImpl:Fetch=fetch) {
   return async function(req:Request):Promise<Response> {
     const origem=req.headers.get('origin')
     if(origem && !ORIGENS.has(origem))return resposta(403,{codigo:'ORIGEM_NEGADA'},origem)
-    if(req.method==='OPTIONS')return resposta(204,{},origem)
+    if(req.method==='OPTIONS')return new Response(null,{status:204,headers:{
+      'access-control-allow-origin':origem && ORIGENS.has(origem)?origem:'null',
+      'access-control-allow-headers':'authorization,apikey,content-type,x-client-info',
+      'access-control-allow-methods':'POST,OPTIONS','vary':'Origin'
+    }})
     if(req.method!=='POST' || !new URL(req.url).pathname.endsWith('/mensageria-confirmacao-hml'))
       return resposta(405,{codigo:'METODO_NEGADO'},origem)
     if(Number(req.headers.get('content-length')??0)>4096)
