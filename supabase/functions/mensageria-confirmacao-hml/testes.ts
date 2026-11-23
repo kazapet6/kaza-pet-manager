@@ -24,6 +24,8 @@ const fakeFetch=async (url:string|URL|Request,options?:RequestInit):Promise<Resp
     return Response.json({status:'ok',convites_ativos:0,convites_confirmados:0,
       convites_expirados:0,cliques_processados:0,remarcacoes_pendentes:0,
       respostas_aguardando:0,templates_meta_cadastrados:0,agendamentos_hml:0})
+  if(uri.endsWith('/rest/v1/rpc/mensageria_hml_listar_cliques_pendentes'))
+    return Response.json({status:'ok',itens:['22222222-2222-4222-8222-222222222222']})
   if(uri.endsWith('/rest/v1/rpc/mensageria_hml_processar_confirmacao'))
     return Response.json({status:'confirmado'})
   assert.fail('Endpoint inesperado: '+uri)
@@ -76,4 +78,21 @@ assert.equal((await r.json()).status,'confirmado')
 assert.equal(rotas.filter(x=>x.includes('/rpc/mensageria_hml_processar_confirmacao')).length,processadosAntes+1,
  'Processar somente quando a flag explícita estiver habilitada')
 assert.ok(rotas.every(x=>x.startsWith(base)), 'Todas as chamadas devem ficar na HML')
+r=await handler(req({acao:'processar_lote',limite:1}))
+assert.equal(r.status,503)
+assert.equal((await r.json()).codigo,'PROCESSAMENTO_DESATIVADO')
+assert.equal(rotas.filter(x=>x.includes('/rpc/mensageria_hml_listar_cliques_pendentes')).length,0,
+  'Flag desligada nunca pode consultar fila')
+r=await handlerAberto(req({acao:'processar_lote',limite:20}))
+assert.equal(r.status,400)
+r=await handlerAberto(req({acao:'processar_lote',limite:1}))
+assert.equal(r.status,200)
+const lote=await r.json()
+assert.equal(lote.codigo,'LOTE_CONCLUIDO')
+assert.equal(lote.encontrados,1)
+assert.equal(lote.contagem.confirmado,1)
+assert.equal(lote.envio_automatico_habilitado,false)
+assert.equal(rotas.filter(x=>x.includes('/rpc/mensageria_hml_listar_cliques_pendentes')).length,1)
+assert.ok(rotas.every(x=>x.startsWith(base)),
+  'Nem Meta nem produção podem ser chamados por este módulo')
 console.log('MENSAGERIA CONFIRMACAO HML - API DIAGNOSTICO E FLAG OFF - PASS')
