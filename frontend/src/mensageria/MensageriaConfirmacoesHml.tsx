@@ -20,6 +20,26 @@ type Diagnostico = {
   processamento_habilitado: boolean
   envio_automatico_habilitado: boolean
 }
+type Reconciliacao = {
+  status:'diagnostico_somente_leitura'
+  reservas_antigas:number
+  indeterminadas:number
+  recusadas:number
+  aceitas:number
+  aceitas_sem_status:number
+  status_enviado:number
+  status_entregue:number
+  status_lido:number
+  status_falha:number
+  status_contraditorio:number
+  webhooks_sem_vinculo_outbox:number
+  reenvio_automatico_autorizado:false
+}
+const CAMPOS_RECONCILIACAO = [
+ 'reservas_antigas','indeterminadas','recusadas','aceitas',
+ 'aceitas_sem_status','status_enviado','status_entregue','status_lido',
+ 'status_falha','status_contraditorio','webhooks_sem_vinculo_outbox'
+] as const
 const cards: {campo:keyof Diagnostico;titulo:string;descricao:string}[] = [
   {campo:'agendamentos_hml',titulo:'Agendamentos na HML',descricao:'Atendimentos de homologação'},
   {campo:'convites_ativos',titulo:'Convites aguardando',descricao:'Botões ainda válidos e sem resposta'},
@@ -42,6 +62,9 @@ export default function MensageriaConfirmacoesHml() {
   const [erro,setErro]=useState('')
   const [simulandoFila,setSimulandoFila]=useState(false)
   const [resultadoFila,setResultadoFila]=useState<string|null>(null)
+  const [reconciliacao,setReconciliacao]=useState<Reconciliacao|null>(null)
+  const [reconciliando,setReconciliando]=useState(false)
+  const [erroReconciliacao,setErroReconciliacao]=useState('')
 
   async function simularFila(){
     if(!WHATSAPP_HML_HABILITADO||simulandoFila)return
@@ -62,6 +85,26 @@ export default function MensageriaConfirmacoesHml() {
     } catch {
       setResultadoFila('Simulação indisponível. Não houve envio nem alteração da fila.')
     } finally {setSimulandoFila(false)}
+  }
+  async function consultarReconciliacao(){
+    if(!WHATSAPP_HML_HABILITADO||reconciliando)return
+    setReconciliando(true)
+    setErroReconciliacao('')
+    setReconciliacao(null)
+    try{
+      const {data,error}=await supabase.functions.invoke<Reconciliacao>(
+        'mensageria-outbox-hml',
+        {body:{acao:'diagnosticar_reconciliacao'}})
+      if(error||!data||data.status!=='diagnostico_somente_leitura'||
+        data.reenvio_automatico_autorizado!==false||
+        CAMPOS_RECONCILIACAO.some(k=>
+          typeof data[k]!=='number'||!Number.isSafeInteger(data[k])||data[k]<0))
+        throw Error('DIAGNOSTICO_NAO_CONFIRMADO')
+      setReconciliacao(data)
+    }catch{
+      setErroReconciliacao(
+       'Diagnóstico de reconciliação indisponível. Nenhum envio foi realizado.')
+    }finally{setReconciliando(false)}
   }
   async function atualizar(){
     if(!WHATSAPP_HML_HABILITADO)return
@@ -109,6 +152,30 @@ export default function MensageriaConfirmacoesHml() {
           {simulandoFila?'Simulando…':'Simular fila (sem enviar)'}
         </button>
         {resultadoFila&&<p role="status">{resultadoFila}</p>}
+      </div>
+      <div className="msg-info">
+        <strong>Reconciliação de agradecimentos · somente leitura</strong>
+        <p>Compara aceites conhecidos com status de webhooks verificados. Um status sem vínculo pelo
+          identificador Meta não é associado automaticamente a um agradecimento.</p>
+        <button type="button" className="msg-quiet"
+          onClick={()=>void consultarReconciliacao()} disabled={reconciliando}>
+          {reconciliando?'Consultando…':'Conferir status de entrega (sem enviar)'}
+        </button>
+        {erroReconciliacao&&<p role="alert" className="msg-issues">{erroReconciliacao}</p>}
+        {reconciliacao&&<>
+          <div className="msg-event-grid">
+            <div><strong>Aceitas sem status</strong><span>{reconciliacao.aceitas_sem_status}</span></div>
+            <div><strong>Entregues</strong><span>{reconciliacao.status_entregue}</span></div>
+            <div><strong>Lidas</strong><span>{reconciliacao.status_lido}</span></div>
+            <div><strong>Falhas</strong><span>{reconciliacao.status_falha}</span></div>
+            <div><strong>Indeterminadas</strong><span>{reconciliacao.indeterminadas}</span></div>
+            <div><strong>Reservas antigas</strong><span>{reconciliacao.reservas_antigas}</span></div>
+            <div><strong>Status sem vínculo</strong><span>{reconciliacao.webhooks_sem_vinculo_outbox}</span></div>
+            <div><strong>Status contraditórios</strong><span>{reconciliacao.status_contraditorio}</span></div>
+          </div>
+          <p>Reenvio automático: <strong>bloqueado</strong>. Um aceite pela Meta
+            não significa que o cliente recebeu a mensagem.</p>
+        </>}
       </div>
       <div className="msg-info">
         <strong>Estado de segurança</strong>
