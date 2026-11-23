@@ -40,7 +40,29 @@ export default function MensageriaConfirmacoesHml() {
   const [dados,setDados]=useState<Diagnostico|null>(null)
   const [carregando,setCarregando]=useState(false)
   const [erro,setErro]=useState('')
+  const [simulandoFila,setSimulandoFila]=useState(false)
+  const [resultadoFila,setResultadoFila]=useState<string|null>(null)
 
+  async function simularFila(){
+    if(!WHATSAPP_HML_HABILITADO||simulandoFila)return
+    setSimulandoFila(true);setResultadoFila(null)
+    try {
+      const {data,error}=await supabase.functions.invoke<{
+        status:string;elegiveis:number;enviados:number;reservados:number;
+        envio_automatico_habilitado:boolean
+      }>('mensageria-outbox-hml',{body:{acao:'simular_lote',limite:5}})
+      if(error||data?.status!=='simulacao_somente_leitura'||
+          typeof data.elegiveis!=='number'||!Number.isSafeInteger(data.elegiveis)||
+          data.elegiveis<0||data.enviados!==0||data.reservados!==0||
+          data.envio_automatico_habilitado!==false)
+        throw Error('SIMULACAO_FALHOU')
+      setResultadoFila(data.elegiveis===0
+        ? 'Nenhum agradecimento elegível. A fila permanece intacta; nada foi enviado.'
+        : data.elegiveis+' agradecimento(s) elegível(is). Nenhum foi reservado ou enviado.')
+    } catch {
+      setResultadoFila('Simulação indisponível. Não houve envio nem alteração da fila.')
+    } finally {setSimulandoFila(false)}
+  }
   async function atualizar(){
     if(!WHATSAPP_HML_HABILITADO)return
     setCarregando(true);setErro('')
@@ -78,6 +100,16 @@ export default function MensageriaConfirmacoesHml() {
     {erro&&<p role="alert" className="msg-issues">{erro}</p>}
     {!dados&&!erro&&<p role="status" className="msg-hint">Consultando dados da homologação…</p>}
     {dados&&<>
+      <div className="msg-info">
+        <strong>Consumidor de agradecimentos · simulação sem envio</strong>
+        <p>Consulta somente leitura de até cinco agradecimentos elegíveis. Não reserva mensagens,
+          não publica modelos e não chama a Meta.</p>
+        <button type="button" className="msg-quiet" onClick={()=>void simularFila()}
+          disabled={simulandoFila}>
+          {simulandoFila?'Simulando…':'Simular fila (sem enviar)'}
+        </button>
+        {resultadoFila&&<p role="status">{resultadoFila}</p>}
+      </div>
       <div className="msg-info">
         <strong>Estado de segurança</strong>
         <p>Processamento de cliques: <strong>{dados.processamento_habilitado?'Habilitado para teste controlado':'Bloqueado'}</strong></p>
