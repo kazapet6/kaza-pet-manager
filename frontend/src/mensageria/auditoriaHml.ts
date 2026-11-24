@@ -52,3 +52,22 @@ export function rejeicaoDefinitiva(status:number,v:unknown):boolean{
   return status===409&&obj(v)&&v.reenvio_automatico_autorizado===false&&
     (v.codigo==='caso_nao_elegivel'||v.codigo==='categoria_desatualizada')
 }
+
+ // Diário compartilhado por origem. O v1 era exclusivo da aba.
+export const JOURNAL_KEY='kaza.hml.jgtctzqieyorhvqxjbpk.auditoria.diario.v2'
+export const LOCK_NAME='kaza.hml.jgtctzqieyorhvqxjbpk.auditoria.registro.v2'
+export type Diario={estado:'pendente';registro:Registro}|{estado:'resolvido';chave_idempotencia:string}
+export function lerDiario(raw:string|null):Diario|null{
+  if(raw===null)return null
+  const v:unknown=JSON.parse(raw)
+  if(obj(v)&&Object.keys(v).length===2){
+    if(v.estado==='pendente'&&registroValido(v.registro))return {estado:'pendente',registro:v.registro}
+    if(v.estado==='resolvido'&&typeof v.chave_idempotencia==='string'&&UUID.test(v.chave_idempotencia))
+      return {estado:'resolvido',chave_idempotencia:v.chave_idempotencia}
+  }
+  throw Error('DIARIO_INVALIDO')
+}
+// Um formulário antigo não pode confirmar uma revisão diferente da que foi exibida.
+export function snapshotCoincide(exibido:string|null,atual:string|null):boolean{
+  return exibido===atual
+}
