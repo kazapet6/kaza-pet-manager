@@ -75,3 +75,13 @@
 .msg-event-grid span{font-size:11px;font-weight:700;color:#8a6d34}
 @media(max-width:1120px){.msg-workspace{grid-template-columns:220px minmax(0,1fr)}.msg-preview{grid-column:2}}
 @media(max-width:700px){.msg-head{display:block}.msg-head-status{display:inline-block;margin-top:12px}.msg-workspace{grid-template-columns:1fr}.msg-preview{grid-column:auto}.msg-fields{grid-template-columns:1fr}.msg-event-grid{grid-template-columns:1fr}}
+
+.msg-audit{margin-top:18px;padding:18px;background:#fff;border:1px solid #d4e4d4;border-radius:12px;display:grid;gap:10px;color:#263b30;text-align:left;min-width:0}
+.msg-audit>strong{font-size:16px;color:#24573a}
+.msg-audit p{margin:4px 0;max-width:none;overflow-wrap:anywhere}
+.msg-audit .msg-label{margin:0}
+.msg-audit-confirm{display:flex;align-items:flex-start;gap:8px;font-size:13px;padding:8px 0}
+.msg-audit-confirm input{margin-top:3px;accent-color:#275b3c;flex-shrink:0}
+.msg-audit .msg-primary{justify-self:start}
+.msg-audit button:disabled,.msg-audit select:disabled{opacity:.55;cursor:not-allowed}
+.msg-audit .msg-save-status{overflow-wrap:anywhere}
