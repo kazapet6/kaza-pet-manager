@@ -1,6 +1,6 @@
 /**
- * Consumidor de agradecimentos HML — FASE LEITURA / SIMULAÇÃO.
- * Nenhuma chamada à Graph API, nenhum INSERT/UPDATE, nenhum scheduler.
+ * Consumidor HML — leitura, simulação e auditoria administrativa.
+ * Nenhuma chamada à Graph API ou scheduler. Única escrita: RPC de auditoria append-only.
  * A ação processar_lote está SEMPRE bloqueada nesta versão, inclusive
  * se alguma flag for habilitada acidentalmente.
  */
@@ -85,9 +85,66 @@ export function criarConsumidorSimulado(env:Env,fetcher:Fetch=fetch) {
     }catch{return responder(400,{codigo:'CORPO_INVALIDO'},origem)}
 
     if(payload.acao==='processar_lote'||payload.acao==='enviar') {
-      // Não existe transporte Meta nem escrita no banco nesta função.
+      // Não existe transporte Meta nem escrita operacional nesta função.
       // Uma flag true acidental NÃO altera a segurança desta versão.
       return responder(503,{codigo:'ENVIO_INDISPONIVEL_NA_HOMOLOGACAO'},origem)
+    }
+    if(payload.acao==='registrar_decisao_auditoria'){
+      // Escrita administrativa limitada à auditoria append-only. Sem transporte,
+      // reserva, alteração de atendimento/outbox ou autorização de reenvio.
+      const categorias=new Set([
+        'reserva_antiga','resultado_indeterminado','status_contraditorio',
+        'status_falhou','aceite_sem_status','entrega_sem_confirmacao'
+      ])
+      const decisoes=new Set([
+        'manter_em_investigacao','solicitar_verificacao_externa','registrar_revisao_sem_reenvio'
+      ])
+      const motivos=new Set([
+        'evidencia_insuficiente','status_inconsistente','identificador_ausente',
+        'aguardando_evidencia','revisao_realizada'
+      ])
+      const chaves=['acao','tentativa_id','categoria','decisao','motivo','chave_idempotencia','confirmar_registro']
+      if(Object.keys(payload).length!==chaves.length||
+        Object.keys(payload).some(k=>!chaves.includes(k))||
+        payload.confirmar_registro!==true||
+        typeof payload.tentativa_id!=='string'||!UUID.test(payload.tentativa_id)||
+        typeof payload.chave_idempotencia!=='string'||!UUID.test(payload.chave_idempotencia)||
+        typeof payload.categoria!=='string'||!categorias.has(payload.categoria)||
+        typeof payload.decisao!=='string'||!decisoes.has(payload.decisao)||
+        typeof payload.motivo!=='string'||!motivos.has(payload.motivo))
+        return responder(400,{codigo:'DECISAO_INVALIDA'},origem)
+      try{
+        const r=await api(c,'/rest/v1/rpc/mensageria_hml_registrar_decisao_auditoria',
+          c.key,'POST',fetcher,{
+            p_operador:c.adminId,p_tentativa:payload.tentativa_id,
+            p_categoria:payload.categoria,p_decisao:payload.decisao,
+            p_motivo:payload.motivo,p_chave:payload.chave_idempotencia
+          })
+        const d=r.data
+        if(!r.ok||!d||typeof d!=='object'||d.reenvio_automatico_autorizado!==false)
+          return responder(503,{codigo:'REGISTRO_NAO_VERIFICADO',reenvio_automatico_autorizado:false},origem)
+        const erros:Record<string,number>={
+          nao_autorizado:403,entrada_invalida:400,conflito_idempotencia:409,
+          categoria_desatualizada:409,caso_nao_elegivel:409
+        }
+        if(typeof d.status==='string'&&Object.hasOwn(erros,d.status))
+          return responder(erros[d.status],{codigo:d.status,reenvio_automatico_autorizado:false},origem)
+        if((d.status!=='registrado'&&d.status!=='ja_registrado')||
+          typeof d.evento_id!=='string'||!UUID.test(d.evento_id)||
+          typeof d.tentativa_id!=='string'||d.tentativa_id.toLowerCase()!==payload.tentativa_id.toLowerCase()||
+          d.categoria!==payload.categoria||d.decisao!==payload.decisao||d.motivo!==payload.motivo||
+          typeof d.registrado_em!=='string'||d.registrado_em.length>=80||!Number.isFinite(Date.parse(d.registrado_em)))
+          return responder(503,{codigo:'REGISTRO_NAO_VERIFICADO',reenvio_automatico_autorizado:false},origem)
+        return responder(200,{
+          status:d.status,evento_id:d.evento_id,tentativa_id:d.tentativa_id,
+          categoria:d.categoria,decisao:d.decisao,motivo:d.motivo,registrado_em:d.registrado_em,
+          reenvio_automatico_autorizado:false
+        },origem)
+      }catch{
+        // Resultado desconhecido: não repetir automaticamente. A mesma chave
+        // permite confirmação manual idempotente sem duplicar o evento.
+        return responder(503,{codigo:'REGISTRO_NAO_VERIFICADO',reenvio_automatico_autorizado:false},origem)
+      }
     }
     if(payload.acao==='listar_casos_investigacao'){
       // Retorna somente identificador da tentativa, categoria e data.
