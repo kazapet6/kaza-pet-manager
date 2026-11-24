@@ -77,6 +77,48 @@ status=500;resposta={details:'mock-dado-sensivel'}
 assert.deepEqual(await call(hist,503),{codigo:'HISTORICO_NAO_VERIFICADO',...noSend})
 status=200
 console.log('03 incoerencia, erro e ausencia PASS')
+// UUIDs com letras para exercitar comparacao case-insensitive.
+const a='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+const b='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+const c='cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+const d='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+const primeiro={...root,evento_id:a}
+const segundo={...rev,evento_id:b,predecessor_id:a}
+const terceiro={...rev,evento_id:c,predecessor_id:b,versao:3}
+const tres={...completo,head_evento_id:c,head_versao:3,eventos:[terceiro,segundo,primeiro],quantidade:3}
+resposta=tres
+assert.deepEqual(await call(hist,200),tres)
+// A -> B -> A, com predecessores adjacentes coerentes.
+for(const repetido of [a,a.toUpperCase()]){
+ resposta={...tres,head_evento_id:a,eventos:[
+  {...terceiro,evento_id:a},{...segundo,predecessor_id:repetido},{...primeiro,evento_id:repetido}
+ ]}
+ assert.deepEqual(await call(hist,503),{codigo:'HISTORICO_NAO_VERIFICADO',...noSend})
+}
+// Duplicidade interna que nao envolve a cabeca: C -> B -> A -> B.
+const quatro={...tres,head_evento_id:d,head_versao:4,quantidade:4}
+resposta={...quatro,eventos:[
+ {...terceiro,evento_id:d,versao:4,predecessor_id:b},
+ {...terceiro,evento_id:b,predecessor_id:a},
+ {...segundo,evento_id:a,predecessor_id:b.toUpperCase()},
+ {...primeiro,evento_id:b.toUpperCase()}
+]}
+assert.deepEqual(await call(hist,503),{codigo:'HISTORICO_NAO_VERIFICADO',...noSend})
+// Pagina parcial com retorno ao evento ja visto ou a cabeca fora da pagina.
+esperado={p_operador:admin,p_tentativa:t,p_limite:2,p_antes_versao:null}
+resposta={...tres,eventos:[terceiro,segundo],quantidade:2,proxima_antes_versao:2}
+await call({...hist,limite:2},200)
+resposta={...tres,eventos:[terceiro,{...segundo,predecessor_id:c.toUpperCase()}],
+ quantidade:2,proxima_antes_versao:2}
+assert.deepEqual(await call({...hist,limite:2},503),{codigo:'HISTORICO_NAO_VERIFICADO',...noSend})
+esperado={p_operador:admin,p_tentativa:t,p_limite:1,p_antes_versao:3}
+resposta={...tres,eventos:[segundo],quantidade:1,proxima_antes_versao:2}
+await call({...hist,limite:1,antes_versao:3},200)
+for(const ev of [{...segundo,evento_id:c.toUpperCase()},{...segundo,predecessor_id:c.toUpperCase()}]){
+ resposta={...tres,eventos:[ev],quantidade:1,proxima_antes_versao:2}
+ assert.deepEqual(await call({...hist,limite:1,antes_versao:3},503),{codigo:'HISTORICO_NAO_VERIFICADO',...noSend})
+}
+console.log('06 unicidade de eventos e ciclos observaveis PASS')
 const indice={acao:'listar_historico_auditoria_v2',limite:1,depois_tentativa:null}
 rota='mensageria_hml_listar_historico_auditoria_v2'
 esperado={p_operador:admin,p_limite:1,p_depois_tentativa:null}
