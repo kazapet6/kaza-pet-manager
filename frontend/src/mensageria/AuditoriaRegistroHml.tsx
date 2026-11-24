@@ -1,21 +1,30 @@
-import {useRef,useState} from 'react'
+import {useEffect,useRef,useState} from 'react'
 import {supabase} from '../lib/supabase'
-import {categorias,decisoes,motivos,registroValido,reciboValido,rejeicaoDefinitiva,STORAGE_KEY,UUID} from './auditoriaHml'
-import type {Caso,Registro,Recibo} from './auditoriaHml'
+import {categorias,decisoes,motivos,registroValido,reciboValido,rejeicaoDefinitiva,
+  STORAGE_KEY,JOURNAL_KEY,LOCK_NAME,lerDiario,snapshotCoincide,UUID} from './auditoriaHml'
+import type {Caso,Registro,Recibo,Diario} from './auditoriaHml'
 
+function lerLocal(){
+  // Uma pendência legada não pode ser ignorada ou ganhar outra chave.
+  if(sessionStorage.getItem(STORAGE_KEY)!==null)throw Error('PENDENCIA_LEGADA')
+  const raw=localStorage.getItem(JOURNAL_KEY)
+  return {raw,diario:lerDiario(raw)}
+}
 function carregar(){
   try{
-    const raw=sessionStorage.getItem(STORAGE_KEY)
-    if(raw===null)return {pendente:null,bloqueado:false}
-    const p:unknown=JSON.parse(raw)
-    return registroValido(p)?{pendente:p,bloqueado:false}:{pendente:null,bloqueado:true}
-  }catch{return {pendente:null,bloqueado:true}}
+    if(!globalThis.isSecureContext||!navigator.locks||!globalThis.crypto?.randomUUID)
+      throw Error('CONTEXTO_INSEGURO')
+    return {...lerLocal(),bloqueado:false}
+  }catch{return {raw:null,diario:null,bloqueado:true}}
 }
 
 export default function AuditoriaRegistroHml({casos}:{casos:Caso[]}){
   const [inicial]=useState(carregar)
-  const [pendente,setPendente]=useState<Registro|null>(inicial.pendente)
+  const [diario,setDiario]=useState<Diario|null>(inicial.diario)
+  const rawRef=useRef<string|null>(inicial.raw)
   const [bloqueado,setBloqueado]=useState(inicial.bloqueado)
+  const bloqueadoRef=useRef(inicial.bloqueado)
+  const pendente=diario?.estado==='pendente'?diario.registro:null
   const [selecionado,setSelecionado]=useState('')
   const [decisao,setDecisao]=useState('')
   const [motivo,setMotivo]=useState('')
@@ -25,62 +34,123 @@ export default function AuditoriaRegistroHml({casos}:{casos:Caso[]}){
   const [recibo,setRecibo]=useState<Recibo|null>(null)
   const emCurso=useRef(false)
   const caso=casos.find(c=>c.tentativa_id+':'+c.categoria===selecionado)
-  function limpar(){
-    try{sessionStorage.removeItem(STORAGE_KEY);setPendente(null)}
-    catch{setBloqueado(true);setAviso('Não foi possível limpar o registro local. Novas decisões estão bloqueadas.')}
-    setConfirmado(false);setSelecionado('');setDecisao('');setMotivo('')
+
+  function bloquear(mensagem:string){
+    bloqueadoRef.current=true;setBloqueado(true);setConfirmado(false);setAviso(mensagem)
   }
+  function mostrar(raw:string|null,novo:Diario|null){
+    rawRef.current=raw;setDiario(novo);setConfirmado(false)
+    setSelecionado('');setDecisao('');setMotivo('')
+  }
+  function sincronizar(){
+    if(bloqueadoRef.current)return
+    try{
+      const atual=lerLocal()
+      if(snapshotCoincide(rawRef.current,atual.raw))return
+      const anterior=lerDiario(rawRef.current)
+      // Exclusão inesperada ou substituição de uma pendência observada exige
+      // reconciliação técnica; jamais interpretar como autorização de nova chave.
+      if(anterior&&atual.raw===null||
+        anterior?.estado==='pendente'&&
+        (atual.diario?.estado!=='resolvido'||atual.diario.chave_idempotencia!==anterior.registro.chave_idempotencia)){
+        bloquear('Diário local alterado inesperadamente. Não inicie outra revisão.');return
+      }
+      mostrar(atual.raw,atual.diario);setRecibo(null)
+      setAviso('A solicitação mudou em outra aba. Revise o estado e confirme novamente.')
+    }catch{bloquear('Não foi possível verificar o diário local.')}
+  }
+  useEffect(()=>{
+    const storage=(e:StorageEvent)=>{
+      if(e.key===JOURNAL_KEY||e.key===null)sincronizar()
+    }
+    const visibilidade=()=>{if(document.visibilityState==='visible')sincronizar()}
+    window.addEventListener('storage',storage)
+    window.addEventListener('focus',sincronizar)
+    document.addEventListener('visibilitychange',visibilidade)
+    sincronizar()
+    return ()=>{
+      window.removeEventListener('storage',storage)
+      window.removeEventListener('focus',sincronizar)
+      document.removeEventListener('visibilitychange',visibilidade)
+    }
+  },[])
+  function gravar(novo:Diario,esperado:string|null){
+    if(!snapshotCoincide(lerLocal().raw,esperado))throw Error('DIARIO_DIVERGENTE')
+    const raw=JSON.stringify(novo)
+    localStorage.setItem(JOURNAL_KEY,raw)
+    if(lerLocal().raw!==raw)throw Error('DIARIO_NAO_PERSISTIDO')
+    mostrar(raw,novo)
+    return raw
+  }
+
   async function registrar(){
-    if(emCurso.current||bloqueado||!confirmado)return
+    if(emCurso.current||bloqueadoRef.current||!confirmado)return
+    // Captura a revisão EXIBIDA, antes de qualquer await.
+    const esperado=rawRef.current
     emCurso.current=true;setOcupado(true);setConfirmado(false);setAviso('');setRecibo(null)
     try{
-      let p=pendente
-      // A consulta da sessão não autoriza nada por si só; a Edge revalida o JWT.
-      const {data,error}=await supabase.auth.getSession()
-      if(error||!data.session){setAviso('Sessão indisponível. Entre novamente antes de continuar.');return}
-      const raw=sessionStorage.getItem(STORAGE_KEY)
-      if(raw!==null){
-        const salvo:unknown=JSON.parse(raw)
-        if(!registroValido(salvo)||!p||JSON.stringify(salvo)!==JSON.stringify(p)){
-          setBloqueado(true);setAviso('Registro local divergente. Não será criada outra chave.');return
+      await navigator.locks.request(LOCK_NAME,{mode:'exclusive',ifAvailable:true},async lock=>{
+        if(!lock){setAviso('Outra aba está verificando um registro. Aguarde o resultado e confirme manualmente.');return}
+        if(bloqueadoRef.current)return
+        let atual=lerLocal()
+        if(!snapshotCoincide(esperado,atual.raw)){
+          sincronizar();setAviso('O estado mudou em outra aba. Revise e confirme novamente.');return
         }
-      }else if(p){setBloqueado(true);setAviso('Registro local ausente. Não será criada outra chave.');return}
-      if(!p){
-        if(!caso||!UUID.test(caso.tentativa_id)||!globalThis.crypto?.randomUUID){
-          setAviso('Caso indisponível ou contexto inseguro. Atualize a triagem antes de registrar.');return
+        const {data,error}=await supabase.auth.getSession()
+        if(error||!data.session){setAviso('Sessão indisponível. Entre novamente antes de continuar.');return}
+        atual=lerLocal()
+        if(bloqueadoRef.current||!snapshotCoincide(esperado,atual.raw)){
+          sincronizar();return
         }
-        const candidato:unknown={
-          acao:'registrar_decisao_auditoria',tentativa_id:caso.tentativa_id,categoria:caso.categoria,
-          decisao,motivo,chave_idempotencia:crypto.randomUUID(),confirmar_registro:true
+        let p=atual.diario?.estado==='pendente'?atual.diario.registro:null
+        let raw=atual.raw
+        if(!p){
+          if(!caso||!UUID.test(caso.tentativa_id)){
+            setAviso('Caso indisponível. Atualize a triagem antes de registrar.');return
+          }
+          const candidato:unknown={
+            acao:'registrar_decisao_auditoria',tentativa_id:caso.tentativa_id,categoria:caso.categoria,
+            decisao,motivo,chave_idempotencia:crypto.randomUUID(),confirmar_registro:true
+          }
+          if(!registroValido(candidato)){setAviso('Selecione uma decisão e um motivo válidos.');return}
+          p=candidato
+          raw=gravar({estado:'pendente',registro:p},raw)
         }
-        if(!registroValido(candidato)){setAviso('Selecione uma decisão e um motivo válidos.');return}
-        p=candidato
-        // Persiste ANTES da requisição. Nenhum envio caso armazenamento falhe.
-        sessionStorage.setItem(STORAGE_KEY,JSON.stringify(p))
-        setPendente(p)
-      }
-      const {data:resultado,error:falha}=await supabase.functions.invoke<unknown>(
-        'mensageria-outbox-hml',{body:p,headers:{Authorization:'Bearer '+data.session.access_token}})
-      if(!falha&&reciboValido(resultado,p)){
-        setRecibo({
-          status:resultado.status,evento_id:resultado.evento_id,tentativa_id:resultado.tentativa_id,
-          categoria:resultado.categoria,decisao:resultado.decisao,motivo:resultado.motivo,
-          registrado_em:resultado.registrado_em,reenvio_automatico_autorizado:false
-        })
-        limpar();return
-      }
-      // Só a rejeição autoritativa que verifica elegibilidade APÓS replay
-      // permite liberar a chave sem recibo. Outras falhas permanecem incertas.
-      const contexto=(falha as {context?:unknown}|null)?.context
-      if(contexto instanceof Response&&contexto.status===409){
-        const corpo:unknown=await contexto.clone().json().catch(()=>null)
-        if(rejeicaoDefinitiva(contexto.status,corpo)){
-          limpar();setAviso('O caso ou a categoria mudou. Atualize a triagem antes de iniciar outra revisão.');return
+        if(bloqueadoRef.current||lerLocal().raw!==raw)throw Error('DIARIO_DIVERGENTE')
+        const {data:resultado,error:falha}=await supabase.functions.invoke<unknown>(
+          'mensageria-outbox-hml',{body:p,headers:{Authorization:'Bearer '+data.session.access_token}})
+        if(!falha&&reciboValido(resultado,p)){
+          setRecibo({
+            status:resultado.status,evento_id:resultado.evento_id,tentativa_id:resultado.tentativa_id,
+            categoria:resultado.categoria,decisao:resultado.decisao,motivo:resultado.motivo,
+            registrado_em:resultado.registrado_em,reenvio_automatico_autorizado:false
+          })
+          // Mantém marcador terminal para rejeitar confirmações obsoletas
+          // que tenham sido preparadas antes da operação em outra aba.
+          if(bloqueadoRef.current)throw Error('DIARIO_DIVERGENTE')
+          gravar({estado:'resolvido',chave_idempotencia:p.chave_idempotencia},raw);return
         }
-      }
-      setAviso('Registro não confirmado. Não inicie outra revisão. Confira novamente usando a mesma chave; nenhuma repetição automática será feita.')
+        const contexto=(falha as {context?:unknown}|null)?.context
+        if(contexto instanceof Response&&contexto.status===409){
+          const corpo:unknown=await contexto.clone().json().catch(()=>null)
+          if(rejeicaoDefinitiva(contexto.status,corpo)){
+            if(bloqueadoRef.current)throw Error('DIARIO_DIVERGENTE')
+            gravar({estado:'resolvido',chave_idempotencia:p.chave_idempotencia},raw)
+            setAviso('O caso ou a categoria mudou. Atualize a triagem antes de iniciar outra revisão.');return
+          }
+        }
+        setAviso('Registro não confirmado. Confirme manualmente a mesma solicitação; nenhuma repetição automática será feita.')
+      })
     }catch{
-      setAviso('Não foi possível confirmar o registro. Se houver uma solicitação pendente, mantenha a mesma aba e use a mesma chave.')
+      // Em falha de armazenamento ou de coordenação, não iniciar outra chave.
+      // O diário pendente, se gravado, deve permanecer intacto.
+      try{
+        if(lerLocal().raw!==rawRef.current)throw Error('DIARIO_DIVERGENTE')
+        if(lerDiario(rawRef.current)?.estado==='pendente'){
+          setAviso('Registro não confirmado. Preserve o diário e confirme manualmente a mesma chave.');return
+        }
+      }catch{}
+      bloquear('Não foi possível garantir a integridade do diário. Novas solicitações bloqueadas.')
     }finally{emCurso.current=false;setOcupado(false)}
   }
   const podeRegistrar=!!pendente||!!caso&&Object.prototype.hasOwnProperty.call(decisoes,decisao)&&
@@ -88,12 +158,12 @@ export default function AuditoriaRegistroHml({casos}:{casos:Caso[]}){
   return <section className="msg-audit" aria-label="Registro de decisão administrativa">
     <strong>Registrar decisão administrativa</strong>
     <p>O registro é permanente e não comprova entrega, não encerra o caso e não autoriza reenvio.</p>
-    {bloqueado&&<p role="alert" className="msg-issues">Armazenamento local indisponível ou divergente. Novos registros bloqueados. Solicite verificação técnica sem apagar a chave pendente.</p>}
+    {bloqueado&&<p role="alert" className="msg-issues">Armazenamento, coordenação entre abas ou pendência legada indisponível ou divergente. Novos registros bloqueados. Solicite verificação técnica sem apagar os dados locais.</p>}
     {pendente?<div className="msg-issues" role="status">
       <strong>Solicitação pendente de confirmação</strong>
       <p>Tentativa: {pendente.tentativa_id.slice(0,8)}… · {categorias[pendente.categoria]}</p>
       <p>{decisoes[pendente.decisao]} · {motivos[pendente.motivo]}</p>
-      <p>Os parâmetros estão congelados. Mantenha esta aba aberta e confirme manualmente a mesma solicitação. Não crie uma nova revisão em outra aba.</p>
+      <p>Os parâmetros estão congelados. Confirme manualmente a mesma solicitação. Outras abas desta origem compartilham o diário. Não apague os dados do navegador.</p>
     </div>:<>
       <label className="msg-label">Caso de investigação
         <select className="msg-input" value={selecionado} disabled={ocupado||bloqueado||!casos.length}
