@@ -177,13 +177,23 @@ export function criarConsumidorSimulado(env:Env,fetcher:Fetch=fetch) {
         const quantidade=Math.min(inicio,payload.limite)
         if(d.eventos.length!==quantidade)return falha()
         const eventos:Record<string,unknown>[]=[]
+        const ids=new Set<string>()
         for(let i=0;i<d.eventos.length;i++){
           const ev:unknown=d.eventos[i]
-          if(!eventoValido(ev,payload.tentativa_id)||ev.versao!==inicio-i||
+          if(!eventoValido(ev,payload.tentativa_id)||!uuid(ev.evento_id)||ev.versao!==inicio-i||
             (ev.versao===d.head_versao&&!igualUuid(ev.evento_id,d.head_evento_id))||
+            (ev.versao!==d.head_versao&&igualUuid(ev.evento_id,d.head_evento_id))||
             (i>0&&!igualUuid(eventos[i-1].predecessor_id,ev.evento_id)))return falha()
+          const id=ev.evento_id.toLowerCase()
+          if(ids.has(id))return falha()
+          ids.add(id)
           eventos.push(ev)
         }
+        // O predecessor fora da página deve ser anterior, nunca um evento já
+        // visto ou a cabeça da cadeia. Não há como validar outras páginas aqui.
+        const anteriorPagina=eventos[eventos.length-1]?.predecessor_id
+        if(uuid(anteriorPagina)&&(ids.has(anteriorPagina.toLowerCase())||
+          igualUuid(anteriorPagina,d.head_evento_id)))return falha()
         if(d.proxima_antes_versao!==(inicio>quantidade?inicio-quantidade+1:null))return falha()
         return responder(200,{status:'ok',tentativa_id:d.tentativa_id,head_evento_id:d.head_evento_id,
           head_versao:d.head_versao,categoria_atual:d.categoria_atual,eventos:eventos.map(projetarEvento),
