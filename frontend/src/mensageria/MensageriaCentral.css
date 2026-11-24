@@ -85,3 +85,11 @@
 .msg-audit .msg-primary{justify-self:start}
 .msg-audit button:disabled,.msg-audit select:disabled{opacity:.55;cursor:not-allowed}
 .msg-audit .msg-save-status{overflow-wrap:anywhere}
+
+.msg-audit-history{display:grid;gap:10px;padding:14px;background:#f6faf5;border:1px solid #d4e4d4;border-radius:10px;min-width:0;overflow-wrap:anywhere}
+.msg-audit-history>strong{font-size:15px;color:#24573a}
+.msg-audit-history button{justify-self:start;max-width:100%;white-space:normal}
+.msg-audit-timeline{display:grid;gap:9px;padding-top:8px;border-top:1px solid #d4e4d4;min-width:0}
+.msg-audit-event{padding:12px;border-left:3px solid #79a788;border-radius:6px;background:#fff;min-width:0;overflow-wrap:anywhere}
+.msg-audit-event small{color:#687b6d}
+.msg-audit-history .msg-event-grid{margin-top:8px}
