@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from 'react'
 import {supabase} from '../lib/supabase'
 import {categorias,decisoes,motivos,registroValido,reciboValido,rejeicaoDefinitiva,
   STORAGE_KEY,JOURNAL_KEY,LOCK_NAME,lerDiario,snapshotCoincide,UUID} from './auditoriaHml'
-import type {Caso,Registro,Recibo,Diario} from './auditoriaHml'
+import type {Caso,Recibo,Diario} from './auditoriaHml'
 
 function lerLocal(){
   // Uma pendência legada não pode ser ignorada ou ganhar outra chave.
