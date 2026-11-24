@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import {registroValido,reciboValido,rejeicaoDefinitiva} from './auditoriaHml.ts'
+import {registroValido,reciboValido,rejeicaoDefinitiva,lerDiario,snapshotCoincide} from './auditoriaHml.ts'
 import type {Registro} from './auditoriaHml.ts'
 const p:Registro={
  acao:'registrar_decisao_auditoria',tentativa_id:'11111111-1111-4111-8111-111111111111',
@@ -35,3 +35,24 @@ for(const codigo of ['conflito_idempotencia','nao_autorizado','REGISTRO_NAO_VERI
 assert.equal(rejeicaoDefinitiva(409,{codigo:'caso_nao_elegivel',reenvio_automatico_autorizado:true}),false)
 assert.equal(rejeicaoDefinitiva(409,null),false)
 console.log('03 rejeicao definitiva e incerteza PASS')
+
+const pendente=JSON.stringify({estado:'pendente',registro:p})
+const resolvido=JSON.stringify({estado:'resolvido',chave_idempotencia:p.chave_idempotencia})
+assert.equal(lerDiario(null),null)
+assert.deepEqual(lerDiario(pendente),{estado:'pendente',registro:p})
+assert.deepEqual(lerDiario(resolvido),{estado:'resolvido',chave_idempotencia:p.chave_idempotencia})
+for(const raw of ['{','null','{}',JSON.stringify(p),
+ JSON.stringify({estado:'pendente',registro:{...p,confirmar_registro:false}}),
+ JSON.stringify({estado:'resolvido',chave_idempotencia:null}),
+ JSON.stringify({estado:'resolvido',chave_idempotencia:p.chave_idempotencia,extra:true})
+]){
+ assert.throws(()=>lerDiario(raw))
+}
+assert.equal(snapshotCoincide(null,null),true)
+assert.equal(snapshotCoincide(null,pendente),false)
+assert.equal(snapshotCoincide(pendente,pendente),true)
+assert.equal(snapshotCoincide(pendente,resolvido),false)
+assert.equal(snapshotCoincide(resolvido,null),false)
+assert.equal(snapshotCoincide(null,resolvido),false)
+assert.equal(snapshotCoincide(resolvido,JSON.stringify({estado:'resolvido',chave_idempotencia:p.tentativa_id})),false)
+console.log('04 diario compartilhado e snapshot PASS')
