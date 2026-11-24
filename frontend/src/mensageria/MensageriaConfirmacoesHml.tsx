@@ -1,4 +1,7 @@
 import { useEffect, useState } from 'react'
+import AuditoriaRegistroHml from './AuditoriaRegistroHml'
+import { categorias as CATEGORIAS_TRIAGEM, UUID } from './auditoriaHml'
+import type { Caso as CasoInvestigacao } from './auditoriaHml'
 import { supabase } from '../lib/supabase'
 import { WHATSAPP_HML_HABILITADO } from '../whatsappHml/configuracao'
 
@@ -35,25 +38,11 @@ type Reconciliacao = {
   webhooks_sem_vinculo_outbox:number
   reenvio_automatico_autorizado:false
 }
-type CasoInvestigacao = {
-  tentativa_id:string
-  categoria:'reserva_antiga'|'resultado_indeterminado'|'status_contraditorio'|
-    'status_falhou'|'aceite_sem_status'|'entrega_sem_confirmacao'
-  reservado_em:string
-}
 type Triagem = {
   status:'triagem_somente_leitura'
   casos:CasoInvestigacao[]
   quantidade:number
   reenvio_automatico_autorizado:false
-}
-const CATEGORIAS_TRIAGEM:Record<CasoInvestigacao['categoria'],string>={
-  reserva_antiga:'Reserva antiga',
-  resultado_indeterminado:'Resultado indeterminado',
-  status_contraditorio:'Informações contraditórias',
-  status_falhou:'Falha informada pela Meta',
-  aceite_sem_status:'Aceite sem status de entrega',
-  entrega_sem_confirmacao:'Entrega sem confirmação'
 }
 const CAMPOS_RECONCILIACAO = [
  'reservas_antigas','indeterminadas','recusadas','aceitas',
@@ -141,7 +130,7 @@ export default function MensageriaConfirmacoesHml() {
         !Array.isArray(data.casos)||data.casos.length>10||
         data.quantidade!==data.casos.length||
         !data.casos.every(c=>typeof c.tentativa_id==='string'&&
-           /^[0-9a-f-]{36}$/i.test(c.tentativa_id)&&
+           UUID.test(c.tentativa_id)&&
            Object.prototype.hasOwnProperty.call(CATEGORIAS_TRIAGEM,c.categoria)&&
            typeof c.reservado_em==='string'&&
            Number.isFinite(Date.parse(c.reservado_em))))
@@ -223,7 +212,7 @@ export default function MensageriaConfirmacoesHml() {
         </>}
       </div>
       <div className="msg-info">
-        <strong>Casos que precisam de investigação · somente leitura</strong>
+        <strong>Casos que precisam de investigação · triagem e auditoria</strong>
         <p>Identifica tentativas incertas para análise administrativa, sem recuperar automaticamente
           identificadores perdidos ou oferecer opção de reenvio.</p>
         <button type="button" className="msg-quiet" disabled={triando}
@@ -243,7 +232,7 @@ export default function MensageriaConfirmacoesHml() {
             </div>
         )}
         {triagem&&<p>Reenvio automático: <strong>bloqueado</strong>.
-          Esta lista não altera o estado das mensagens.</p>}
+          O registro administrativo não altera o estado das mensagens.</p>}
       </div>
       <div className="msg-info">
         <strong>Estado de segurança</strong>
@@ -259,6 +248,7 @@ export default function MensageriaConfirmacoesHml() {
         </div>)}
       </div>
     </>}
+    <AuditoriaRegistroHml casos={dados&&!triando?triagem?.casos??[]:[]}/>
     <p className="msg-hint">O funcionamento real dos botões requer template Meta aprovado, convite vinculado a um agendamento,
       callback com assinatura válida e processamento liberado em uma janela de homologação.
       O portal de remarcação permanece para etapa futura.</p>
