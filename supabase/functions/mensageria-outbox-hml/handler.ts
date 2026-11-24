@@ -1,6 +1,6 @@
 /**
- * Consumidor HML — leitura, simulação e auditoria administrativa.
- * Nenhuma chamada à Graph API ou scheduler. Única escrita: RPC de auditoria append-only.
+ * Consumidor HML — leitura, simulação e auditoria administrativa v2.
+ * Nenhuma chamada à Graph API ou scheduler. Única escrita: RPC v2 de auditoria append-only com predecessor.
  * A ação processar_lote está SEMPRE bloqueada nesta versão, inclusive
  * se alguma flag for habilitada acidentalmente.
  */
@@ -8,6 +8,36 @@ export const REF='jgtctzqieyorhvqxjbpk'
 const BASE='https://'+REF+'.supabase.co'
 const ORIGENS=new Set(['http://127.0.0.1:5173','http://localhost:5173'])
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const CATEGORIAS_AUDITORIA=new Set([
+  'reserva_antiga','resultado_indeterminado','status_contraditorio',
+  'status_falhou','aceite_sem_status','entrega_sem_confirmacao'
+])
+const DECISOES_AUDITORIA=new Set([
+  'manter_em_investigacao','solicitar_verificacao_externa','registrar_revisao_sem_reenvio'
+])
+const MOTIVOS_AUDITORIA=new Set([
+  'evidencia_insuficiente','status_inconsistente','identificador_ausente',
+  'aguardando_evidencia','revisao_realizada'
+])
+const objeto=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v)
+const uuid=(v:unknown):v is string=>typeof v==='string'&&UUID.test(v)
+const igualUuid=(a:unknown,b:unknown)=>a===null&&b===null||uuid(a)&&uuid(b)&&a.toLowerCase()===b.toLowerCase()
+const inteiro=(v:unknown,min:number,max=2147483647):v is number=>
+  typeof v==='number'&&Number.isInteger(v)&&v>=min&&v<=max
+const permitido=(v:unknown,opcoes:Set<string>):v is string=>typeof v==='string'&&opcoes.has(v)
+const dataValida=(v:unknown)=>typeof v==='string'&&v.length<80&&Number.isFinite(Date.parse(v))
+const camposExatos=(v:Record<string,unknown>,campos:string[])=>
+  Object.keys(v).length===campos.length&&campos.every(k=>Object.hasOwn(v,k))
+const eventoValido=(v:unknown,tentativa:unknown):v is Record<string,unknown>=>
+  objeto(v)&&uuid(v.evento_id)&&igualUuid(v.tentativa_id,tentativa)&&
+  inteiro(v.versao,1)&&(v.versao===1?v.predecessor_id===null:uuid(v.predecessor_id))&&
+  !igualUuid(v.evento_id,v.predecessor_id)&&
+  permitido(v.categoria,CATEGORIAS_AUDITORIA)&&permitido(v.decisao,DECISOES_AUDITORIA)&&
+  permitido(v.motivo,MOTIVOS_AUDITORIA)&&dataValida(v.registrado_em)
+const projetarEvento=(v:Record<string,unknown>)=>({
+  evento_id:v.evento_id,tentativa_id:v.tentativa_id,predecessor_id:v.predecessor_id,
+  versao:v.versao,categoria:v.categoria,decisao:v.decisao,motivo:v.motivo,registrado_em:v.registrado_em
+})
 type Env={get:(name:string)=>string|undefined}
 type Config={key:string;adminId:string}
 type Fetch=typeof fetch
@@ -89,62 +119,106 @@ export function criarConsumidorSimulado(env:Env,fetcher:Fetch=fetch) {
       // Uma flag true acidental NÃO altera a segurança desta versão.
       return responder(503,{codigo:'ENVIO_INDISPONIVEL_NA_HOMOLOGACAO'},origem)
     }
-    if(payload.acao==='registrar_decisao_auditoria'){
-      // Escrita administrativa limitada à auditoria append-only. Sem transporte,
-      // reserva, alteração de atendimento/outbox ou autorização de reenvio.
-      const categorias=new Set([
-        'reserva_antiga','resultado_indeterminado','status_contraditorio',
-        'status_falhou','aceite_sem_status','entrega_sem_confirmacao'
-      ])
-      const decisoes=new Set([
-        'manter_em_investigacao','solicitar_verificacao_externa','registrar_revisao_sem_reenvio'
-      ])
-      const motivos=new Set([
-        'evidencia_insuficiente','status_inconsistente','identificador_ausente',
-        'aguardando_evidencia','revisao_realizada'
-      ])
-      const chaves=['acao','tentativa_id','categoria','decisao','motivo','chave_idempotencia','confirmar_registro']
-      if(Object.keys(payload).length!==chaves.length||
-        Object.keys(payload).some(k=>!chaves.includes(k))||
-        payload.confirmar_registro!==true||
-        typeof payload.tentativa_id!=='string'||!UUID.test(payload.tentativa_id)||
-        typeof payload.chave_idempotencia!=='string'||!UUID.test(payload.chave_idempotencia)||
-        typeof payload.categoria!=='string'||!categorias.has(payload.categoria)||
-        typeof payload.decisao!=='string'||!decisoes.has(payload.decisao)||
-        typeof payload.motivo!=='string'||!motivos.has(payload.motivo))
+    // A rota antiga jamais chama a RPC legada ou a v2.
+    if(payload.acao==='registrar_decisao_auditoria')
+      return responder(503,{codigo:'VERSAO_AUDITORIA_OBSOLETA',reenvio_automatico_autorizado:false},origem)
+    if(payload.acao==='registrar_decisao_auditoria_v2'){
+      const chaves=['acao','tentativa_id','categoria','decisao','motivo','chave_idempotencia','confirmar_registro','predecessor_id']
+      if(!camposExatos(payload,chaves)||payload.confirmar_registro!==true||
+        !uuid(payload.tentativa_id)||!uuid(payload.chave_idempotencia)||
+        !(payload.predecessor_id===null||uuid(payload.predecessor_id))||
+        !permitido(payload.categoria,CATEGORIAS_AUDITORIA)||
+        !permitido(payload.decisao,DECISOES_AUDITORIA)||
+        !permitido(payload.motivo,MOTIVOS_AUDITORIA))
         return responder(400,{codigo:'DECISAO_INVALIDA'},origem)
+      const falha=()=>responder(503,{codigo:'REGISTRO_NAO_VERIFICADO',reenvio_automatico_autorizado:false},origem)
       try{
-        const r=await api(c,'/rest/v1/rpc/mensageria_hml_registrar_decisao_auditoria',
+        const r=await api(c,'/rest/v1/rpc/mensageria_hml_registrar_decisao_auditoria_v2',
           c.key,'POST',fetcher,{
             p_operador:c.adminId,p_tentativa:payload.tentativa_id,
             p_categoria:payload.categoria,p_decisao:payload.decisao,
-            p_motivo:payload.motivo,p_chave:payload.chave_idempotencia
+            p_motivo:payload.motivo,p_chave:payload.chave_idempotencia,p_predecessor:payload.predecessor_id
           })
         const d=r.data
-        if(!r.ok||!d||typeof d!=='object'||d.reenvio_automatico_autorizado!==false)
-          return responder(503,{codigo:'REGISTRO_NAO_VERIFICADO',reenvio_automatico_autorizado:false},origem)
+        if(!r.ok||!objeto(d)||d.reenvio_automatico_autorizado!==false)return falha()
         const erros:Record<string,number>={
           nao_autorizado:403,entrada_invalida:400,conflito_idempotencia:409,
-          categoria_desatualizada:409,caso_nao_elegivel:409
+          predecessor_desatualizado:409,categoria_desatualizada:409,caso_nao_elegivel:409,
+          isolamento_invalido:503
         }
         if(typeof d.status==='string'&&Object.hasOwn(erros,d.status))
           return responder(erros[d.status],{codigo:d.status,reenvio_automatico_autorizado:false},origem)
-        if((d.status!=='registrado'&&d.status!=='ja_registrado')||
-          typeof d.evento_id!=='string'||!UUID.test(d.evento_id)||
-          typeof d.tentativa_id!=='string'||d.tentativa_id.toLowerCase()!==payload.tentativa_id.toLowerCase()||
-          d.categoria!==payload.categoria||d.decisao!==payload.decisao||d.motivo!==payload.motivo||
-          typeof d.registrado_em!=='string'||d.registrado_em.length>=80||!Number.isFinite(Date.parse(d.registrado_em)))
-          return responder(503,{codigo:'REGISTRO_NAO_VERIFICADO',reenvio_automatico_autorizado:false},origem)
-        return responder(200,{
-          status:d.status,evento_id:d.evento_id,tentativa_id:d.tentativa_id,
-          categoria:d.categoria,decisao:d.decisao,motivo:d.motivo,registrado_em:d.registrado_em,
-          reenvio_automatico_autorizado:false
-        },origem)
-      }catch{
-        // Resultado desconhecido: não repetir automaticamente. A mesma chave
-        // permite confirmação manual idempotente sem duplicar o evento.
-        return responder(503,{codigo:'REGISTRO_NAO_VERIFICADO',reenvio_automatico_autorizado:false},origem)
-      }
+        if((d.status!=='registrado'&&d.status!=='ja_registrado')||!eventoValido(d,payload.tentativa_id)||
+          !igualUuid(d.predecessor_id,payload.predecessor_id)||
+          d.categoria!==payload.categoria||d.decisao!==payload.decisao||d.motivo!==payload.motivo)return falha()
+        return responder(200,{status:d.status,...projetarEvento(d),reenvio_automatico_autorizado:false},origem)
+      }catch{return falha()}
+    }
+    if(payload.acao==='consultar_historico_auditoria_v2'){
+      if(!camposExatos(payload,['acao','tentativa_id','limite','antes_versao'])||
+        !uuid(payload.tentativa_id)||!inteiro(payload.limite,1,20)||
+        !(payload.antes_versao===null||inteiro(payload.antes_versao,1)))
+        return responder(400,{codigo:'CONSULTA_INVALIDA'},origem)
+      const falha=()=>responder(503,{codigo:'HISTORICO_NAO_VERIFICADO',reenvio_automatico_autorizado:false},origem)
+      try{
+        const r=await api(c,'/rest/v1/rpc/mensageria_hml_historico_auditoria_v2',c.key,'POST',fetcher,{
+          p_operador:c.adminId,p_tentativa:payload.tentativa_id,p_limite:payload.limite,p_antes_versao:payload.antes_versao
+        })
+        const d=r.data
+        if(!r.ok||!objeto(d)||d.reenvio_automatico_autorizado!==false)return falha()
+        if(d.status==='nao_autorizado'||d.status==='entrada_invalida'||d.status==='caso_nao_encontrado')
+          return responder(d.status==='nao_autorizado'?403:d.status==='entrada_invalida'?400:404,
+            {codigo:d.status,reenvio_automatico_autorizado:false},origem)
+        if(d.status!=='ok'||!igualUuid(d.tentativa_id,payload.tentativa_id)||
+          !inteiro(d.head_versao,0)||(d.head_versao===0?d.head_evento_id!==null:!uuid(d.head_evento_id))||
+          !(d.categoria_atual===null||permitido(d.categoria_atual,CATEGORIAS_AUDITORIA))||
+          !Array.isArray(d.eventos)||d.quantidade!==d.eventos.length||d.eventos.length>payload.limite)return falha()
+        const inicio=payload.antes_versao===null?d.head_versao:Math.min(d.head_versao,payload.antes_versao-1)
+        const quantidade=Math.min(inicio,payload.limite)
+        if(d.eventos.length!==quantidade)return falha()
+        const eventos:Record<string,unknown>[]=[]
+        for(let i=0;i<d.eventos.length;i++){
+          const ev:unknown=d.eventos[i]
+          if(!eventoValido(ev,payload.tentativa_id)||ev.versao!==inicio-i||
+            (ev.versao===d.head_versao&&!igualUuid(ev.evento_id,d.head_evento_id))||
+            (i>0&&!igualUuid(eventos[i-1].predecessor_id,ev.evento_id)))return falha()
+          eventos.push(ev)
+        }
+        if(d.proxima_antes_versao!==(inicio>quantidade?inicio-quantidade+1:null))return falha()
+        return responder(200,{status:'ok',tentativa_id:d.tentativa_id,head_evento_id:d.head_evento_id,
+          head_versao:d.head_versao,categoria_atual:d.categoria_atual,eventos:eventos.map(projetarEvento),
+          quantidade:d.quantidade,proxima_antes_versao:d.proxima_antes_versao,reenvio_automatico_autorizado:false},origem)
+      }catch{return falha()}
+    }
+    if(payload.acao==='listar_historico_auditoria_v2'){
+      if(!camposExatos(payload,['acao','limite','depois_tentativa'])||!inteiro(payload.limite,1,20)||
+        !(payload.depois_tentativa===null||uuid(payload.depois_tentativa)))
+        return responder(400,{codigo:'CONSULTA_INVALIDA'},origem)
+      const falha=()=>responder(503,{codigo:'HISTORICO_NAO_VERIFICADO',reenvio_automatico_autorizado:false},origem)
+      try{
+        const r=await api(c,'/rest/v1/rpc/mensageria_hml_listar_historico_auditoria_v2',c.key,'POST',fetcher,{
+          p_operador:c.adminId,p_limite:payload.limite,p_depois_tentativa:payload.depois_tentativa
+        })
+        const d=r.data
+        if(!r.ok||!objeto(d)||d.reenvio_automatico_autorizado!==false)return falha()
+        if(d.status==='nao_autorizado'||d.status==='entrada_invalida')
+          return responder(d.status==='nao_autorizado'?403:400,{codigo:d.status,reenvio_automatico_autorizado:false},origem)
+        if(d.status!=='ok'||!Array.isArray(d.itens)||d.quantidade!==d.itens.length||d.itens.length>payload.limite)return falha()
+        let anterior=typeof payload.depois_tentativa==='string'?payload.depois_tentativa.toLowerCase():''
+        const itens:Record<string,unknown>[]=[]
+        for(const item of d.itens){
+          if(!objeto(item)||!uuid(item.tentativa_id)||!uuid(item.head_evento_id)||
+            !inteiro(item.head_versao,1)||!dataValida(item.registrado_em)||
+            item.tentativa_id.toLowerCase()<=anterior)return falha()
+          anterior=item.tentativa_id.toLowerCase()
+          itens.push({tentativa_id:item.tentativa_id,head_evento_id:item.head_evento_id,
+            head_versao:item.head_versao,registrado_em:item.registrado_em})
+        }
+        if(d.proximo_depois_tentativa!==null&&(!itens.length||itens.length!==payload.limite||
+          !igualUuid(d.proximo_depois_tentativa,itens[itens.length-1].tentativa_id)))return falha()
+        return responder(200,{status:'ok',itens,quantidade:d.quantidade,
+          proximo_depois_tentativa:d.proximo_depois_tentativa,reenvio_automatico_autorizado:false},origem)
+      }catch{return falha()}
     }
     if(payload.acao==='listar_casos_investigacao'){
       // Retorna somente identificador da tentativa, categoria e data.
