@@ -24,7 +24,7 @@ export default function AuditoriaRegistroHml({casos}:{casos:Caso[]}){
   const [aviso,setAviso]=useState('')
   const [recibo,setRecibo]=useState<Recibo|null>(null)
   const emCurso=useRef(false)
-  const caso=casos.find(c=>c.tentativa_id===selecionado)
+  const caso=casos.find(c=>c.tentativa_id+':'+c.categoria===selecionado)
   function limpar(){
     try{sessionStorage.removeItem(STORAGE_KEY);setPendente(null)}
     catch{setBloqueado(true);setAviso('Não foi possível limpar o registro local. Novas decisões estão bloqueadas.')}
@@ -99,7 +99,7 @@ export default function AuditoriaRegistroHml({casos}:{casos:Caso[]}){
         <select className="msg-input" value={selecionado} disabled={ocupado||bloqueado||!casos.length}
           onChange={e=>{setSelecionado(e.target.value);setConfirmado(false);setRecibo(null)}}>
           <option value="">Selecione um caso</option>
-          {casos.map(c=><option key={c.tentativa_id} value={c.tentativa_id}>{categorias[c.categoria]} · {c.tentativa_id.slice(0,8)}…</option>)}
+          {casos.map(c=><option key={c.tentativa_id} value={c.tentativa_id+':'+c.categoria}>{categorias[c.categoria]} · {c.tentativa_id.slice(0,8)}…</option>)}
         </select>
       </label>
       <div className="msg-fields">
