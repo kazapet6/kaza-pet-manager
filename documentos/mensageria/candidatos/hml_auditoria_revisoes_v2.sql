@@ -172,3 +172,53 @@ revoke all on function public.mensageria_hml_historico_auditoria_v2(uuid,uuid,in
   from public,anon,authenticated,service_role;
 grant execute on function public.mensageria_hml_historico_auditoria_v2(uuid,uuid,integer,integer)
   to service_role;
+
+-- Indice administrativo para recuperar tentativas com historico mesmo quando
+-- sairam da triagem ou o navegador perdeu o UUID. Cursor exclusivo por UUID,
+-- ordem imutavel; sem dados de cliente ou identificadores externos.
+create function public.mensageria_hml_listar_historico_auditoria_v2(
+  p_operador uuid,p_limite integer default 20,p_depois_tentativa uuid default null
+) returns jsonb language plpgsql stable security definer set search_path=pg_catalog
+as $fn$
+declare
+  v_itens jsonb;
+  v_ultimo uuid;
+begin
+  if not mensageria_hml_auditoria_interna.operador_valido(p_operador) then
+    return jsonb_build_object('status','nao_autorizado','reenvio_automatico_autorizado',false);
+  end if;
+  if p_limite is null or p_limite not between 1 and 20 then
+    return jsonb_build_object('status','entrada_invalida','reenvio_automatico_autorizado',false);
+  end if;
+  with page as (
+    select distinct on(d.tentativa_id)
+      d.tentativa_id,d.id,d.versao,d.registrado_em
+    from mensageria_hml_auditoria_interna.decisoes d
+    join public.mensageria_hml_respostas_tentativas t on t.id=d.tentativa_id
+    join public.mensageria_hml_respostas_outbox o on o.id=t.outbox_id
+    where o.evento_codigo='AGENDAMENTO_CONFIRMADO_WHATSAPP'
+      and (p_depois_tentativa is null or d.tentativa_id>p_depois_tentativa)
+    order by d.tentativa_id,d.versao desc limit p_limite
+  )
+  select coalesce(jsonb_agg(jsonb_build_object('tentativa_id',p.tentativa_id,
+    'head_evento_id',p.id,'head_versao',p.versao,'registrado_em',p.registrado_em)
+    order by p.tentativa_id),'[]'::jsonb)
+  into v_itens from page p;
+  if jsonb_array_length(v_itens)>0 then
+    v_ultimo:=(v_itens->(jsonb_array_length(v_itens)-1)->>'tentativa_id')::uuid;
+    if not exists(
+      select 1 from mensageria_hml_auditoria_interna.decisoes d
+        join public.mensageria_hml_respostas_tentativas t on t.id=d.tentativa_id
+        join public.mensageria_hml_respostas_outbox o on o.id=t.outbox_id
+      where d.tentativa_id>v_ultimo and o.evento_codigo='AGENDAMENTO_CONFIRMADO_WHATSAPP'
+    ) then v_ultimo:=null; end if;
+  end if;
+  return jsonb_build_object('status','ok','itens',v_itens,
+    'quantidade',jsonb_array_length(v_itens),'proximo_depois_tentativa',v_ultimo,
+    'reenvio_automatico_autorizado',false);
+end;
+$fn$;
+revoke all on function public.mensageria_hml_listar_historico_auditoria_v2(uuid,integer,uuid)
+  from public,anon,authenticated,service_role;
+grant execute on function public.mensageria_hml_listar_historico_auditoria_v2(uuid,integer,uuid)
+  to service_role;
