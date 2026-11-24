@@ -53,7 +53,7 @@ for(const [nome,valor] of [
   ['HML_META_ACCESS_TOKEN','curto']
 ] as const){
   const alterado:AmbienteMetaHml={get:n=>n===nome?valor:envValues[n]}
-  const antes=chamadas
+  const antes:number=chamadas
   let erro=false
   try{await criarTransporteMetaHml({ambiente:alterado,requisitar,agora:()=>now})(body)}
   catch{erro=true}
@@ -68,7 +68,7 @@ for(const invalido of [
   {...body,text:{body:'teste',preview_url:true as false}}
 ]){
   let erro=false
-  const antes=chamadas
+  const antes:number=chamadas
   try{await transporte(invalido as EnvioTextoMeta)}catch{erro=true}
   assert.equal(erro,true,'Corpo inválido deve ser bloqueado')
   assert.equal(chamadas,antes,'Corpo inválido não pode chegar à Meta')
