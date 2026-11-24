@@ -87,6 +87,11 @@ export default function AuditoriaRegistroHml({casos}:{casos:Caso[]}){
       document.removeEventListener('visibilitychange',visibilidade)
     }
   },[])
+  useEffect(()=>{
+    if(selecionado&&!caso){
+      setSelecionado('');setDecisao('');setMotivo('');mostrarHistorico(null)
+    }
+  },[selecionado,caso])
   function gravar(novo:Diario,esperado:string|null){
     if(!snapshotCoincide(lerLocal().raw,esperado))throw Error('DIARIO_DIVERGENTE')
     const raw=JSON.stringify(novo)
@@ -102,7 +107,7 @@ export default function AuditoriaRegistroHml({casos}:{casos:Caso[]}){
     if(mais&&(!anterior||anterior.proxima_antes_versao===null))return
     const antes=anterior?.proxima_antes_versao??null
     leituraEmCurso.current=true;setLendo(true);setErroHistorico('')
-    mostrarHistorico(null)
+    mostrarHistorico(null);setDecisao('');setMotivo('')
     try{
       const {data,error}=await supabase.functions.invoke<unknown>('mensageria-outbox-hml',{
         body:{acao:'consultar_historico_auditoria_v2',tentativa_id:alvo,limite:10,antes_versao:antes}
@@ -220,6 +225,17 @@ export default function AuditoriaRegistroHml({casos}:{casos:Caso[]}){
     <strong>Registrar decisão administrativa</strong>
     <p>O registro é permanente e não comprova entrega, não encerra o caso e não autoriza reenvio.</p>
     {bloqueado&&<p role="alert" className="msg-issues">Armazenamento, coordenação entre abas ou pendência legada indisponível ou divergente. Novos registros bloqueados. Solicite verificação técnica sem apagar os dados locais.</p>}
+    {!pendente&&<>
+      <label className="msg-label">Caso de investigação
+        <select className="msg-input" value={selecionado} disabled={ocupado||lendo||bloqueado||!casos.length}
+          onChange={e=>{const valor=e.target.value;setSelecionado(valor);setAlvo(valor.split(':')[0]);
+            mostrarHistorico(null);setRecibo(null);setDecisao('');setMotivo('')}}>
+          <option value="">Selecione um caso</option>
+          {casos.map(c=><option key={c.tentativa_id} value={c.tentativa_id+':'+c.categoria}>{categorias[c.categoria]} · {c.tentativa_id.slice(0,8)}…</option>)}
+        </select>
+      </label>
+      {caso&&<p>Antes de registrar, consulte o histórico da tentativa selecionada.</p>}
+    </>}
     <div className="msg-audit-history">
       <strong>Histórico administrativo e reconciliação</strong>
       <p>Localize registros anteriores, inclusive de casos que já saíram da triagem. Um evento parecido não comprova o resultado de uma solicitação cuja chave foi perdida.</p>
@@ -267,15 +283,7 @@ export default function AuditoriaRegistroHml({casos}:{casos:Caso[]}){
       <p>Predecessor: {pendente.predecessor_id??'Primeira decisão'}. Versão esperada: {diario?.estado==='pendente'?diario.versao_esperada:''}.</p>
       <p>Os parâmetros estão congelados. Confirme manualmente a mesma solicitação. Outras abas desta origem compartilham o diário. Não apague os dados do navegador.</p>
     </div>:<>
-      <label className="msg-label">Caso de investigação
-        <select className="msg-input" value={selecionado} disabled={ocupado||lendo||bloqueado||!casos.length}
-          onChange={e=>{const valor=e.target.value;setSelecionado(valor);setAlvo(valor.split(':')[0]);
-            mostrarHistorico(null);setRecibo(null);setDecisao('');setMotivo('')}}>
-          <option value="">Selecione um caso</option>
-          {casos.map(c=><option key={c.tentativa_id} value={c.tentativa_id+':'+c.categoria}>{categorias[c.categoria]} · {c.tentativa_id.slice(0,8)}…</option>)}
-        </select>
-      </label>
-      {caso&&<p>Antes de registrar, consulte o histórico da tentativa selecionada acima.</p>}
+      {caso&&historico&&!historicoPermiteRegistro(historico,caso)&&<p role="alert" className="msg-issues">A categoria ou a elegibilidade mudou. Atualize a triagem e consulte novamente o histórico.</p>}
       {historicoPermiteRegistro(historico,caso)&&<label className="msg-audit-confirm">
         <input type="checkbox" checked={reconhecido} disabled={ocupado||lendo||bloqueado}
           onChange={e=>{setReconhecido(e.target.checked);setConfirmado(false)}}/>
