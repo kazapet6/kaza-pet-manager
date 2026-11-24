@@ -21,6 +21,7 @@ function carregar(){
 export default function AuditoriaRegistroHml({casos}:{casos:Caso[]}){
   const [inicial]=useState(carregar)
   const [diario,setDiario]=useState<Diario|null>(inicial.diario)
+  const [rawExibido,setRawExibido]=useState<string|null>(inicial.raw)
   const rawRef=useRef<string|null>(inicial.raw)
   const [bloqueado,setBloqueado]=useState(inicial.bloqueado)
   const bloqueadoRef=useRef(inicial.bloqueado)
@@ -39,7 +40,7 @@ export default function AuditoriaRegistroHml({casos}:{casos:Caso[]}){
     bloqueadoRef.current=true;setBloqueado(true);setConfirmado(false);setAviso(mensagem)
   }
   function mostrar(raw:string|null,novo:Diario|null){
-    rawRef.current=raw;setDiario(novo);setConfirmado(false)
+    rawRef.current=raw;setRawExibido(raw);setDiario(novo);setConfirmado(false)
     setSelecionado('');setDecisao('');setMotivo('')
   }
   function sincronizar(){
@@ -50,7 +51,7 @@ export default function AuditoriaRegistroHml({casos}:{casos:Caso[]}){
       const anterior=lerDiario(rawRef.current)
       // Exclusão inesperada ou substituição de uma pendência observada exige
       // reconciliação técnica; jamais interpretar como autorização de nova chave.
-      if(anterior&&atual.raw===null||
+      if((anterior&&atual.raw===null)||
         anterior?.estado==='pendente'&&
         (atual.diario?.estado!=='resolvido'||atual.diario.chave_idempotencia!==anterior.registro.chave_idempotencia)){
         bloquear('Diário local alterado inesperadamente. Não inicie outra revisão.');return
@@ -86,7 +87,7 @@ export default function AuditoriaRegistroHml({casos}:{casos:Caso[]}){
   async function registrar(){
     if(emCurso.current||bloqueadoRef.current||!confirmado)return
     // Captura a revisão EXIBIDA, antes de qualquer await.
-    const esperado=rawRef.current
+    const esperado=rawExibido
     emCurso.current=true;setOcupado(true);setConfirmado(false);setAviso('');setRecibo(null)
     try{
       await navigator.locks.request(LOCK_NAME,{mode:'exclusive',ifAvailable:true},async lock=>{
