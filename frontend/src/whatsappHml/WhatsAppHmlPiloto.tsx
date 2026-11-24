@@ -48,8 +48,9 @@ export default function WhatsAppHmlPiloto({ email, autorizado, onSair }: Props) 
   }, [autorizado, recarregar, pagina])
 
   return (
-    <main style={{
-      minHeight: '100dvh', background: '#f7f4ee',
+    <main aria-label="Ambiente de homologação" tabIndex={0} style={{
+      flex: '1 1 0%', width: '100%', minHeight: 0, height: '100%',
+      overflow: 'auto', background: '#f7f4ee',
       padding: 'clamp(20px, 4vw, 60px)', color: '#253a2b',
       fontFamily: 'inherit',
     }}>
