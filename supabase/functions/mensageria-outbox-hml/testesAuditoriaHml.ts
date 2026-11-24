@@ -14,12 +14,12 @@ const env={get:(k:string)=>({
   HML_OUTBOX_SEND_ENABLED:'true'
 } as Record<string,string>)[k]}
 const payload={
-  acao:'registrar_decisao_auditoria',tentativa_id:tentativa,
+  acao:'registrar_decisao_auditoria_v2',tentativa_id:tentativa,predecessor_id:null,
   categoria:'resultado_indeterminado',decisao:'manter_em_investigacao',
   motivo:'evidencia_insuficiente',chave_idempotencia:chave,confirmar_registro:true
 }
 const sucesso={
-  status:'registrado',evento_id:evento,tentativa_id:tentativa,
+  status:'registrado',evento_id:evento,tentativa_id:tentativa,predecessor_id:null,versao:1,
   categoria:payload.categoria,decisao:payload.decisao,motivo:payload.motivo,
   registrado_em:'2026-11-24T18:00:00Z',reenvio_automatico_autorizado:false
 }
@@ -41,12 +41,12 @@ const fakeFetch:typeof fetch=async (url,init)=>{
     assert.deepEqual(JSON.parse(String(init?.body)),{p_expected:admin})
     return Response.json(session)
   }
-  if(u.endsWith('/rpc/mensageria_hml_registrar_decisao_auditoria')){
+  if(u.endsWith('/rpc/mensageria_hml_registrar_decisao_auditoria_v2')){
     escritas++
     assert.equal(headers.get('authorization'),'Bearer test_backend_only')
     assert.deepEqual(JSON.parse(String(init?.body)),{
       p_operador:admin,p_tentativa:tentativa,p_categoria:payload.categoria,
-      p_decisao:payload.decisao,p_motivo:payload.motivo,p_chave:chave
+      p_decisao:payload.decisao,p_motivo:payload.motivo,p_chave:chave,p_predecessor:null
     })
     if(erroTransporte)throw Error('timeout')
     return Response.json(rpc)
@@ -76,7 +76,8 @@ for(const invalido of [
  {...payload,confirmar_registro:false},{...payload,confirmar_registro:undefined},
  {...payload,tentativa_id:'invalido'},{...payload,chave_idempotencia:'invalida'},
  {...payload,categoria:'outra'},{...payload,decisao:'reenviar'},
- {...payload,motivo:null},{...payload,motivo:'texto livre'}
+ {...payload,motivo:null},{...payload,motivo:'texto livre'},
+ {...payload,predecessor_id:undefined},{...payload,predecessor_id:'invalido'}
 ]) await check(invalido,400)
 assert.equal(escritas,antes)
 console.log('02 entradas invalidas e campos extras PASS')
@@ -91,7 +92,8 @@ assert.equal(escritas,antes)
 console.log('03 operador e sessao negados PASS')
 for(const [status,code] of [
  ['nao_autorizado',403],['entrada_invalida',400],['conflito_idempotencia',409],
- ['categoria_desatualizada',409],['caso_nao_elegivel',409]
+ ['categoria_desatualizada',409],['caso_nao_elegivel',409],
+ ['predecessor_desatualizado',409],['isolamento_invalido',503]
 ] as const){
   rpc={status,reenvio_automatico_autorizado:false,segredo:'synthetic'}
   assert.deepEqual(await check(payload,code),{codigo:status,reenvio_automatico_autorizado:false})
@@ -101,7 +103,8 @@ for(const resposta of [
  null,{...sucesso,reenvio_automatico_autorizado:true},{...sucesso,evento_id:null},
  {...sucesso,tentativa_id:evento},{...sucesso,decisao:'reenviar'},
  {...sucesso,categoria:null},{...sucesso,motivo:'outro'},
- {...sucesso,registrado_em:'invalido'},{...sucesso,status:'desconhecido'}
+ {...sucesso,registrado_em:'invalido'},{...sucesso,status:'desconhecido'},
+ {...sucesso,predecessor_id:chave},{...sucesso,versao:2},{...sucesso,versao:0}
 ]){
   rpc=resposta
   assert.deepEqual(await check(payload,503),{
@@ -119,6 +122,9 @@ const antesBloqueio=escritas
 for(const acao of ['enviar','processar_lote']){
   assert.equal((await check({acao},503)).codigo,'ENVIO_INDISPONIVEL_NA_HOMOLOGACAO')
 }
+assert.deepEqual(await check({...payload,acao:'registrar_decisao_auditoria'},503),{
+  codigo:'VERSAO_AUDITORIA_OBSOLETA',reenvio_automatico_autorizado:false
+})
 assert.equal(escritas,antesBloqueio)
 const envErrado={get:(k:string)=>k==='HML_PROJECT_REF'?'invalid-project':env.get(k)}
 const antesProjeto=calls.length
