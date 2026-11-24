@@ -19,6 +19,8 @@ create table mensageria_hml_auditoria_interna.operacoes (
   operador_id uuid not null,
   tentativa_id uuid not null references public.mensageria_hml_respostas_tentativas(id) on delete restrict,
   predecessor_id uuid,
+  preparo_anterior_id uuid,
+  ordem_preparo integer not null check(ordem_preparo>0),
   versao_esperada integer not null check(versao_esperada>0),
   categoria text not null check(categoria in ('reserva_antiga','resultado_indeterminado','status_contraditorio',
     'status_falhou','aceite_sem_status','entrega_sem_confirmacao')),
@@ -32,6 +34,13 @@ create table mensageria_hml_auditoria_interna.operacoes (
   preparada_em timestamptz not null default pg_catalog.clock_timestamp(),
   encerrada_em timestamptz,
   unique(operador_id,chave_idempotencia),
+  unique(id,operador_id,tentativa_id),
+  unique nulls not distinct(operador_id,tentativa_id,predecessor_id,ordem_preparo),
+  unique nulls not distinct(operador_id,tentativa_id,predecessor_id,preparo_anterior_id),
+  check((ordem_preparo=1)=(preparo_anterior_id is null)),
+  check(preparo_anterior_id is distinct from id),
+  foreign key(preparo_anterior_id,operador_id,tentativa_id)
+    references mensageria_hml_auditoria_interna.operacoes(id,operador_id,tentativa_id) on delete restrict,
   check((versao_esperada=1)=(predecessor_id is null)),
   check((estado='registrada')=(evento_id is not null)),
   check((estado='rejeitada')=(rejeicao is not null)),
@@ -55,6 +64,7 @@ create function mensageria_hml_auditoria_interna.projetar_operacao(p_id uuid,p_o
 returns jsonb language sql stable security invoker set search_path=pg_catalog as $fn$
   select jsonb_build_object(
     'operacao_id',o.id,'tentativa_id',o.tentativa_id,'predecessor_id',o.predecessor_id,
+    'preparo_anterior_id',o.preparo_anterior_id,'ordem_preparo',o.ordem_preparo,
     'versao_esperada',o.versao_esperada,'categoria',o.categoria,'decisao',o.decisao,'motivo',o.motivo,
     'estado',o.estado,'preparada_em',o.preparada_em,'encerrada_em',o.encerrada_em,'rejeicao',o.rejeicao,
     'recibo',case when d.id is null then null else jsonb_build_object(
@@ -72,10 +82,12 @@ revoke all on function mensageria_hml_auditoria_interna.projetar_operacao(uuid,u
   from public,anon,authenticated,service_role;
 
 create function public.mensageria_hml_preparar_operacao_auditoria_v3(
-  p_operador uuid,p_tentativa uuid,p_categoria text,p_decisao text,p_motivo text,p_predecessor uuid
+  p_operador uuid,p_tentativa uuid,p_categoria text,p_decisao text,p_motivo text,p_predecessor uuid,
+  p_preparo_anterior uuid
 ) returns jsonb language plpgsql volatile security definer set search_path=pg_catalog as $fn$
 declare
   o mensageria_hml_auditoria_interna.operacoes%rowtype;
+  anterior mensageria_hml_auditoria_interna.operacoes%rowtype;
   v_head uuid;
   v_versao integer;
   v_categoria text;
@@ -98,7 +110,7 @@ begin
   select x.* into o from mensageria_hml_auditoria_interna.operacoes x
     where x.operador_id=p_operador and x.tentativa_id=p_tentativa
       and x.predecessor_id is not distinct from p_predecessor
-      and x.estado in ('preparada','registrada') for update;
+      and x.preparo_anterior_id is not distinct from p_preparo_anterior for update;
   if not mensageria_hml_auditoria_interna.operador_valido(p_operador) then
     return jsonb_build_object('status','nao_autorizado','reenvio_automatico_autorizado',false);
   end if;
@@ -106,6 +118,19 @@ begin
     v_status:=case when (o.categoria,o.decisao,o.motivo) is distinct from (p_categoria,p_decisao,p_motivo)
       then 'conflito_operacao' else 'operacao_existente' end;
   else
+    -- Nova preparacao apos cancelamento/rejeicao exige referencia explicita
+    -- ao ultimo preparo terminal. Repeticao atrasada recupera o anterior.
+    select x.* into anterior from mensageria_hml_auditoria_interna.operacoes x
+      where x.operador_id=p_operador and x.tentativa_id=p_tentativa
+        and x.predecessor_id is not distinct from p_predecessor
+      order by x.ordem_preparo desc limit 1 for update;
+    if not mensageria_hml_auditoria_interna.operador_valido(p_operador) then
+      return jsonb_build_object('status','nao_autorizado','reenvio_automatico_autorizado',false);
+    end if;
+    if anterior.id is distinct from p_preparo_anterior or
+       (anterior.id is not null and anterior.estado not in ('cancelada','rejeitada')) then
+      return jsonb_build_object('status','preparo_desatualizado','reenvio_automatico_autorizado',false);
+    end if;
     select d.id,d.versao into v_head,v_versao from mensageria_hml_auditoria_interna.decisoes d
       where d.tentativa_id=p_tentativa order by d.versao desc limit 1;
     if v_head is distinct from p_predecessor then
@@ -117,8 +142,9 @@ begin
       return jsonb_build_object('status','categoria_desatualizada','reenvio_automatico_autorizado',false);
     end if;
     insert into mensageria_hml_auditoria_interna.operacoes
-      (operador_id,tentativa_id,predecessor_id,versao_esperada,categoria,decisao,motivo)
-      values(p_operador,p_tentativa,p_predecessor,coalesce(v_versao,0)+1,p_categoria,p_decisao,p_motivo)
+      (operador_id,tentativa_id,predecessor_id,preparo_anterior_id,ordem_preparo,versao_esperada,categoria,decisao,motivo)
+      values(p_operador,p_tentativa,p_predecessor,p_preparo_anterior,coalesce(anterior.ordem_preparo,0)+1,
+        coalesce(v_versao,0)+1,p_categoria,p_decisao,p_motivo)
       returning * into o;
   end if;
   return jsonb_build_object('status',v_status,'operacao',
@@ -254,13 +280,13 @@ begin
 end;
 $fn$;
 
-revoke all on function public.mensageria_hml_preparar_operacao_auditoria_v3(uuid,uuid,text,text,text,uuid),
+revoke all on function public.mensageria_hml_preparar_operacao_auditoria_v3(uuid,uuid,text,text,text,uuid,uuid),
   public.mensageria_hml_confirmar_operacao_auditoria_v3(uuid,uuid,boolean),
   public.mensageria_hml_cancelar_operacao_auditoria_v3(uuid,uuid,boolean),
   public.mensageria_hml_consultar_operacao_auditoria_v3(uuid,uuid),
   public.mensageria_hml_listar_operacoes_auditoria_v3(uuid,uuid,integer,uuid)
   from public,anon,authenticated,service_role;
-grant execute on function public.mensageria_hml_preparar_operacao_auditoria_v3(uuid,uuid,text,text,text,uuid),
+grant execute on function public.mensageria_hml_preparar_operacao_auditoria_v3(uuid,uuid,text,text,text,uuid,uuid),
   public.mensageria_hml_confirmar_operacao_auditoria_v3(uuid,uuid,boolean),
   public.mensageria_hml_cancelar_operacao_auditoria_v3(uuid,uuid,boolean),
   public.mensageria_hml_consultar_operacao_auditoria_v3(uuid,uuid),
