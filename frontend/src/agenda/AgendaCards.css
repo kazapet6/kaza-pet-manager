@@ -1,0 +1,232 @@
+.app-shell:has(.dashboard-agenda) { background: #fff; }
+.dashboard-agenda .topbar .kpm-agenda-titulo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: clamp(1.55rem, 3vw, 2.1rem);
+  color: #151d18;
+}
+.kpm-agenda-titulo svg { width: 29px; height: 29px; flex: none; }
+.dashboard-agenda .profile-card { min-width: 0; padding: 8px 14px; gap: 10px; border-radius: 15px; }
+.dashboard-agenda .profile-avatar { width: 43px; height: 43px; flex: none; font-size: 1.05rem; }
+.dashboard-agenda .profile-card strong { overflow-wrap: anywhere; }
+
+.kpm-cards-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  margin-bottom: 16px;
+}
+.kpm-cards-data, .agenda-visualizacao-controle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.agenda-visualizacao-controle { margin: 10px 0; }
+.kpm-cards-toolbar .agenda-visualizacao-controle { margin: 0; }
+.kpm-cards-toolbar button, .agenda-visualizacao-controle button, .kpm-cards-data input,
+.kpm-cards-acoes button {
+  min-height: 42px;
+  padding: 7px 12px;
+  border: 1px solid #dce3df;
+  border-radius: 10px;
+  background: #fff;
+  color: #18221d;
+  font: inherit;
+  font-size: .875rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.kpm-cards-toolbar button:hover, .agenda-visualizacao-controle button:hover, .kpm-cards-acoes button:hover {
+  background: #eef5ef;
+}
+.kpm-cards-toolbar .kpm-cards-novo, .agenda-visualizacao-controle button[aria-pressed="true"] {
+  background: #075834;
+  color: #fff;
+  border-color: #075834;
+}
+.kpm-cards-toolbar .kpm-cards-novo { margin-left: auto; }
+.kpm-cards-toolbar .kpm-cards-novo:hover, .agenda-visualizacao-controle button[aria-pressed="true"]:hover {
+  background: #06482b;
+}
+.kpm-cards-data button[aria-label] { width: 42px; padding: 0; font-size: 1.35rem; }
+.kpm-cards-data input { min-width: 0; }
+
+.kpm-cards-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.kpm-cards-kpi {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #e4ebe6;
+  border-radius: 13px;
+  background: #f7f9f7;
+}
+.kpm-cards-kpi:nth-child(2) { background: #fdf6e4; }
+.kpm-cards-kpi:nth-child(3) { background: #edf4fe; }
+.kpm-cards-kpi:nth-child(4) { background: #edf8f0; }
+.kpm-cards-kpi > span:first-child {
+  display: grid;
+  place-items: center;
+  flex: 0 0 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #e1f3e5;
+  color: #096135;
+  font-weight: 800;
+}
+.kpm-cards-kpi:nth-child(2) > span:first-child { background: #fcebc0; color: #825407; }
+.kpm-cards-kpi:nth-child(3) > span:first-child { background: #deebfc; color: #245589; }
+.kpm-cards-kpi svg { width: 19px; height: 19px; }
+.kpm-cards-kpi strong { color: #151d18; font-size: 1.4rem; line-height: 1; }
+.kpm-cards-kpi > span:last-child { color: #344238; font-size: .8125rem; overflow-wrap: anywhere; }
+
+.kpm-cards-expediente {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  color: #536357;
+  font-size: .8125rem;
+}
+.kpm-cards-expediente svg, .kpm-cards-servicos svg { width: 15px; height: 15px; flex: none; }
+.kpm-cards-lista { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
+.kpm-cards-card {
+  --faixa: #58748e;
+  --status-fundo: #edf2f6;
+  --status-texto: #374e63;
+  position: relative;
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr) minmax(0, 1.18fr) minmax(7rem, .8fr) minmax(5.7rem, .63fr) minmax(9.6rem, .95fr);
+  grid-template-areas: "hora pet servicos estado valor acoes";
+  align-items: center;
+  column-gap: clamp(10px, 1.2vw, 20px);
+  min-height: 90px;
+  line-height: 1.3;
+  padding: 10px clamp(11px, 1.3vw, 20px);
+  border: 1px solid #dbe3df;
+  border-left: 6px solid var(--faixa);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 2px 6px #163a2610;
+}
+.kpm-cards-card:hover, .kpm-cards-card:focus-within { border-color: #b0c9b8; border-left-color: var(--faixa); }
+.kpm-cards-card[data-status="agendado"] { --faixa:#0864c4; --status-fundo:#e1efff; --status-texto:#08458e; }
+.kpm-cards-card[data-status="confirmado"] { --faixa:#26974d; --status-fundo:#e1efff; --status-texto:#08458e; }
+.kpm-cards-card[data-status="recebido"] { --faixa:#20837c; --status-fundo:#e3f3ef; --status-texto:#165c56; }
+.kpm-cards-card[data-status="em_atendimento"] { --faixa:#eaa325; --status-fundo:#fff0c9; --status-texto:#794709; }
+.kpm-cards-card[data-status="aguardando_retirada"], .kpm-cards-card[data-status="aguardando_entrega"] {
+  --faixa:#8668b0; --status-fundo:#f0e9fa; --status-texto:#58427d;
+}
+.kpm-cards-card[data-status="concluido"] { --faixa:#33995b; --status-fundo:#dff5e4; --status-texto:#145c2d; }
+.kpm-cards-card[data-status="cancelado"], .kpm-cards-card[data-status="faltou"] {
+  --faixa:#a95d66; --status-fundo:#fae9eb; --status-texto:#853641;
+}
+.kpm-cards-horario {
+  grid-area: hora;
+  display: grid;
+  gap: 3px;
+  padding-right: 8px;
+  border-right: 1px solid #e1e7e3;
+  font-variant-numeric: tabular-nums;
+  color: #46534a;
+  font-size: .8125rem;
+}
+.kpm-cards-horario time:first-child { font-size: 1.15rem; font-weight: 800; color: #151d18; }
+.kpm-cards-pet { grid-area: pet; display: flex; align-items: center; gap: 9px; min-width: 0; }
+.kpm-cards-avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 37px;
+  height: 37px;
+  border-radius: 12px;
+  background: #e1f4e5;
+  color: #114b2b;
+  font-size: 1.12rem;
+  font-weight: 800;
+}
+.kpm-cards-pet h3 { margin: 0 0 2px; color: #161e19; font-size: 1.06rem; line-height: 1.15; }
+.kpm-cards-pet div > span, .kpm-cards-servicos small { color: #536357; font-size: .8125rem; }
+.kpm-cards-pet div, .kpm-cards-servicos { min-width: 0; overflow-wrap: anywhere; }
+.kpm-cards-servicos { grid-area: servicos; display: grid; gap: 3px; }
+.kpm-cards-servicos p { display: flex; align-items: flex-start; gap: 5px; margin: 0; font-size: .875rem; }
+.kpm-cards-servicos p svg { margin-top: 2px; }
+.kpm-cards-indicadores { display: flex; flex-wrap: wrap; gap: 4px; }
+.kpm-cards-etiqueta, .kpm-cards-status, .kpm-cards-valor {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 99px;
+  background: #eef1ef;
+  color: #344238;
+  font-size: .75rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.kpm-cards-etiqueta.pacote { background: #e4f5e8; color: #17532d; }
+.kpm-cards-alerta { color: #80500b; font-size: .75rem; }
+.kpm-cards-estado { grid-area: estado; }
+.kpm-cards-status { background: var(--status-fundo); color: var(--status-texto); }
+.kpm-cards-preco { grid-area: valor; }
+.kpm-cards-valor { flex-wrap: wrap; border-radius: 8px; color: #202d24; font-size: .8125rem; font-variant-numeric: tabular-nums; }
+.kpm-cards-valor small { font-size: .72rem; }
+.kpm-cards-acoes { grid-area: acoes; display: flex; justify-content: flex-end; gap: 6px; min-width: 0; }
+.kpm-cards-acoes .kpm-cards-acao { position: relative; z-index: 1; color: #075834; }
+.kpm-cards-acoes .kpm-cards-acao:disabled { cursor: wait; opacity: .62; }
+.kpm-cards-acoes .kpm-cards-detalhe { min-width: 42px; padding: 0 8px; font-size: 1.3rem; }
+.kpm-cards-detalhe::after { position: absolute; inset: 0; border-radius: 10px; content: ""; }
+.kpm-cards-detalhe:focus-visible::after { outline: 2px solid #086232; outline-offset: 2px; }
+.kpm-cards-vazio { margin: 0; padding: 22px; border: 1px dashed #d6e2da; border-radius: 12px; color: #536357; }
+.kpm-cards-sem-horario { margin-top: 20px; }
+.kpm-cards-sem-horario h2 { margin: 0 0 9px; font-size: 1rem; color: #39463e; }
+
+@media (max-width: 1180px) {
+  .kpm-cards-card {
+    grid-template-columns: 4.5rem minmax(0, .95fr) minmax(0, 1.2fr) minmax(7.2rem, .85fr);
+    grid-template-areas: "hora pet servicos estado" "hora pet servicos valor" "acoes acoes acoes acoes";
+    row-gap: 4px;
+  }
+  .kpm-cards-estado, .kpm-cards-preco { justify-self: end; }
+  .kpm-cards-acoes { flex-wrap: wrap; }
+}
+@media (min-width: 769px) {
+  .app-shell:has(.dashboard-agenda) {
+    grid-template-columns: clamp(200px, 17vw, 250px) minmax(0, 1fr);
+    padding: 14px;
+    gap: 20px;
+  }
+  .app-shell:has(.dashboard-agenda) > .sidebar { padding: 20px 14px; }
+}
+@media (max-width: 1080px) {
+  .kpm-cards-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 550px) {
+  .dashboard-agenda .topbar { flex-direction: row; align-items: center; gap: 8px; }
+  .dashboard-agenda .profile-card { max-width: 58%; font-size: .75rem; }
+  .dashboard-agenda .profile-avatar { width: 28px; height: 28px; font-size: .8rem; }
+  .kpm-cards-toolbar { gap: 8px; justify-content: space-between; }
+  .kpm-cards-toolbar .kpm-cards-novo { margin-left: 0; }
+  .kpm-cards-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .kpm-cards-kpi { gap: 6px; padding: 8px; }
+  .kpm-cards-kpi > span:first-child { flex-basis: 24px; height: 24px; }
+  .kpm-cards-kpi svg { width: 15px; height: 15px; }
+  .kpm-cards-kpi strong { font-size: 1.1rem; }
+  .kpm-cards-card {
+    grid-template-columns: 4.2rem minmax(0, 1fr) minmax(0, .75fr);
+    grid-template-areas: "hora pet estado" "servicos servicos valor" "acoes acoes acoes";
+    row-gap: 8px;
+  }
+  .kpm-cards-pet { gap: 5px; }
+  .kpm-cards-avatar { flex-basis: 26px; height: 26px; border-radius: 8px; font-size: .875rem; }
+  .kpm-cards-pet h3 { font-size: .9375rem; }
+}
