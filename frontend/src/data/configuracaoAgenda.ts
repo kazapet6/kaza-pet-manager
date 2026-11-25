@@ -369,16 +369,36 @@ async function sincronizarRelacao(
   coluna: string,
   idsAtivos: string[],
 ) {
-  const desativacao = await supabase.from(tabela).update({ ativo: false }).eq('servico_id', servicoId)
-  if (desativacao.error) throw desativacao.error
+  // Não desative relações válidas para recriá-las: isso quebraria
+  // temporariamente os gatilhos de serviços acoplados (ex.: Hidratação -> Banho).
+  const atuais = await supabase.from(tabela)
+    .select(coluna)
+    .eq('servico_id', servicoId)
+    .eq('ativo', true)
+  if (atuais.error) throw atuais.error
 
-  if (!idsAtivos.length) return
-  const registros = idsAtivos.map((id) => ({ servico_id: servicoId, [coluna]: id, ativo: true }))
-  const conflito = tabela === 'servico_racas_bloqueadas'
-    ? 'servico_id,raca_id'
-    : 'servico_id,dependencia_servico_id'
-  const ativacao = await supabase.from(tabela).upsert(registros, { onConflict: conflito })
-  if (ativacao.error) throw ativacao.error
+  const linhas = (atuais.data ?? []) as unknown as Record<string, string>[]
+  const existentes = new Set(linhas.map((item) => String(item[coluna])))
+  const desejados = new Set(idsAtivos)
+  const ativar = [...desejados].filter((id) => !existentes.has(id))
+  const desativar = [...existentes].filter((id) => !desejados.has(id))
+
+  if (ativar.length) {
+    const registros = ativar.map((id) => ({ servico_id: servicoId, [coluna]: id, ativo: true }))
+    const conflito = tabela === 'servico_racas_bloqueadas'
+      ? 'servico_id,raca_id'
+      : 'servico_id,dependencia_servico_id'
+    const resultado = await supabase.from(tabela).upsert(registros, { onConflict: conflito })
+    if (resultado.error) throw resultado.error
+  }
+
+  if (desativar.length) {
+    const resultado = await supabase.from(tabela)
+      .update({ ativo: false })
+      .eq('servico_id', servicoId)
+      .in(coluna, desativar)
+    if (resultado.error) throw resultado.error
+  }
 }
 
 export async function salvarModificador(dados: DadosModificador, id?: string) {
