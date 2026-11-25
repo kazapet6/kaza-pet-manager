@@ -24,3 +24,6 @@ dist/
 
 # Local pre-flight comparison artifact
 banco/admin/go_live/036_preflight.diff
+
+# Supabase CLI - arquivos temporarios locais
+/frontend/supabase/.temp/
