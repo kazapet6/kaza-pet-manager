@@ -17,3 +17,15 @@ Tabela privada, RLS, sem grants diretos aos papéis de aplicação. RPCs externa
 
 ## Portões de validação
 Preparar e testar candidato em PostgreSQL descartável com baseline v2, depois autorização separada para instalar HML. Cobrir perda de resposta da preparação, confirmação e cancelamento; repetição tardia de preparação cancelada, nova preparação com referência terminal correta, conflito e referência de preparo desatualizada; concorrência entre perfis/operadores; revisão obsoleta, conflito de payload, estados terminais, rollback entre inserção de decisão e atualização da intenção, vínculo exato do recibo, acesso por outro operador, revogação durante espera, limites de paginação, ACL/RLS, tentativa fora da triagem, nenhuma alteração operacional e bloqueio de rotas antigas. Positivos remotos não autorizados. Edge e frontend v3 são etapas posteriores, com seus próprios testes e portões.
+
+## Reforço declarativo após ensaio 197–201
+
+Relatório recebido: 67/70 verificações aprovadas, incluindo os 62 cenários solicitados; falhas 64, 66 e 67 em atualizações privilegiadas revertidas no ensaio. O candidato corrigido exige:
+
+- CHECK entre UUID público e chave interna.
+- FK do predecessor com versão derivada (versao_esperada-1). A raiz tem versão esperada 1 e predecessor nulo; fora da raiz, o predecessor é obrigatório. A unicidade v2 de tentativa/versão identifica inequivocamente o predecessor.
+- FK do preparo anterior com operador, tentativa, versão esperada e ordem derivada (ordem_preparo-1). A raiz de preparo tem ordem 1 e referência nula; fora da raiz, a referência é obrigatória. Assim, o MATCH SIMPLE não deixa contornar o vínculo com um componente de cadeia nulo: os componentes usados na FK de preparo são não nulos quando existe preparo anterior. Não usar UUID sentinela.
+- FK do recibo com evento, operador, chave, tentativa, versão esperada, categoria, decisão e motivo. Todos os campos são não nulos quando a operação está registrada.
+- As duas colunas derivadas são GENERATED ALWAYS e não entram nas projeções. Não alterar contratos das cinco RPCs, estados, segurança ou permissões.
+
+A garantia declarativa reforçada deve ser comprovada contra INSERT e UPDATE privilegiados em réplica, inclusive raiz versus não raiz, ordem saltada, versão do predecessor incompatível, recibo com intenção divergente e alteração da linha referenciada. A proteção não equivale a imutabilidade contra um proprietário capaz de alterar o DDL. Reexecutar as 70 verificações anteriores pois constraints novas podem interferir nas transições válidas. Nenhuma aprovação remota decorre desta alteração.
