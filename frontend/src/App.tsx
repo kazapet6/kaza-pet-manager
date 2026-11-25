@@ -1,9 +1,10 @@
-﻿import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { useEffect } from 'react'
 import type { User } from '@supabase/supabase-js'
 import './App.css'
 import Dashboard from './pages/Dashboard'
 import Agenda from './pages/Agenda'
+import IconeAgenda from './agenda/IconeAgenda'
 import Clientes from './pages/Clientes'
 import Pets from './pages/Pets'
 import Servicos from './pages/Servicos'
@@ -396,19 +397,17 @@ function App() {
         </div>
       </aside>
 
-      <main className="dashboard">
+      <main className={paginaAtual === 'agenda' ? 'dashboard dashboard-agenda' : 'dashboard'}>
         <header className="topbar">
-          <div>
-            <p className="breadcrumb">
-              Painel • {nomePagina}
-            </p>
-
-            <h1>Olá, {identidadeUsuario}!</h1>
-
-            <p className="date-label">
-              {dataFormatada}
-            </p>
-          </div>
+          {paginaAtual === 'agenda' ? (
+            <h1 className="kpm-agenda-titulo"><IconeAgenda nome="calendario" />Agenda</h1>
+          ) : (
+            <div>
+              <p className="breadcrumb">Painel • {nomePagina}</p>
+              <h1>Olá, {identidadeUsuario}!</h1>
+              <p className="date-label">{dataFormatada}</p>
+            </div>
+          )}
 
           <div className="profile-card">
             <div className="profile-avatar">
