@@ -14,5 +14,5 @@ const origens = criarOrigensPermitidas(Deno.env.get('ALLOWED_ORIGINS'))
 
 Deno.serve(criarHandler({
   validarToken: criarValidadorToken(auth),
-  confirmar: (intencao) => confirmarComBackendConfiavel(intencao, admin),
+  confirmar: (intencao, operadorId) => confirmarComBackendConfiavel(intencao, admin, operadorId),
 }, origens))

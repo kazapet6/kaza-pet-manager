@@ -1,9 +1,11 @@
 import { lerAlterarStatusIntent, type AlterarStatusIntent, type AlterarStatusResposta } from '../_shared/status-atendimento.ts'
 
-type Usuario = { id: string; app_metadata?: Record<string, unknown> }
+type Usuario = { id: string; email?: string; app_metadata?: Record<string, unknown> }
 export type DependenciasStatus = {
   validarToken(token: string): Promise<Usuario | null>
   alterar(intencao: AlterarStatusIntent, usuarioId: string): Promise<AlterarStatusResposta>
+  autorizarPulo?(usuario: Usuario, senha: string): Promise<boolean>
+  pular?(intencao: Extract<AlterarStatusIntent, { acao: 'pular_banho' }>, usuarioId: string, autorizado: boolean): Promise<AlterarStatusResposta>
 }
 type ClienteAuth = { auth: { getUser(token: string): Promise<{ data: { user: Usuario | null }; error: unknown }> } }
 
@@ -24,7 +26,17 @@ export function criarHandlerStatus(dependencias: DependenciasStatus, origensPerm
     try { corpo = await requisicao.json() } catch { return json(400, invalida('JSON invalido.'), cors) }
     const intencao = lerAlterarStatusIntent(corpo)
     if (!intencao) return json(400, invalida('Intencao de status invalida.'), cors)
-    try { return json(200, await dependencias.alterar(intencao, usuario.id), cors) } catch (erro) {
+    try {
+      if (intencao.acao === 'pular_banho' && dependencias.pular) {
+        const { senha, ...pulo } = intencao
+        const autorizado = Boolean(senha && usuario.app_metadata?.creditos_admin === true &&
+          await dependencias.autorizarPulo?.(usuario, senha))
+        if (senha && !autorizado) return json(200, { status: 'invalido', codigo: 'AUTORIZACAO_PULO_INVALIDA', mensagem: 'Autorização administrativa do pulo não confirmada.' }, cors)
+        return json(200, await dependencias.pular(pulo, usuario.id, autorizado), cors)
+      }
+      if (intencao.acao === 'pular_banho') return json(400, invalida('Pulo indisponível.'), cors)
+      return json(200, await dependencias.alterar(intencao, usuario.id), cors)
+    } catch (erro) {
       console.error({ evento: 'status_atendimento_edge_erro', tipo: nomeSeguroErro(erro), mensagem: 'Falha interna ao alterar status.' })
       return json(500, { mensagem: 'Nao foi possivel atualizar o atendimento.' }, cors)
     }

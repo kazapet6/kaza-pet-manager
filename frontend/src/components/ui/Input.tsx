@@ -1,4 +1,4 @@
-import type { ChangeEvent, CSSProperties } from 'react'
+import type { ChangeEvent, ComponentProps, CSSProperties } from 'react'
 
 type InputProps = {
   placeholder?: string
@@ -7,6 +7,7 @@ type InputProps = {
   type?: 'text' | 'email' | 'password' | 'number' | 'tel' | 'time' | 'date'
   style?: CSSProperties
   disabled?: boolean
+  inputMode?: ComponentProps<'input'>['inputMode']
 }
 
 export default function Input({
@@ -16,6 +17,7 @@ export default function Input({
   type = 'text',
   style,
   disabled,
+  inputMode,
 }: InputProps) {
   return (
     <input
@@ -24,6 +26,7 @@ export default function Input({
       value={value}
       onChange={onChange}
       disabled={disabled}
+      inputMode={inputMode}
       style={{
         width: '100%',
         padding: '12px 14px',

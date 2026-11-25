@@ -1,6 +1,7 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.112.2'
 import {
   calcularHashIntencao,
+  valorValidoAtendimento,
   type ConfirmacaoAgendamentoIntent,
   type ConfirmacaoAgendamentoResposta,
   respostaConfirmacaoValida,
@@ -12,12 +13,14 @@ import { carregarDadosPrecificacaoComCliente } from '../_shared/motor/precificac
 import { carregarDadosDisponibilidadeComCliente } from '../_shared/motor/supabase.ts'
 import { executarRpcConfirmacao } from '../_shared/confirmacao/observabilidade.ts'
 import { ErroCadastroPetIncompleto } from '../_shared/motor/cadastroPet.ts'
+import { funcionarioResponsavelDaOpcao } from '../_shared/motor/responsavel.ts'
 
 type Versoes = { configuracao: number; ocupacao: number }
 
 export async function confirmarComBackendConfiavel(
   intencao: ConfirmacaoAgendamentoIntent,
   admin: SupabaseClient,
+  operadorId: string,
 ): Promise<ConfirmacaoAgendamentoResposta> {
   const versoes = await carregarVersoes(admin)
   if (intencao.versaoConfiguracaoConsultada !== versoes.configuracao) {
@@ -48,12 +51,33 @@ export async function confirmarComBackendConfiavel(
   const opcao = resultado.opcoes[0]
   if(resultado.erro?.codigo==='CADASTRO_PET_INCOMPLETO')return{status:'invalido',codigo:'CADASTRO_PET_INCOMPLETO',mensagem:resultado.motivos[0],campos:resultado.erro.campos}
   if (!opcao) return indisponivel(intencao, resultado.motivos[0], versoes.ocupacao)
+  const responsavel = funcionarioResponsavelDaOpcao(opcao)
+  if (!responsavel || responsavel !== intencao.funcionarioResponsavelId) {
+    return indisponivel(intencao, 'O funcionário responsável não corresponde ao plano recalculado pelo Motor.', versoes.ocupacao)
+  }
 
   let precificacao:ReturnType<typeof calcularPrecificacao>
   try{precificacao=calcularPrecificacao(precos.pet, opcao.servicos, precos.dados)}catch(erro){if(erro instanceof ErroCadastroPetIncompleto)return{status:'invalido',codigo:'CADASTRO_PET_INCOMPLETO',mensagem:erro.message,campos:erro.campos};throw erro}
+  const ajustes = intencao.valoresNegociados ?? []
+  let totalCentavos = Math.round(precificacao.valorCalculadoAtendimento * 100)
+  for (const ajuste of ajustes) {
+    const original = precificacao.servicos.find(servico => servico.servicoId === ajuste.servicoId)
+    if (original?.valorCalculado !== ajuste.original) {
+      return {
+        status: 'configuracao_alterada', codigo: 'PRECO_ALTERADO',
+        mensagem: 'O preço original mudou. Confira os valores antes de confirmar.',
+        versaoConfiguracaoConsultada: intencao.versaoConfiguracaoConsultada,
+        versaoConfiguracaoAtual: versoes.configuracao,
+      }
+    }
+    totalCentavos += Math.round(ajuste.final * 100) - Math.round(ajuste.original * 100)
+  }
+  if (!valorValidoAtendimento(totalCentavos / 100)) {
+    return { status: 'invalido', codigo: 'INTENCAO_INVALIDA', mensagem: 'O total negociado ficou fora do limite de valores.' }
+  }
   const hash = await calcularHashIntencao(intencao)
   const plano = montarPlanoConfirmacaoRpc(intencao, dados, opcao, precificacao, hash)
-  const data = await executarRpcConfirmacao(admin, plano, intencao)
+  const data = await executarRpcConfirmacao(admin, plano, intencao, operadorId)
   return traduzirRespostaRpc(data, intencao, opcao, precificacao, versoes)
 }
 

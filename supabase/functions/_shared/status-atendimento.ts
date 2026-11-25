@@ -15,11 +15,12 @@ type Base = { atendimentoId: string; statusEsperado: StatusAtendimento }
 export type AlterarStatusIntent = Base & (
   | { novoStatus: StatusOperacionalEditavel; acao?: never }
   | { acao: AcaoExcepcionalAtendimento; novoStatus?: never }
+  | { acao: 'pular_banho'; motivo: string; senha?: string; novoStatus?: never }
 )
 export type AlterarStatusResposta =
-  | { status: 'atualizado'; atendimentoId: string; statusAnterior: StatusAtendimento; statusAtual: StatusAtendimento; reutilizado: boolean }
+  | { status: 'atualizado'; atendimentoId: string; statusAnterior: StatusAtendimento; statusAtual: StatusAtendimento; reutilizado: boolean; renovacaoPendente?: boolean }
   | { status: 'conflito'; codigo: 'STATUS_ALTERADO'; mensagem: string; statusAtual: StatusAtendimento }
-  | { status: 'invalido'; codigo: 'INTENCAO_INVALIDA' | 'ATENDIMENTO_NAO_ENCONTRADO' | 'TRANSICAO_INVALIDA'; mensagem: string }
+  | { status: 'invalido'; codigo: 'INTENCAO_INVALIDA' | 'ATENDIMENTO_NAO_ENCONTRADO' | 'TRANSICAO_INVALIDA' | 'PAGAMENTO_INTEGRAL_PACOTE_PENDENTE' | 'PULO_INDISPONIVEL' | 'PULO_EXIGE_ADMIN' | 'AUTORIZACAO_PULO_INVALIDA' | 'ADICIONAL_JA_RECEBIDO'; mensagem: string }
 
 export const opcoesStatusOperacional = STATUS_OPERACIONAIS_EDITAVEIS.map((valor) => ({ valor, rotulo: rotuloStatusAtendimento(valor) }))
 export function podeEditarStatus(status: string): status is StatusOperacionalEditavel { return (STATUS_OPERACIONAIS_EDITAVEIS as readonly string[]).includes(status) }
@@ -36,12 +37,17 @@ export function lerAlterarStatusIntent(valor: unknown): AlterarStatusIntent | nu
   if (!objeto(valor) || typeof valor.atendimentoId !== 'string' || !valor.atendimentoId.trim() || !statusAtendimento(valor.statusEsperado)) return null
   if (statusOperacionalEditavel(valor.novoStatus) && valor.acao === undefined) return { atendimentoId: valor.atendimentoId, statusEsperado: valor.statusEsperado, novoStatus: valor.novoStatus }
   if (acaoExcepcionalAtendimento(valor.acao) && valor.novoStatus === undefined) return { atendimentoId: valor.atendimentoId, statusEsperado: valor.statusEsperado, acao: valor.acao }
+  if (valor.acao === 'pular_banho' && valor.novoStatus === undefined &&
+      typeof valor.motivo === 'string' && valor.motivo.trim() && valor.motivo.length <= 500 &&
+      (valor.senha === undefined || typeof valor.senha === 'string' && valor.senha.length <= 1024)) {
+    return { atendimentoId: valor.atendimentoId, statusEsperado: valor.statusEsperado, acao: valor.acao, motivo: valor.motivo.trim(), senha: valor.senha }
+  }
   return null
 }
 export function respostaAlterarStatusValida(valor: unknown): valor is AlterarStatusResposta {
   if (!objeto(valor) || !['atualizado', 'conflito', 'invalido'].includes(String(valor.status))) return false
   if (valor.status === 'atualizado') return typeof valor.atendimentoId === 'string' && statusAtendimento(valor.statusAnterior) && statusAtendimento(valor.statusAtual) && typeof valor.reutilizado === 'boolean'
   if (valor.status === 'conflito') return valor.codigo === 'STATUS_ALTERADO' && typeof valor.mensagem === 'string' && statusAtendimento(valor.statusAtual)
-  return ['INTENCAO_INVALIDA', 'ATENDIMENTO_NAO_ENCONTRADO', 'TRANSICAO_INVALIDA'].includes(String(valor.codigo)) && typeof valor.mensagem === 'string'
+  return ['INTENCAO_INVALIDA', 'ATENDIMENTO_NAO_ENCONTRADO', 'TRANSICAO_INVALIDA', 'PAGAMENTO_INTEGRAL_PACOTE_PENDENTE', 'PULO_INDISPONIVEL', 'PULO_EXIGE_ADMIN', 'AUTORIZACAO_PULO_INVALIDA', 'ADICIONAL_JA_RECEBIDO'].includes(String(valor.codigo)) && typeof valor.mensagem === 'string'
 }
 function objeto(valor: unknown): valor is Record<string, unknown> { return typeof valor === 'object' && valor !== null && !Array.isArray(valor) }

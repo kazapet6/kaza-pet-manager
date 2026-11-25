@@ -1,41 +1,21 @@
 import Paginacao from '../components/ui/Paginacao'
 import { usePaginacao } from '../components/ui/usePaginacao'
-import { useContext, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useContext, useMemo, useState } from 'react'
 import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
-import Select from '../components/ui/Select'
 import Card from '../components/ui/Card'
 import Modal from '../components/ui/Modal'
 import { SistemaContext } from '../context/SistemaContext'
-import { criarTravaSubmissaoPet } from '../data/submissaoPet.ts'
-import type { EspeciePet, PelagemPet, Pet, PortePet, SexoPet, TemperamentoPet } from '../types/Pet'
+import EditorPet from '../components/EditorPet'
+import type { Pet } from '../types/Pet'
 
 export default function Pets() {
-  const { clientes, pets, racas, adicionarPet, atualizarPet } =
+  const { clientes, pets } =
     useContext(SistemaContext)
-  const [modalAberto, setModalAberto] = useState(false)
-  const [petEmEdicaoId, setPetEmEdicaoId] = useState<string | null>(null)
+  const [editor, setEditor] = useState<{ pet?: Pet } | null>(null)
   const [petSelecionadoId, setPetSelecionadoId] = useState<string | null>(null)
   const [tutorExpandido, setTutorExpandido] = useState(false)
   const [pesquisa, setPesquisa] = useState('')
-  const [salvando, setSalvando] = useState(false)
-  const travaSubmissao = useRef(criarTravaSubmissaoPet())
-
-  const [clienteId, setClienteId] = useState('')
-  const [nome, setNome] = useState('')
-  const [especie, setEspecie] = useState<EspeciePet | ''>('')
-  const [racaId, setRacaId] = useState('')
-  const [racaBusca, setRacaBusca] = useState('')
-  const [sexo, setSexo] = useState<SexoPet | ''>('')
-  const [porte, setPorte] = useState<PortePet | ''>('')
-  const [pelagem, setPelagem] = useState<PelagemPet | ''>('')
-  const [peso, setPeso] = useState('')
-  const [cor, setCor] = useState('')
-  const [dataNascimento, setDataNascimento] = useState('')
-  const [castrado, setCastrado] = useState<boolean | null>(null)
-  const [temperamento, setTemperamento] = useState<TemperamentoPet | ''>('')
-  const [observacoes, setObservacoes] = useState('')
-
   const petsFiltrados = useMemo(() => {
     const termo = pesquisa.trim().toLowerCase()
 
@@ -55,60 +35,10 @@ export default function Pets() {
 
   const paginacao = usePaginacao(petsFiltrados, pesquisa)
 
-  const racasSugeridas = useMemo(() => {
-    const termo = racaBusca.trim().toLocaleLowerCase('pt-BR')
-    return racas
-      .filter((raca) => raca.ativo && raca.especie === especie)
-      .filter((raca) => !termo || raca.nome.toLocaleLowerCase('pt-BR').includes(termo) || raca.sinonimos.some((sinonimo) => sinonimo.ativo && sinonimo.nome.toLocaleLowerCase('pt-BR').includes(termo)))
-      .slice(0, 8)
-  }, [racas, especie, racaBusca])
-
   const petSelecionado = pets.find((pet) => pet.id === petSelecionadoId)
   const tutorDoPet = petSelecionado
     ? clientes.find((cliente) => cliente.id === petSelecionado.clienteId)
     : undefined
-
-  function abrirModal() {
-    travaSubmissao.current.liberar()
-    setSalvando(false)
-    setPetEmEdicaoId(null)
-    limparFormulario()
-    setModalAberto(true)
-  }
-
-  function fecharModal() {
-    if (travaSubmissao.current.ativa()) return
-    fecharFormulario()
-  }
-
-  function fecharFormulario() {
-    setModalAberto(false)
-    setPetEmEdicaoId(null)
-    limparFormulario()
-  }
-
-  function editarPet(pet: Pet) {
-    travaSubmissao.current.liberar()
-    setSalvando(false)
-    setClienteId(pet.clienteId)
-    setNome(pet.nome)
-    setEspecie(pet.especie ?? '')
-    setRacaId(pet.racaId ?? '')
-    setRacaBusca(pet.racaNome ?? '')
-    setSexo(pet.sexo ?? '')
-    setPorte(pet.porte ?? '')
-    setPelagem(pet.pelagem ?? '')
-    setPeso(pet.peso === null ? '' : String(pet.peso))
-    setCor(pet.cor)
-    setDataNascimento(pet.dataNascimento)
-    setCastrado(pet.castrado)
-    setTemperamento(pet.temperamento ?? '')
-    setObservacoes(pet.observacoes)
-    setPetEmEdicaoId(pet.id)
-    setPetSelecionadoId(null)
-    setTutorExpandido(false)
-    setModalAberto(true)
-  }
 
   function abrirDetalhesDoPet(id: string) {
     setPetSelecionadoId(id)
@@ -118,74 +48,6 @@ export default function Pets() {
   function fecharDetalhesDoPet() {
     setPetSelecionadoId(null)
     setTutorExpandido(false)
-  }
-
-  function limparFormulario() {
-    setClienteId('')
-    setNome('')
-    setEspecie('')
-    setRacaId('')
-    setRacaBusca('')
-    setSexo('')
-    setPorte('')
-    setPelagem('')
-    setPeso('')
-    setCor('')
-    setDataNascimento('')
-    setCastrado(null)
-    setTemperamento('')
-    setObservacoes('')
-  }
-
-  async function salvarPet(evento: FormEvent<HTMLFormElement>) {
-    evento.preventDefault()
-    if (travaSubmissao.current.ativa()) return
-
-    if (!clienteId.trim()) {
-      alert('Informe o código do cliente responsável.')
-      return
-    }
-
-    if (!nome.trim()) {
-      alert('Preencha o nome do pet.')
-      return
-    }
-
-    if (racaId && !especie) {
-      alert('Informe a espécie para a raça selecionada.')
-      return
-    }
-
-    const dadosPet = {
-      clienteId,
-      nome: nome.trim(),
-      especie: especie || null,
-      racaId: racaId || null,
-      sexo: sexo || null,
-      porte: porte || null,
-      pelagem: pelagem || null,
-      peso: peso ? Number(peso) : null,
-      cor: cor.trim(),
-      dataNascimento: dataNascimento.trim(),
-      castrado,
-      temperamento: temperamento || null,
-      observacoes: observacoes.trim(),
-    }
-
-    setSalvando(true)
-    try {
-      const resultado = await travaSubmissao.current.executar(async () => {
-        if (petEmEdicaoId) await atualizarPet(petEmEdicaoId, dadosPet)
-        else await adicionarPet(dadosPet)
-      })
-      if (!resultado.executado) return
-      fecharFormulario()
-      travaSubmissao.current.liberar()
-      setSalvando(false)
-    } catch (error) {
-      setSalvando(false)
-      alert(obterMensagemErro(error))
-    }
   }
 
   return (
@@ -213,7 +75,7 @@ export default function Pets() {
           </p>
         </div>
 
-        <Button onClick={abrirModal}>
+        <Button onClick={() => setEditor({})}>
           + Novo Pet
         </Button>
       </div>
@@ -326,7 +188,7 @@ export default function Pets() {
               <div onClick={(evento) => evento.stopPropagation()}>
                 <Button
                   variant="secondary"
-                  onClick={() => editarPet(pet)}
+                  onClick={() => { fecharDetalhesDoPet(); setEditor({ pet }) }}
                 >
                   Editar
                 </Button>
@@ -339,237 +201,7 @@ export default function Pets() {
 
       <Paginacao pagina={paginacao.pagina} total={paginacao.total} quantidade={petsFiltrados.length} onChange={paginacao.mudarPagina} />
 
-      <Modal
-        aberto={modalAberto}
-        titulo={petEmEdicaoId ? 'Editar pet' : 'Novo pet'}
-        onClose={fecharModal}
-      >
-        <form
-          onSubmit={salvarPet}
-          style={{
-            display: 'grid',
-            gap: '14px',
-          }}
-        >
-          <Campo titulo="Código do cliente *">
-            <Select
-              value={clienteId}
-              onChange={(evento) => setClienteId(evento.target.value)}
-              options={[
-                { value: '', label: 'Selecione o cliente' },
-                ...clientes.map((cliente) => ({
-                  value: cliente.id,
-                  label: `${cliente.nome} (${cliente.id})`,
-                })),
-              ]}
-            />
-          </Campo>
-
-          <Campo titulo="Nome do pet *">
-            <Input
-              placeholder="Nome do pet"
-              value={nome}
-              onChange={(evento) => setNome(evento.target.value)}
-            />
-          </Campo>
-
-          <div style={gradeDuasColunas}>
-            <Campo titulo="Espécie">
-              <Select
-                value={especie}
-                onChange={(evento) => {
-                  setEspecie(evento.target.value as 'cao' | 'gato')
-                  setRacaId('')
-                  setRacaBusca('')
-                }}
-                options={[
-                  { value: '', label: 'Não informado' },
-                  { value: 'cao', label: 'Cão' },
-                  { value: 'gato', label: 'Gato' },
-                ]}
-              />
-            </Campo>
-
-            <Campo titulo="Raça">
-              <div style={{ position: 'relative' }}>
-                <Input
-                  placeholder="Busque uma raça"
-                  value={racaBusca}
-                  onChange={(evento) => {
-                    setRacaBusca(evento.target.value)
-                    setRacaId('')
-                  }}
-                />
-                {!racaId && racaBusca.trim() && (
-                  <div style={listaAutocomplete}>
-                    {racasSugeridas.map((raca) => (
-                      <button
-                        type="button"
-                        key={raca.id}
-                        style={opcaoAutocomplete}
-                        onClick={() => {
-                          setRacaId(raca.id)
-                          setRacaBusca(raca.nome)
-                        }}
-                      >
-                        {raca.nome}
-                      </button>
-                    ))}
-                    {racasSugeridas.length === 0 && (
-                      <span style={{ padding: '12px' }}>Nenhuma raça encontrada.</span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </Campo>
-          </div>
-
-          <div style={gradeDuasColunas}>
-            <Campo titulo="Sexo">
-              <Select
-                value={sexo}
-                onChange={(evento) =>
-                  setSexo(evento.target.value as 'macho' | 'femea')
-                }
-                options={[
-                  { value: '', label: 'Não informado' },
-                  { value: 'macho', label: 'Macho' },
-                  { value: 'femea', label: 'Fêmea' },
-                ]}
-              />
-            </Campo>
-
-            <Campo titulo="Porte">
-              <Select
-                value={porte}
-                onChange={(evento) =>
-                  setPorte(
-                    evento.target.value as
-                      | 'mini'
-                      | 'pequeno'
-                      | 'medio'
-                      | 'grande'
-                      | 'gigante',
-                  )
-                }
-                options={[
-                  { value: '', label: 'Não informado' },
-                  { value: 'mini', label: 'Mini' },
-                  { value: 'pequeno', label: 'Pequeno' },
-                  { value: 'medio', label: 'Médio' },
-                  { value: 'grande', label: 'Grande' },
-                  { value: 'gigante', label: 'Gigante' },
-                ]}
-              />
-            </Campo>
-          </div>
-
-          <Campo titulo="Pelagem">
-            <Select
-              value={pelagem}
-              onChange={(evento) => setPelagem(evento.target.value as PelagemPet | '')}
-              options={[
-                { value: '', label: 'Não informado' },
-                { value: 'curta', label: 'Curta' },
-                { value: 'media', label: 'Média' },
-                { value: 'longa', label: 'Longa' },
-              ]}
-            />
-          </Campo>
-
-          <div style={gradeDuasColunas}>
-            <Campo titulo="Peso">
-              <Input
-                type="number"
-                placeholder="Peso em kg"
-                value={peso}
-                onChange={(evento) => setPeso(evento.target.value)}
-              />
-            </Campo>
-
-            <Campo titulo="Cor">
-              <Input
-                placeholder="Cor da pelagem"
-                value={cor}
-                onChange={(evento) => setCor(evento.target.value)}
-              />
-            </Campo>
-          </div>
-
-          <Campo titulo="Data de nascimento">
-            <Input
-              placeholder="DD/MM/AAAA"
-              value={dataNascimento}
-              onChange={(evento) =>
-                setDataNascimento(evento.target.value)
-              }
-            />
-          </Campo>
-
-          <Campo titulo="Temperamento">
-            <Select
-              value={temperamento}
-              onChange={(evento) =>
-                setTemperamento(evento.target.value as TemperamentoPet | '')
-              }
-              options={[
-                { value: '', label: 'Não informado' },
-                { value: 'calmo', label: 'Calmo' },
-                { value: 'moderado', label: 'Moderado' },
-                { value: 'dificil', label: 'Difícil' },
-              ]}
-            />
-          </Campo>
-
-          <Campo titulo="Castrado">
-            <Select value={castrado === null ? '' : castrado ? 'sim' : 'nao'} onChange={(evento) => setCastrado(evento.target.value === '' ? null : evento.target.value === 'sim')} options={[{ value: '', label: 'Não informado' }, { value: 'sim', label: 'Sim' }, { value: 'nao', label: 'Não' }]} />
-          </Campo>
-
-          <Campo titulo="Observações">
-            <textarea
-              placeholder="Temperamento, alergias e informações importantes"
-              value={observacoes}
-              onChange={(evento) =>
-                setObservacoes(evento.target.value)
-              }
-              style={{
-                width: '100%',
-                minHeight: '90px',
-                padding: '12px 14px',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--color-border)',
-                background: 'var(--color-surface)',
-                color: 'var(--color-text)',
-                outline: 'none',
-                fontSize: '15px',
-                boxSizing: 'border-box',
-                resize: 'vertical',
-              }}
-            />
-          </Campo>
-
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              gap: '10px',
-              marginTop: '8px',
-            }}
-          >
-            <Button
-              variant="secondary"
-              onClick={fecharModal}
-              disabled={salvando}
-            >
-              Cancelar
-            </Button>
-
-            <Button type="submit" disabled={salvando}>
-              {salvando ? 'Salvando...' : petEmEdicaoId ? 'Salvar alterações' : 'Salvar Pet'}
-            </Button>
-          </div>
-        </form>
-      </Modal>
+      {editor && <EditorPet pet={editor.pet} onClose={() => setEditor(null)} />}
 
       <Modal
         aberto={Boolean(petSelecionado)}
@@ -775,62 +407,4 @@ function formatarDataCadastro(valor: string) {
   return Number.isNaN(data.getTime())
     ? 'Não informado'
     : data.toLocaleDateString('pt-BR')
-}
-
-function obterMensagemErro(error: unknown) {
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'message' in error &&
-    typeof error.message === 'string'
-  ) {
-    return error.message
-  }
-
-  return 'Não foi possível salvar o pet. Tente novamente.'
-}
-
-type CampoProps = {
-  titulo: string
-  children: React.ReactNode
-}
-
-function Campo({ titulo, children }: CampoProps) {
-  return (
-    <div style={{ display: 'grid', gap: '6px' }}>
-      <label style={{ fontWeight: 600 }}>
-        {titulo}
-      </label>
-
-      {children}
-    </div>
-  )
-}
-
-const gradeDuasColunas = {
-  display: 'grid',
-  gridTemplateColumns: '1fr 1fr',
-  gap: '14px',
-}
-
-const listaAutocomplete = {
-  position: 'absolute' as const,
-  zIndex: 10,
-  top: 'calc(100% + 6px)',
-  width: '100%',
-  display: 'grid',
-  maxHeight: '220px',
-  overflowY: 'auto' as const,
-  border: '1px solid var(--color-border)',
-  borderRadius: 'var(--radius-md)',
-  background: 'var(--color-card)',
-  boxShadow: 'var(--shadow-lg)',
-}
-
-const opcaoAutocomplete = {
-  padding: '11px 12px',
-  textAlign: 'left' as const,
-  background: 'transparent',
-  color: 'var(--color-text)',
-  borderBottom: '1px solid var(--color-border)',
 }

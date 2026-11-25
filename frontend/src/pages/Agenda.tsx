@@ -11,6 +11,7 @@ import { carregarAgendaDiaria } from '../data/agendaDiaria.ts'
 import { supabase } from '../lib/supabase.ts'
 import { alterarStatusAtendimento } from '../statusAtendimento/clienteSupabase.ts'
 import ObservacoesAtendimentoModal from '../observacoesAtendimento/ObservacoesAtendimentoModal.tsx'
+import ReceberAdicionais from "../conclusaoAtendimento/ReceberAdicionais"
 import ConclusaoAtendimentoModal from '../conclusaoAtendimento/ConclusaoAtendimentoModal.tsx'
 import { podeAbrirConclusao } from '../conclusaoAtendimento/contrato.ts'
 import { executarDadosConclusao } from '../conclusaoAtendimento/clienteSupabase.ts'
@@ -91,6 +92,9 @@ export default function Agenda({ onVerContrato }: { onVerContrato: (contratoId: 
       ? { ...base, acao: alteracao }
       : { ...base, novoStatus: alteracao }
     const resposta = await alterarStatusAtendimento(intencao)
+    if (resposta.status === 'atualizado' && resposta.renovacaoPendente) {
+      setAviso('Atendimento concluído. A renovação automática ficou pendente de conferência.')
+    }
     if (resposta.status === 'atualizado' || resposta.status === 'conflito') {
       const atualizada = await carregarAgendaDiaria(supabase, atendimento.dataOperacional)
       setAgenda(atualizada); setData(atualizada.dataOperacional)
@@ -116,6 +120,16 @@ export default function Agenda({ onVerContrato }: { onVerContrato: (contratoId: 
     }
   }
 
+  async function pularBanho(atendimento: AgendaDiariaAtendimento, motivo: string, senha?: string) {
+    if (!statusAtendimento(atendimento.status)) throw new Error('Status desconhecido.')
+    const resposta = await alterarStatusAtendimento({
+      atendimentoId: atendimento.id, statusEsperado: atendimento.status, acao: 'pular_banho', motivo, senha,
+    })
+    if (resposta.status !== 'atualizado') throw new Error(resposta.mensagem)
+    await carregar(atendimento.dataOperacional)
+    setSucesso('Banho pulado. O crédito foi preservado.')
+  }
+
   return <section className="agenda-diaria">
     <header className="agenda-cabecalho"><div className="agenda-titulo"><span>Central operacional</span><h1>Agenda</h1><p>Organize os atendimentos do seu dia de forma prática e eficiente.</p></div></header>
     {sucesso && <div className="agenda-sucesso" role="status"><span>✓</span><strong>{sucesso}</strong><button type="button" aria-label="Fechar aviso" onClick={() => setSucesso(null)}>×</button></div>}
@@ -125,14 +139,14 @@ export default function Agenda({ onVerContrato }: { onVerContrato: (contratoId: 
       : erro ? <EstadoTela titulo="Não foi possível carregar a Agenda" texto={erro}><Button variant="secondary" onClick={() => void carregar(data || undefined)}>Tentar novamente</Button></EstadoTela>
         : agenda && <GradeAgenda key={agenda.dataOperacional} agenda={agenda} blocos={blocos} agora={agora} mudarData={mudarData} hoje={() => void carregar()} abrir={item => void abrirDetalhe(item)} novo={abrirNovo} acao={item => void executarAcaoRapida(item)} atualizandoId={acaoRapidaAtualizandoId} />}
 
-    <Detalhes atendimento={detalhe} timezone={agenda?.timezone ?? 'America/Sao_Paulo'} fechar={() => setDetalhe(null)} executarAcao={executarAcaoStatus} remarcar={(item) => { setDetalhe(null); setRemarcando(item) }} concluir={(item) => { setDetalhe(null); setConcluindo(item) }} verContrato={onVerContrato} notificar={(mensagem) => setSucesso(mensagem ?? 'Observacoes do atendimento salvas.')} />
+    <Detalhes atendimento={detalhe} timezone={agenda?.timezone ?? 'America/Sao_Paulo'} fechar={() => setDetalhe(null)} executarAcao={executarAcaoStatus} pularBanho={pularBanho} remarcar={(item) => { setDetalhe(null); setRemarcando(item) }} concluir={(item) => { setDetalhe(null); setConcluindo(item) }} verContrato={onVerContrato} notificar={(mensagem) => setSucesso(mensagem ?? 'Observacoes do atendimento salvas.')} />
     {novoAberto && <NovoAgendamentoModal aberto dataInicial={data} contextoInicial={contextoNovo} onClose={() => setNovoAberto(false)} onConfirmado={concluirNovoAgendamento} />}
     {remarcando && <RemarcarAtendimentoModal atendimento={remarcando} onClose={() => setRemarcando(null)} onRemarcado={concluirRemarcacao} />}
     {concluindo && <ConclusaoAtendimentoModal atendimento={concluindo} statusEsperado={concluindo.status} onClose={() => setConcluindo(null)} onConcluir={(item, statusEsperado) => executarAcaoStatus(item, 'concluido', false, statusEsperado)} />}
   </section>
 }
 
-function Detalhes({ atendimento, timezone, fechar, executarAcao, remarcar, concluir, verContrato, notificar }: { atendimento: AgendaDiariaAtendimento | null; timezone: string; fechar: () => void; executarAcao: (atendimento: AgendaDiariaAtendimento, alteracao: StatusOperacionalEditavel | AcaoExcepcionalAtendimento) => Promise<AlterarStatusResposta>; remarcar: (atendimento: AgendaDiariaAtendimento) => void; concluir: (atendimento: AgendaDiariaAtendimento) => void; verContrato: (contratoId: string) => void; notificar: (mensagem?: string) => void }) {
+function Detalhes({ atendimento, timezone, fechar, executarAcao, pularBanho, remarcar, concluir, verContrato, notificar }: { atendimento: AgendaDiariaAtendimento | null; timezone: string; fechar: () => void; executarAcao: (atendimento: AgendaDiariaAtendimento, alteracao: StatusOperacionalEditavel | AcaoExcepcionalAtendimento) => Promise<AlterarStatusResposta>; pularBanho: (atendimento: AgendaDiariaAtendimento, motivo: string, senha?: string) => Promise<void>; remarcar: (atendimento: AgendaDiariaAtendimento) => void; concluir: (atendimento: AgendaDiariaAtendimento) => void; verContrato: (contratoId: string) => void; notificar: (mensagem?: string) => void }) {
   const [atualizando, setAtualizando] = useState(false)
   const [statusAtualizando, setStatusAtualizando] = useState<StatusOperacionalEditavel | null>(null)
   const [confirmacao, setConfirmacao] = useState<AcaoExcepcionalAtendimento | null>(null)
@@ -173,7 +187,7 @@ function Detalhes({ atendimento, timezone, fechar, executarAcao, remarcar, concl
         <button type="button" onClick={() => verContrato(atendimento.vinculoContrato!.contratoId)}>Ver contrato →</button>
       </section>}
       <div className="agenda-detalhes-resumo">
-        <div className="agenda-resumo-horario"><span>Horário previsto</span><strong>{hora(atendimento.inicio, timezone)} <i>→</i> {hora(atendimento.conclusao, timezone)}</strong></div>
+        <div className="agenda-resumo-horario"><span>{atendimento.taxidog ? "Atendimento previsto" : "Horário previsto"}</span><strong>{hora(atendimento.inicio, timezone)} <i>→</i> {hora(atendimento.conclusao, timezone)}</strong></div>
         <Item rotulo="Data" valor={dataCurta(atendimento.dataOperacional)} />
         <Item rotulo="Modalidade" valor={atendimento.modalidade === 'taxidog' ? 'TaxiDog' : 'Sem transporte'} />
         <Item rotulo={atendimento.vinculoContrato ? 'Valor de referência' : 'Valor final'} valor={moeda(atendimento.valorFinal)} />
@@ -192,9 +206,11 @@ function Detalhes({ atendimento, timezone, fechar, executarAcao, remarcar, concl
       {atendimento.historicoOperacional.length > 0 && <Bloco titulo="Histórico do atendimento"><div className="agenda-historico-operacional">{atendimento.historicoOperacional.map((evento) => <span key={evento.tipo}><strong>{evento.rotulo}</strong><time>{hora(evento.ocorridoEm, timezone)}</time></span>)}</div></Bloco>}
       <div className="agenda-complementos">
         {atendimento.esperas.length > 0 && <Bloco titulo="Intervalos operacionais"><div className="agenda-esperas">{atendimento.esperas.map((item) => <span key={item.id}><time>{hora(item.inicio, timezone)}–{hora(item.fim, timezone)}</time><strong>Espera</strong> · {item.motivo}</span>)}</div></Bloco>}
-        {atendimento.taxidog && <Bloco titulo="TaxiDog"><div className="agenda-taxidog-resumo"><Item rotulo="Ciclo" valor={atendimento.taxidog.cicloNome} /><Item rotulo="Coleta" valor={`${horaSimples(atendimento.taxidog.coletaInicio)}–${horaSimples(atendimento.taxidog.coletaFim)}`} /><Item rotulo="Conclusão limite" valor={horaSimples(atendimento.taxidog.conclusaoLimite)} /></div></Bloco>}
+        {atendimento.taxidog && <Bloco titulo="TaxiDog"><div className="agenda-taxidog-resumo"><Item rotulo="Ciclo" valor={atendimento.taxidog.cicloNome} /><Item rotulo="Janela de coleta" valor={`${horaSimples(atendimento.taxidog.coletaInicio)}–${horaSimples(atendimento.taxidog.coletaFim)}`} /><Item rotulo="Limite operacional de conclusão" valor={horaSimples(atendimento.taxidog.conclusaoLimite)} /></div></Bloco>}
         {atendimento.observacoes && <Bloco titulo="Observações"><p className="agenda-observacoes">{atendimento.observacoes}</p></Bloco>}
       </div>
+      {atendimento.vinculoContrato && (status === 'agendado' || status === 'confirmado') && <ReceberAdicionais key={`adicionais-${atendimento.id}`} atendimentoId={atendimento.id} />}
+      {atendimento.vinculoContrato && (status === 'agendado' || status === 'confirmado') && <PuloBanho key={atendimento.id} executar={(motivo, senha) => pularBanho(atendimento, motivo, senha)} />}
       <footer>
       <div className="agenda-rodape-acoes"><div><button type="button" className="agenda-acao-observacoes" onClick={() => setObservacoesAberto(true)}>Observacoes</button></div></div>
       {status && (status === 'agendado' || status === 'confirmado' || podeExecutarAcaoExcepcional(status, 'registrar_falta') || podeExecutarAcaoExcepcional(status, 'cancelar')) && <div className="agenda-rodape-acoes">
@@ -210,6 +226,38 @@ function Detalhes({ atendimento, timezone, fechar, executarAcao, remarcar, concl
       <Button variant="secondary" onClick={fechar}>Fechar</Button></footer>
     </div>}
   </Modal>{atendimento && observacoesAberto && <ObservacoesAtendimentoModal atendimento={atendimento} onClose={() => setObservacoesAberto(false)} onSalvo={notificar} />}</>
+}
+
+function PuloBanho({ executar }: { executar(motivo: string, senha?: string): Promise<void> }) {
+  const [aberto, setAberto] = useState(false)
+  const [motivo, setMotivo] = useState('')
+  const [senha, setSenha] = useState('')
+  const [administrativo, setAdministrativo] = useState(false)
+  const [erro, setErro] = useState('')
+  const [ocupado, setOcupado] = useState(false)
+  const enviando = useRef(false)
+
+  async function confirmar() {
+    if (enviando.current || !motivo.trim() || (administrativo && !senha)) return
+    enviando.current = true
+    setOcupado(true)
+    setErro('')
+    try { await executar(motivo, administrativo ? senha : undefined) }
+    catch (error) { setErro(mensagemErro(error)) }
+    finally { setSenha(''); enviando.current = false; setOcupado(false) }
+  }
+  if (!aberto) return <Button variant="secondary" onClick={() => setAberto(true)}>Pular banho</Button>
+  return <form className="agenda-confirmacao-excepcional" onSubmit={(evento) => { evento.preventDefault(); void confirmar() }}>
+    <div>
+      <strong>Pular banho e preservar o crédito</strong>
+      <p>O horário será liberado. O crédito permanece no ciclo para reaproveitamento.</p>
+      <label>Motivo do pulo <input value={motivo} maxLength={500} onChange={(evento) => setMotivo(evento.target.value)} required /></label>
+      <label><input type="checkbox" checked={administrativo} onChange={(evento) => { setAdministrativo(evento.target.checked); setSenha('') }} /> Autorizar como administrador</label>
+      {administrativo && <label>Senha administrativa <input type="password" autoComplete="current-password" value={senha} onChange={(evento) => setSenha(evento.target.value)} required /></label>}
+      {erro && <p role="alert">{erro}</p>}
+    </div>
+    <span><button type="button" disabled={ocupado} onClick={() => { setAberto(false); setSenha(''); setErro('') }}>Voltar</button><button type="submit" disabled={ocupado}>Confirmar pulo</button></span>
+  </form>
 }
 
 function EstadoTela({ titulo, texto, children }: { titulo: string; texto: string; children?: React.ReactNode }) { return <div className="agenda-estado"><div>🐾</div><h2>{titulo}</h2><p>{texto}</p>{children}</div> }

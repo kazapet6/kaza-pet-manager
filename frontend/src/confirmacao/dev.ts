@@ -5,12 +5,14 @@ import {
   type ConfirmacaoAgendamentoIntent,
   type ErroValidacaoIntencao,
   type ModalidadeConfirmacao,
+  type ValorNegociadoServico,
 } from './contrato.ts'
 import type { PreferenciaFuncionario } from '../motorDisponibilidade/tipos.ts'
 
 export type DadosIntencaoConfirmacaoDev = {
   readonly petId: string
   readonly servicoIds: readonly string[]
+  readonly valoresNegociados?: readonly ValorNegociadoServico[]
   readonly data: string
   readonly horarioEscolhido: number
   readonly modalidade: ModalidadeConfirmacao
@@ -67,6 +69,7 @@ function criarIntencao(
     chaveIdempotencia,
     petId: dados.petId,
     servicoIds: [...dados.servicoIds],
+    ...(dados.valoresNegociados?.length ? { valoresNegociados: dados.valoresNegociados } : {}),
     data: dados.data,
     horarioEscolhido: dados.modalidade === 'taxidog' ? null : dados.horarioEscolhido,
     modalidade: dados.modalidade,

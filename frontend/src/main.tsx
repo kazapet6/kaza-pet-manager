@@ -3,12 +3,9 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import './theme.css'
 import App from './App'
-import { AgendaProvider } from './context/AgendaProvider'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AgendaProvider>
-      <App />
-    </AgendaProvider>
+    <App />
   </StrictMode>,
 )

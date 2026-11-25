@@ -8,7 +8,7 @@ export type ParametrosNovoAgendamento = {
   data: string
   modalidade: 'sem_transporte' | 'taxidog'
   cicloTaxidogId: string
-  funcionarioResponsavelId: string
+  funcionarioSelecionadoId: string
 }
 
 export function buscarClientes(clientes: Cliente[], termo: string, limite = 8) {
@@ -26,8 +26,8 @@ export function construirEntradaNovoAgendamento(parametros: ParametrosNovoAgenda
     petId: parametros.petId,
     servicoIds: [...parametros.servicoIds].sort(),
     data: parametros.data,
-    preferenciaFuncionario: 'obrigatorio',
-    funcionarioPreferidoId: parametros.funcionarioResponsavelId,
+    preferenciaFuncionario: parametros.funcionarioSelecionadoId ? 'obrigatorio' : 'automatico',
+    funcionarioPreferidoId: parametros.funcionarioSelecionadoId || null,
     tipoPlanejamento: 'normal',
     modalidade: parametros.modalidade,
     cicloTaxidogId: parametros.modalidade === 'taxidog' ? parametros.cicloTaxidogId : null,

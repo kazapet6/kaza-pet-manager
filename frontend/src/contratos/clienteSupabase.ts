@@ -8,12 +8,16 @@ import { agregarCreditos, estadoCredito } from "../../../supabase/functions/_sha
 import type { ContagemCreditos, DetalheCicloCreditos, DetalheUnidadeCredito, EstadoCreditoContrato, ResumoContratoCreditos } from "../../../supabase/functions/_shared/credito-contrato.ts";
 type L = Record<string, unknown>;
 export type CicloResumoCard = ContagemCreditos & {
+  comercialmenteConcluido: boolean;
+  elegivelRenovacao: boolean;
   id: string;
   numero: number;
   estado: string;
   inicio: string;
   fim: string;
+  situacaoFinanceira: string | null;
   encerramentoPendente: boolean;
+  materializacaoEstado: "pendente" | "materializando" | "materializado" | "erro" | null;
 };
 export type ContratoResumoVisual = ContratoResumo & {
   cicloResumo: CicloResumoCard | null;
@@ -108,17 +112,22 @@ async function carregarResumoCards(contratos: ContratoResumo[]): Promise<Contrat
   if (!contratos.length) return [];
   const { data: ciclos, error: erroCiclos } = await supabase
     .from("contrato_ciclos")
-    .select("id,contrato_id,numero,estado,data_ancora_pretendida,encerramento_pendente")
+    .select("id,contrato_id,numero,estado,data_ancora_pretendida,encerramento_pendente,materializacao_estado,situacao_financeira")
     .in("contrato_id", contratos.map((contrato) => contrato.id))
     .order("numero", { ascending: false });
   if (erroCiclos) return semResumo();
 
+  const comerciais = new Map<string, { comercialmenteConcluido: boolean; elegivelRenovacao: boolean; inicio: string; fim: string }>();
+  try {
+    const resumos = await Promise.all(contratos.map(c => carregarResumoCreditosContrato(c.id)));
+    for (const resumo of resumos) for (const ciclo of resumo.ciclos) comerciais.set(ciclo.id, ciclo);
+  } catch { return semResumo(); }
   const atuais = new Map<string, L>();
   for (const ciclo of (ciclos ?? []) as L[]) {
     const contratoId = String(ciclo.contrato_id);
     const anterior = atuais.get(contratoId);
-    const aberto = !["concluido", "cancelado"].includes(String(ciclo.estado));
-    const anteriorAberto = anterior && !["concluido", "cancelado"].includes(String(anterior.estado));
+    const aberto = String(ciclo.estado) !== "cancelado" && !comerciais.get(String(ciclo.id))?.comercialmenteConcluido;
+    const anteriorAberto = anterior && String(anterior.estado) !== "cancelado" && !comerciais.get(String(anterior.id))?.comercialmenteConcluido;
     if (!anterior || (aberto && !anteriorAberto) || (aberto === anteriorAberto && Number(ciclo.numero) > Number(anterior.numero))) atuais.set(contratoId, ciclo);
   }
   const cicloIds = [...atuais.values()].map((ciclo) => String(ciclo.id));
@@ -151,14 +160,24 @@ async function carregarResumoCards(contratos: ContratoResumo[]): Promise<Contrat
       ...contrato,
       consumoDisponivel: true,
       cicloResumo: {
+        comercialmenteConcluido: comerciais.get(id)?.comercialmenteConcluido === true,
+        elegivelRenovacao: comerciais.get(id)?.elegivelRenovacao === true,
         id,
         numero: Number(ciclo.numero),
         estado: String(ciclo.estado),
-        inicio: datas[0] ?? ancora,
-        fim: datas.at(-1) ?? ancora,
+        inicio: comerciais.get(id)?.inicio ?? datas[0] ?? ancora,
+        fim: comerciais.get(id)?.fim ?? datas.at(-1) ?? ancora,
+        situacaoFinanceira: typeof ciclo.situacao_financeira === "string" ? ciclo.situacao_financeira : null,
         encerramentoPendente: Boolean(ciclo.encerramento_pendente),
+        materializacaoEstado: estadoMaterializacao(ciclo.materializacao_estado),
         ...agregarCreditos((estadosPorCiclo.get(id) ?? []).map((estadoComercial) => ({ estadoComercial }))),
       },
     };
   });
+}
+
+function estadoMaterializacao(valor: unknown): CicloResumoCard["materializacaoEstado"] {
+  return ["pendente", "materializando", "materializado", "erro"].includes(String(valor))
+    ? valor as CicloResumoCard["materializacaoEstado"]
+    : null;
 }

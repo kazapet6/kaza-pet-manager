@@ -17,6 +17,7 @@ import Importacao from './importacao/Importacao'
 import { supabase } from './lib/supabase'
 import { classificarUsuarioInterno, type EstadoAutenticacao } from './auth/interna'
 import { SistemaProvider } from './context/SistemaProvider'
+import { AgendaProvider } from './context/AgendaProvider'
 
 function App() {
   const [estadoAutenticacao, setEstadoAutenticacao] = useState<EstadoAutenticacao>('carregando')
@@ -421,9 +422,11 @@ function App() {
           </div>
         </header>
 
-        <SistemaProvider key={usuarioAtual!.id}>
-          {renderizarPagina()}
-        </SistemaProvider>
+        <AgendaProvider key={usuarioAtual!.id}>
+          <SistemaProvider>
+            {renderizarPagina()}
+          </SistemaProvider>
+        </AgendaProvider>
       </main>
     </div>
   )

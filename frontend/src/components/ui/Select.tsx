@@ -6,18 +6,21 @@ type Option = {
 }
 
 type SelectProps = {
+  disabled?: boolean
   value?: string
   onChange?: (e: ChangeEvent<HTMLSelectElement>) => void
   options: Option[]
 }
 
 export default function Select({
+  disabled,
   value,
   onChange,
   options,
 }: SelectProps) {
   return (
     <select
+      disabled={disabled}
       value={value}
       onChange={onChange}
       style={{

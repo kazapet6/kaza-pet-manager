@@ -12,6 +12,7 @@ const migration021 = fs.readFileSync(new URL('../../../banco/021_flexibilizar_st
 const migration022 = fs.readFileSync(new URL('../../../banco/022_cancelamento_falta_atendimentos.sql', import.meta.url), 'utf8')
 const migration032 = fs.readFileSync(new URL('../../../banco/032_ciclo_vida_creditos_contrato.sql', import.meta.url), 'utf8')
 const agenda = fs.readFileSync(new URL('../pages/Agenda.tsx', import.meta.url), 'utf8')
+const grade = fs.readFileSync(new URL('../agenda/GradeAgenda.tsx', import.meta.url), 'utf8')
 const css = fs.readFileSync(new URL('../App.css', import.meta.url), 'utf8')
 const cliente = fs.readFileSync(new URL('./clienteSupabase.ts', import.meta.url), 'utf8')
 const servico = fs.readFileSync(new URL('../../../supabase/functions/alterar-status-atendimento/servico.ts', import.meta.url), 'utf8')
@@ -41,7 +42,12 @@ await teste('SA24', 'modal usa sete cards em uma linha no desktop', () => assert
 await teste('SA25', 'processamento fica no card clicado e bloqueia os demais', () => assert.ok(agenda.includes('disabled={atualizando}') && agenda.includes('statusAtualizando === opcao.valor') && agenda.includes('agenda-status-spinner') && agenda.includes('Atualizando...') && !agenda.includes('agenda-status-atualizando')))
 await teste('SA26', 'reload usa loader normal', () => assert.ok(agenda.includes('carregarAgendaDiaria(supabase, atendimento.dataOperacional)')))
 await teste('SA27', 'card usa exclusivamente status carregado', () => assert.ok(agenda.includes('<Status valor={atendimento.status} />')))
-await teste('SA28', 'TaxiDog permanece badge separado', () => assert.ok(agenda.includes("atendimento.modalidade === 'taxidog' && <span className=\"agenda-taxidog\"")))
+await teste('SA28', 'TaxiDog mantém indicador próprio na grade e janela separada no detalhe', () => {
+  assert.match(grade, /a\.modalidade\s*===\s*'taxidog'\s*&&\s*<span[^>]*aria-label="TaxiDog"/)
+  assert.match(grade, /aria-label=\{`Status: \$\{status\}`\}/)
+  assert.match(agenda, /rotulo="Janela de coleta"[^\n]+coletaInicio[^\n]+coletaFim/)
+  assert.match(agenda, /Horário previsto[^\n]+atendimento\.inicio/)
+})
 await teste('SA29', 'frontend usa Edge sem update direto', () => assert.ok(cliente.includes("functions.invoke('alterar-status-atendimento'") && !agenda.includes(".from('atendimentos').update")))
 await teste('SA30', 'paleta cobre todos os status', () => STATUS_ATENDIMENTO.forEach((status) => assert.ok(css.includes(`.status-${status}`))))
 await teste('SA31', 'rótulo confirmado preserva semântica', () => assert.equal(rotuloStatusAtendimento('confirmado'), 'Confirmado'))
@@ -86,4 +92,35 @@ await teste('SA66', 'primeiras ocorrências são preservadas em regressões e no
 await teste('SA67', 'cancelamento e falta não fabricam timestamps', () => { const blocoTimestamps = migration022.slice(migration022.indexOf("if new.status = 'recebido'")); assert.ok(!blocoTimestamps.includes("new.status = 'cancelado'") && !blocoTimestamps.includes("new.status = 'faltou'")) })
 await teste('SA68', 'horário real usa relógio autoritativo do banco', () => assert.ok(migration022.includes('statement_timestamp()') && !servico.includes('new Date(')))
 
-console.log(`${aprovados} testes SA01–SA68 aprovados.`)
+await teste('SA69', 'pulo ignora autorização declarada pelo cliente', () => {
+  assert.deepEqual(lerAlterarStatusIntent({ atendimentoId: 'a', statusEsperado: 'agendado', acao: 'pular_banho', motivo: '  teste  ', autorizado: true }),
+    { atendimentoId: 'a', statusEsperado: 'agendado', acao: 'pular_banho', motivo: 'teste', senha: undefined })
+})
+
+for (const [codigo, permissao, senhaValida, autorizado] of [
+  ['SA70', false, true, false],
+  ['SA71', true, false, false],
+  ['SA72', true, true, true],
+] as const) {
+  await teste(codigo, 'pulo administrativo exige permissão e nova autenticação', async () => {
+    let verificacoes = 0
+    let chamadas = 0
+    const handler = criarHandlerStatus({
+      validarToken: async () => ({ id: 'u', app_metadata: { role: 'internal', creditos_admin: permissao } }),
+      alterar: async () => { throw new Error('Pulo não pode usar a rota comum de status.') },
+      autorizarPulo: async () => { verificacoes++; return senhaValida },
+      pular: async (entrada, _usuario, confirmado) => {
+        chamadas++
+        assert.equal(confirmado, true)
+        assert.equal('senha' in entrada, false)
+        return { status: 'atualizado', atendimentoId: 'a', statusAnterior: 'agendado', statusAtual: 'cancelado', reutilizado: false }
+      },
+    }, new Set(['http://localhost:5173']))
+    const resposta = await handler(requisicao({ atendimentoId: 'a', statusEsperado: 'agendado', acao: 'pular_banho', motivo: 'teste', senha: 'ficticia' }))
+    assert.equal((await resposta.json()).status, autorizado ? 'atualizado' : 'invalido')
+    assert.equal(verificacoes, permissao ? 1 : 0)
+    assert.equal(chamadas, autorizado ? 1 : 0)
+  })
+}
+
+console.log(`${aprovados} testes de Status aprovados.`)

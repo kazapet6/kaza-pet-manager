@@ -50,20 +50,24 @@ export async function carregarAgendaDiaria(
   const clienteIds = unicos(grupos.map((item) => texto(item.cliente_id)))
   const petIds = unicos(atendimentos.map((item) => texto(item.pet_id)))
 
-  const [clientes, pets, servicos, etapas, esperas, vinculosContratuais] = await Promise.all([
+  const [clientes, pets, servicos, etapas, esperas, vinculosOriginais, reaproveitamentos] = await Promise.all([
     consultarEm(cliente, 'clientes', 'id, nome', 'id', clienteIds),
     consultarEm(cliente, 'pets', 'id, nome', 'id', petIds),
     consultarEm(cliente, 'atendimento_servicos', 'id, atendimento_id, servico_id, nome_snapshot, ordem, origem', 'atendimento_id', atendimentoIds),
     consultarEm(cliente, 'atendimento_etapas', 'id, atendimento_id, nome_snapshot, ordem_snapshot, inicio_planejado, fim_planejado', 'atendimento_id', atendimentoIds),
     consultarEm(cliente, 'atendimento_esperas', 'id, atendimento_id, inicio, fim, motivo', 'atendimento_id', atendimentoIds),
     consultarEm(cliente, 'contrato_ciclo_ocorrencias', 'id, atendimento_id, ciclo_id, ordem', 'atendimento_id', atendimentoIds),
+    consultarEm(cliente, 'contrato_credito_vinculos_044', 'ocorrencia_id, contrato_item_id, ciclo_id, atendimento_id', 'atendimento_id', atendimentoIds),
   ])
+  const porAtendimento044 = new Map<string,Linha>()
+  for(const v of reaproveitamentos){const id=texto(v.atendimento_id),atual=porAtendimento044.get(id);porAtendimento044.set(id,{id:v.ocorrencia_id,atendimento_id:v.atendimento_id,ciclo_id:v.ciclo_id,itensSelecionados:[...(Array.isArray(atual?.itensSelecionados)?atual.itensSelecionados:[]),v.contrato_item_id]})}
+  const vinculosContratuais=[...vinculosOriginais,...porAtendimento044.values()]
   const cicloIds = unicos(vinculosContratuais.map((item) => texto(item.ciclo_id)))
   const ocorrenciaIds = ids(vinculosContratuais)
   const [ciclosContratuais, ocorrenciasContratuais, itensContratuais] = await Promise.all([
     consultarEm(cliente, 'contrato_ciclos', 'id, contrato_id, numero, contratos(id, pacote_nome_snapshot)', 'id', cicloIds),
     consultarEm(cliente, 'contrato_ciclo_ocorrencias', 'id, ciclo_id, ordem, data_operacional', 'ciclo_id', cicloIds),
-    consultarEm(cliente, 'contrato_ciclo_ocorrencia_itens', 'ocorrencia_id, contrato_itens(servico_id)', 'ocorrencia_id', ocorrenciaIds),
+    consultarEm(cliente, 'contrato_ciclo_ocorrencia_itens', 'ocorrencia_id, contrato_item_id, contrato_itens(servico_id)', 'ocorrencia_id', ocorrenciaIds),
   ])
   const etapaIds = ids(etapas)
   const [reservasFuncionarios, reservasEquipamentos] = await Promise.all([
@@ -159,10 +163,12 @@ export function montarAgendaDiaria(
       ? {
           contratoId, pacoteNome, cicloId: texto(cicloContrato.id), cicloNumero: numero(cicloContrato.numero),
           periodoInicio: datasDoCiclo[0] ?? '', periodoFim: datasDoCiclo.at(-1) ?? '',
-          ocorrenciaOrdem: numero(ocorrenciaContrato.ordem), totalOcorrencias: ocorrenciasDoCiclo.length,
+          ocorrenciaOrdem: numero(ocorrenciaContrato.ordem ?? ocorrenciasDoCiclo.find(x=>texto(x.id)===texto(ocorrenciaContrato.id))?.ordem), totalOcorrencias: ocorrenciasDoCiclo.length,
         }
       : null
-    const servicosContratados = servicosContratadosPorOcorrencia.get(texto(ocorrenciaContrato?.id)) ?? new Set<string>()
+    const servicosContratados = Array.isArray(ocorrenciaContrato?.itensSelecionados)
+      ? new Set(tabelas.itensContratuais.filter(x=>texto(x.ocorrencia_id)===texto(ocorrenciaContrato.id)&&(ocorrenciaContrato.itensSelecionados as unknown[]).includes(x.contrato_item_id)).map(x=>texto(relacao(x.contrato_itens).servico_id)))
+      : servicosContratadosPorOcorrencia.get(texto(ocorrenciaContrato?.id)) ?? new Set<string>()
     const modalidade: AgendaDiariaAtendimento['modalidade'] = texto(grupo.modalidade) === 'taxidog' ? 'taxidog' : 'normal'
     const observacoes = [texto(atendimento.observacoes), texto(grupo.observacoes)]
       .map((item) => item.trim()).filter(Boolean).filter((item, indice, todos) => todos.indexOf(item) === indice).join(' · ')

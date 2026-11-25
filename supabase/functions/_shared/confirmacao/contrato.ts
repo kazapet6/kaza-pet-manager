@@ -1,11 +1,17 @@
 import type { PreferenciaFuncionario, ServicoResolvido } from '../motor/tipos.ts'
 
 export type ModalidadeConfirmacao = 'sem_transporte' | 'taxidog'
+export type ValorNegociadoServico = {
+  readonly servicoId: string
+  readonly original: number
+  readonly final: number
+}
 
 export type ConfirmacaoAgendamentoIntent = {
   readonly chaveIdempotencia: string
   readonly petId: string
   readonly servicoIds: readonly string[]
+  readonly valoresNegociados?: readonly ValorNegociadoServico[]
   readonly data: string
   readonly horarioEscolhido: number | null
   readonly modalidade: ModalidadeConfirmacao
@@ -100,6 +106,9 @@ export function validarIntencaoConfirmacao(
   if (!uuidValido(intencao.chaveIdempotencia)) erros.push(erro('chaveIdempotencia', 'FORMATO_INVALIDO', 'A chave de idempotência deve ser um UUID válido.'))
   if (!intencao.petId.trim()) erros.push(erro('petId', 'OBRIGATORIO', 'Informe o pet.'))
   if (!intencao.servicoIds.length || intencao.servicoIds.some((id) => !id.trim())) erros.push(erro('servicoIds', 'OBRIGATORIO', 'Informe ao menos um serviço válido.'))
+  if (intencao.valoresNegociados && !valoresNegociadosValidos(intencao.valoresNegociados, intencao.servicoIds)) {
+    erros.push(erro('valoresNegociados', 'FORMATO_INVALIDO', 'Informe valores negociados válidos para os serviços escolhidos.'))
+  }
   if (!dataValida(intencao.data)) erros.push(erro('data', 'FORMATO_INVALIDO', 'Informe uma data válida no formato AAAA-MM-DD.'))
   if (intencao.modalidade === 'sem_transporte' && (!Number.isInteger(intencao.horarioEscolhido) || Number(intencao.horarioEscolhido) < 0 || Number(intencao.horarioEscolhido) >= 24 * 60)) erros.push(erro('horarioEscolhido', 'FORMATO_INVALIDO', 'Sem transporte exige um minuto válido do dia.'))
   if (intencao.modalidade === 'taxidog' && intencao.horarioEscolhido !== null) erros.push(erro('horarioEscolhido', 'COMBINACAO_INVALIDA', 'TaxiDog escolhe o ciclo, não um horário operacional interno.'))
@@ -111,7 +120,7 @@ export function validarIntencaoConfirmacao(
   if (intencao.preferenciaFuncionario === 'automatico' && intencao.funcionarioPreferidoId !== null) erros.push(erro('funcionarioPreferidoId', 'COMBINACAO_INVALIDA', 'A preferência automática não aceita funcionário escolhido.'))
   if (intencao.preferenciaFuncionario !== 'automatico' && !intencao.funcionarioPreferidoId?.trim()) erros.push(erro('funcionarioPreferidoId', 'OBRIGATORIO', 'A preferência informada exige um funcionário.'))
   if (intencao.preferenciaFuncionario === 'obrigatorio' && !intencao.funcionarioResponsavelId?.trim()) erros.push(erro('funcionarioResponsavelId', 'OBRIGATORIO', 'Informe o funcionário responsável.'))
-  if (intencao.funcionarioResponsavelId && intencao.funcionarioResponsavelId !== intencao.funcionarioPreferidoId) erros.push(erro('funcionarioResponsavelId', 'COMBINACAO_INVALIDA', 'O responsável deve ser o funcionário validado pelo Motor.'))
+  if (intencao.preferenciaFuncionario !== 'automatico' && intencao.funcionarioResponsavelId && intencao.funcionarioResponsavelId !== intencao.funcionarioPreferidoId) erros.push(erro('funcionarioResponsavelId', 'COMBINACAO_INVALIDA', 'O responsável deve ser o funcionário validado pelo Motor.'))
   return erros
 }
 
@@ -121,6 +130,9 @@ export function normalizarIntencaoParaHash(
   return {
     petId: intencao.petId,
     servicoIds: [...new Set(intencao.servicoIds)].sort(compararIds),
+    ...(intencao.valoresNegociados?.length ? {
+      valoresNegociados: [...intencao.valoresNegociados].sort((a, b) => compararIds(a.servicoId, b.servicoId)),
+    } : {}),
     data: intencao.data,
     horarioEscolhido: intencao.horarioEscolhido,
     modalidade: intencao.modalidade,
@@ -158,10 +170,12 @@ export function lerIntencaoConfirmacao(
     || !['sem_transporte', 'taxidog'].includes(texto(valor.modalidade))
     || !['automatico', 'preferencial', 'obrigatorio']
       .includes(texto(valor.preferenciaFuncionario))) return null
+  if (valor.valoresNegociados !== undefined && !valoresNegociadosValidos(valor.valoresNegociados, valor.servicoIds)) return null
   const intencao: ConfirmacaoAgendamentoIntent = {
     chaveIdempotencia: texto(valor.chaveIdempotencia),
     petId: texto(valor.petId),
     servicoIds: valor.servicoIds as string[],
+    ...(valor.valoresNegociados?.length ? { valoresNegociados: valor.valoresNegociados.map(({ servicoId, original, final }) => ({ servicoId, original, final })) } : {}),
     data: texto(valor.data),
     horarioEscolhido: valor.horarioEscolhido === null ? null : numero(valor.horarioEscolhido),
     modalidade: valor.modalidade === 'taxidog' ? 'taxidog' : 'sem_transporte',
@@ -176,6 +190,23 @@ export function lerIntencaoConfirmacao(
     versaoOcupacaoConsultada: numero(valor.versaoOcupacaoConsultada),
   }
   return validarIntencaoConfirmacao(intencao).length ? null : intencao
+}
+
+export function valorValidoAtendimento(valor: unknown): valor is number {
+  return typeof valor === 'number' && Number.isFinite(valor) && valor >= 0
+    && valor <= 99_999_999.99 && Number(valor.toFixed(2)) === valor
+}
+
+function valoresNegociadosValidos(valor: unknown, servicoIds: readonly string[]): valor is ValorNegociadoServico[] {
+  if (!Array.isArray(valor) || valor.length > servicoIds.length) return false
+  const ids = new Set<string>()
+  for (const ajuste of valor) {
+    if (!registro(ajuste) || typeof ajuste.servicoId !== 'string' || !servicoIds.includes(ajuste.servicoId)
+      || ids.has(ajuste.servicoId) || !valorValidoAtendimento(ajuste.original)
+      || !valorValidoAtendimento(ajuste.final) || ajuste.original === ajuste.final) return false
+    ids.add(ajuste.servicoId)
+  }
+  return true
 }
 
 export function respostaConfirmacaoValida(

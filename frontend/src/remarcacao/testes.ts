@@ -37,7 +37,10 @@ await teste('edge usa o responsável escolhido sem fallback', () => { assert.mat
 await teste('edge exige concordância com o responsável aberto', () => assert.match(servico, /nulooutexto\(atendimento\.funcionario_responsavel_id\) !== intencao\.funcionarioresponsavelidesperado/))
 await teste('edge passa atendimento especifico ao loader', () => assert.match(servico, /undefined, intencao\.atendimentoid/))
 await teste('edge revalida grupo status e inicio', () => { assert.match(servico, /grupoagendamentoidesperado/); assert.match(servico, /statusesperado/); assert.match(servico, /iniciooperacionalesperado/) })
-await teste('edge nao carrega precificacao', () => assert.doesNotMatch(servico, /precificacao/))
+await teste('somente o adicional é precificado, sem recalcular os serviços já contratados', () => {
+  assert.ok(servico.includes('calcularprecificacao(dadospreco.pet, [extra], dadospreco.dados)'))
+  assert.ok(servico.includes('preco.valorcalculado !== adicional.original'))
+})
 await teste('edge preserva erro estruturado de cadastro incompleto', () => { assert.match(servico, /cadastro_pet_incompleto/); assert.match(servico, /campos: resultado\.erro\.campos/) })
 const plano = lerFrontend('src/remarcacao/plano.ts')
 await teste('plano envia responsável esperado e escolhido à RPC', () => { assert.match(plano, /funcionarioresponsavelidesperado: intencao\.funcionarioresponsavelidesperado/); assert.match(plano, /funcionarioresponsavelid: intencao\.funcionarioresponsavelid/) })
