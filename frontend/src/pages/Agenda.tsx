@@ -25,6 +25,7 @@ import type {
 
 export default function Agenda({ onVerContrato }: { onVerContrato: (contratoId: string) => void }) {
   const [data, setData] = useState('')
+  const [visao, setVisao] = useState<'cards' | 'grade'>('cards')
   const [agenda, setAgenda] = useState<AgendaDiariaResultado | null>(null)
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
@@ -131,13 +132,12 @@ export default function Agenda({ onVerContrato }: { onVerContrato: (contratoId: 
   }
 
   return <section className="agenda-diaria">
-    <header className="agenda-cabecalho"><div className="agenda-titulo"><span>Central operacional</span><h1>Agenda</h1><p>Organize os atendimentos do seu dia de forma prática e eficiente.</p></div></header>
     {sucesso && <div className="agenda-sucesso" role="status"><span>✓</span><strong>{sucesso}</strong><button type="button" aria-label="Fechar aviso" onClick={() => setSucesso(null)}>×</button></div>}
     {aviso && <div className="agenda-aviso" role="alert"><strong>{aviso}</strong><button type="button" aria-label="Fechar aviso" onClick={() => setAviso(null)}>×</button></div>}
 
     {carregando ? <EstadoTela titulo="Carregando agenda..." texto="Buscando os atendimentos desta data." />
       : erro ? <EstadoTela titulo="Não foi possível carregar a Agenda" texto={erro}><Button variant="secondary" onClick={() => void carregar(data || undefined)}>Tentar novamente</Button></EstadoTela>
-        : agenda && <GradeAgenda key={agenda.dataOperacional} agenda={agenda} blocos={blocos} agora={agora} mudarData={mudarData} hoje={() => void carregar()} abrir={item => void abrirDetalhe(item)} novo={abrirNovo} acao={item => void executarAcaoRapida(item)} atualizandoId={acaoRapidaAtualizandoId} />}
+        : agenda && <GradeAgenda key={agenda.dataOperacional} visao={visao} mudarVisao={setVisao} agenda={agenda} blocos={blocos} agora={agora} mudarData={mudarData} hoje={() => void carregar()} abrir={item => void abrirDetalhe(item)} novo={abrirNovo} acao={item => void executarAcaoRapida(item)} atualizandoId={acaoRapidaAtualizandoId} />}
 
     <Detalhes atendimento={detalhe} timezone={agenda?.timezone ?? 'America/Sao_Paulo'} fechar={() => setDetalhe(null)} executarAcao={executarAcaoStatus} pularBanho={pularBanho} remarcar={(item) => { setDetalhe(null); setRemarcando(item) }} concluir={(item) => { setDetalhe(null); setConcluindo(item) }} verContrato={onVerContrato} notificar={(mensagem) => setSucesso(mensagem ?? 'Observacoes do atendimento salvas.')} />
     {novoAberto && <NovoAgendamentoModal aberto dataInicial={data} contextoInicial={contextoNovo} onClose={() => setNovoAberto(false)} onConfirmado={concluirNovoAgendamento} />}
@@ -267,7 +267,7 @@ function Bloco({ titulo, children }: { titulo: string; children: React.ReactNode
 function mensagemErro(error: unknown) { return typeof error === 'object' && error && 'message' in error ? String(error.message) : 'Tente novamente em instantes.' }
 function dataCurta(data: string) { const [a, m, d] = data.split('-').map(Number); return new Intl.DateTimeFormat('pt-BR').format(new Date(a, m - 1, d)) }
 function dataDiaMes(data: string) { const [a, m, d] = data.split('-').map(Number); return data ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit' }).format(new Date(a, m - 1, d)) : '—' }
-function hora(valor: string, timezone: string) { if (!valor) return '--:--'; return new Intl.DateTimeFormat('pt-BR', { timeZone: timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(valor)) }
+function hora(valor: string, timezone: string) { const instante = Date.parse(valor); if (!Number.isFinite(instante)) return '--:--'; return new Intl.DateTimeFormat('pt-BR', { timeZone: timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(instante) }
 function horaSimples(valor: string) { return valor ? valor.slice(0, 5) : '--:--' }
 function moeda(valor: number) { return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
 function inicialPet(nome: string) { return nome.trim().charAt(0).toUpperCase() || 'P' }
