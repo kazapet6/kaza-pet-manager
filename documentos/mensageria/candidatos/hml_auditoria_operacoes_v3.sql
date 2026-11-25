@@ -13,7 +13,9 @@ $guard$;
 revoke all on function public.mensageria_hml_registrar_decisao_auditoria_v2(uuid,uuid,text,text,text,uuid,uuid)
   from public,anon,authenticated,service_role;
 alter table mensageria_hml_auditoria_interna.decisoes
-  add constraint auditoria_v3_vinculo_operacao unique(id,operador_id,chave_idempotencia,tentativa_id);
+  add constraint auditoria_v3_vinculo_operacao unique(
+    id,operador_id,chave_idempotencia,tentativa_id,versao,categoria,decisao,motivo),
+  add constraint auditoria_v3_predecessor_versao unique(tentativa_id,id,versao);
 create table mensageria_hml_auditoria_interna.operacoes (
   id uuid primary key default pg_catalog.gen_random_uuid(),
   operador_id uuid not null,
@@ -22,6 +24,9 @@ create table mensageria_hml_auditoria_interna.operacoes (
   preparo_anterior_id uuid,
   ordem_preparo integer not null check(ordem_preparo>0),
   versao_esperada integer not null check(versao_esperada>0),
+  -- Versao do predecessor e ordem anterior derivadas, nao fornecidas pelo cliente.
+  versao_predecessor integer generated always as (versao_esperada-1) stored,
+  ordem_preparo_anterior integer generated always as (ordem_preparo-1) stored,
   categoria text not null check(categoria in ('reserva_antiga','resultado_indeterminado','status_contraditorio',
     'status_falhou','aceite_sem_status','entrega_sem_confirmacao')),
   decisao text not null check(decisao in ('manter_em_investigacao','solicitar_verificacao_externa','registrar_revisao_sem_reenvio')),
@@ -34,21 +39,33 @@ create table mensageria_hml_auditoria_interna.operacoes (
   preparada_em timestamptz not null default pg_catalog.clock_timestamp(),
   encerrada_em timestamptz,
   unique(operador_id,chave_idempotencia),
-  unique(id,operador_id,tentativa_id),
+  constraint auditoria_v3_preparo_referencia unique(
+    id,operador_id,tentativa_id,versao_esperada,ordem_preparo),
+  constraint auditoria_v3_ids_distintos check(id<>chave_idempotencia),
   unique nulls not distinct(operador_id,tentativa_id,predecessor_id,ordem_preparo),
   unique nulls not distinct(operador_id,tentativa_id,predecessor_id,preparo_anterior_id),
   check((ordem_preparo=1)=(preparo_anterior_id is null)),
   check(preparo_anterior_id is distinct from id),
-  foreign key(preparo_anterior_id,operador_id,tentativa_id)
-    references mensageria_hml_auditoria_interna.operacoes(id,operador_id,tentativa_id) on delete restrict,
+  -- A versao esperada identifica a cadeia porque o predecessor abaixo
+  -- deve corresponder a versao imediatamente anterior da mesma tentativa.
+  -- Na raiz, versao 1 exige predecessor nulo; os demais nao podem ser nulos.
+  constraint auditoria_v3_preparo_mesma_cadeia_fk
+    foreign key(preparo_anterior_id,operador_id,tentativa_id,versao_esperada,ordem_preparo_anterior)
+    references mensageria_hml_auditoria_interna.operacoes(
+      id,operador_id,tentativa_id,versao_esperada,ordem_preparo) on delete restrict,
   check((versao_esperada=1)=(predecessor_id is null)),
   check((estado='registrada')=(evento_id is not null)),
   check((estado='rejeitada')=(rejeicao is not null)),
   check((estado='preparada')=(encerrada_em is null)),
-  foreign key(tentativa_id,predecessor_id)
-    references mensageria_hml_auditoria_interna.decisoes(tentativa_id,id) on delete restrict,
-  foreign key(evento_id,operador_id,chave_idempotencia,tentativa_id)
-    references mensageria_hml_auditoria_interna.decisoes(id,operador_id,chave_idempotencia,tentativa_id) on delete restrict
+  constraint auditoria_v3_predecessor_versao_fk
+    foreign key(tentativa_id,predecessor_id,versao_predecessor)
+    references mensageria_hml_auditoria_interna.decisoes(tentativa_id,id,versao) on delete restrict,
+  -- Evento nulo enquanto nao registrada; quando registrado, todos os
+  -- demais campos sao NOT NULL e o vinculo exige versao e intencao exatas.
+  constraint auditoria_v3_recibo_exato_fk
+    foreign key(evento_id,operador_id,chave_idempotencia,tentativa_id,versao_esperada,categoria,decisao,motivo)
+    references mensageria_hml_auditoria_interna.decisoes(
+      id,operador_id,chave_idempotencia,tentativa_id,versao,categoria,decisao,motivo) on delete restrict
 );
 -- Uma intencao ativa ou registrada por operador/revisao logica. Cancelar ou
 -- rejeitar definitivamente libera nova preparacao deliberada; nao apaga nada.
