@@ -6,9 +6,10 @@ import { densidadeSegmento, ESCALA_GRADE, montarGrade, horario, possuiPacote, ty
 import { rotuloStatusAtendimento } from '../statusAtendimento/politica.ts'
 import { obterAcaoRapidaAtendimento } from './acaoRapidaAtendimento.ts'
 import IconeAgenda from './IconeAgenda.tsx'
+import AgendaCards from './AgendaCards.tsx'
 
-type Props = { agenda: AgendaDiariaResultado; blocos: Expediente[]; agora: Date; mudarData: (data: string) => void; hoje: () => void; abrir: (a: AgendaDiariaAtendimento) => void; novo: (contexto?: ContextoGrade) => void; acao: (a: AgendaDiariaAtendimento) => void; atualizandoId: string | null }
-export default function GradeAgenda({agenda, blocos, agora, mudarData, hoje, abrir, novo, acao, atualizandoId}: Props) {
+type Props = { visao: 'cards' | 'grade'; mudarVisao: (visao: 'cards' | 'grade') => void; agenda: AgendaDiariaResultado; blocos: Expediente[]; agora: Date; mudarData: (data: string) => void; hoje: () => void; abrir: (a: AgendaDiariaAtendimento) => void; novo: (contexto?: ContextoGrade) => void; acao: (a: AgendaDiariaAtendimento) => void; atualizandoId: string | null }
+export default function GradeAgenda({visao, mudarVisao, agenda, blocos, agora, mudarData, hoje, abrir, novo, acao, atualizandoId}: Props) {
   const estrutura = useContext(AgendaContext)
   const grade = useMemo(() => montarGrade(agenda, estrutura, blocos), [agenda, estrutura, blocos])
   const [mes, setMes] = useState(agenda.dataOperacional.slice(0,7))
@@ -28,11 +29,41 @@ export default function GradeAgenda({agenda, blocos, agora, mudarData, hoje, abr
   function outroDia(delta: number) { const d=new Date(`${agenda.dataOperacional}T12:00:00Z`); d.setUTCDate(d.getUTCDate()+delta); selecionarData(d.toISOString().slice(0,10)) }
   function selecionarData(data: string) { setMes(data.slice(0,7)); mudarData(data) }
   function outroMes(delta: number) { const m=deslocarMes(ano,mesNumero-1,delta);setMes(`${m.ano}-${String(m.mes+1).padStart(2,'0')}`) }
+  const seletor = <div className="agenda-visualizacao-controle" role="group" aria-label="Visualização da Agenda">
+    <button type="button" aria-pressed={visao === 'cards'} onClick={() => mudarVisao('cards')}>Cards</button>
+    <button type="button" aria-pressed={visao === 'grade'} onClick={() => mudarVisao('grade')}>Grade</button>
+  </div>
+
+  if (visao === 'cards') {
+    const rotulos = ['Atendimentos', 'Em atendimento', 'TaxiDog', 'Concluídos']
+    return <>
+      <div className="kpm-cards-toolbar">
+        <div className="kpm-cards-data">
+          <button type="button" aria-label="Dia anterior" onClick={() => outroDia(-1)}>‹</button>
+          <input aria-label="Data da Agenda" type="date" lang="pt-BR" value={agenda.dataOperacional}
+            onChange={evento => evento.target.value && selecionarData(evento.target.value)} />
+          <button type="button" aria-label="Próximo dia" onClick={() => outroDia(1)}>›</button>
+          <button type="button" onClick={hoje}>Hoje</button>
+        </div>
+        {seletor}
+        <button type="button" className="kpm-cards-novo" onClick={() => novo()}>＋ Novo agendamento</button>
+      </div>
+      <div className="kpm-cards-kpis" aria-label="Indicadores do dia">
+        {metricas.map((metrica, indice) => <div className="kpm-cards-kpi" key={metrica.rotulo}>
+          <span aria-hidden="true">{metrica.icone}</span><strong>{metrica.valor}</strong><span>{rotulos[indice]}</span>
+        </div>)}
+      </div>
+      {estrutura.erroAgenda && <p role="alert">Não foi possível carregar as jornadas: {estrutura.erroAgenda}</p>}
+      <AgendaCards grade={grade} timezone={agenda.timezone} abrir={abrir} acao={acao} atualizandoId={atualizandoId} />
+    </>
+  }
+
   return <>
     <div className="agenda-kpis-operacionais">{metricas.map(m => <div key={m.rotulo}><span aria-hidden="true">{m.icone}</span><div><strong>{m.valor}</strong><p>{m.rotulo}</p><small>{m.detalhe || 'Na data selecionada'}</small></div></div>)}</div>
     <div className="agenda-composicao"><main className="agenda-quadro">
       <div className="agenda-toolbar"><button aria-label="Dia anterior" onClick={()=>outroDia(-1)}>‹</button><label><span>{new Date(`${agenda.dataOperacional}T12:00:00`).toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</span><input aria-label="Data da Agenda" type="date" value={agenda.dataOperacional} onChange={e=>e.target.value && selecionarData(e.target.value)}/></label><button aria-label="Próximo dia" onClick={()=>outroDia(1)}>›</button><button onClick={hoje}>Hoje</button><button className="agenda-novo" onClick={()=>novo()}>＋ Novo agendamento</button></div>
-      <p className="agenda-grade-nota">Espaços neutros sugerem um horário. A disponibilidade será validada após escolher pet, serviços e transporte.</p>
+      {seletor}
+      <p className="agenda-grade-nota">Sugestões de horário são validadas após escolher pet, serviços e transporte.</p>
       {estrutura.erroAgenda && <p role="alert">Não foi possível carregar as jornadas: {estrutura.erroAgenda}</p>}
       {estrutura.carregandoAgenda ? <p role="status">Carregando funcionários e jornadas…</p> : <div className="agenda-timeline-scroll"><div className="agenda-timeline" style={{width:'100%', minWidth:`calc(72px + ${grade.colunas.reduce((total,c)=>total+Math.max(0,...c.segmentos.map(s=>s.faixa))+1,0)} * var(--agenda-faixa-largura))`, gridTemplateColumns:`72px ${grade.colunas.map(c=>`minmax(calc(${Math.max(0,...c.segmentos.map(s=>s.faixa))+1} * var(--agenda-faixa-largura)),1fr)`).join(' ') || 'minmax(var(--agenda-faixa-largura),1fr)'}`}}>
         <div className="agenda-eixo"><header>Horário</header><div style={{height:altura}}>{marcas.map(m=><time key={m} style={{top:(m-inicio)*escala}}>{horario(m)}</time>)}</div></div>
