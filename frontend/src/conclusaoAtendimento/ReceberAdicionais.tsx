@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import Button from '../components/ui/Button.tsx'
 import { executarDadosConclusao } from './clienteSupabase.ts'
-import { FORMAS_PAGAMENTO, type FinanceiroAtendimento, type FormaPagamento } from './contrato.ts'
+import { FORMAS_PAGAMENTO, dataEfetivaValida, hojeFinanceiro, type FinanceiroAtendimento, type FormaPagamento } from './contrato.ts'
 
 const moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -11,6 +11,7 @@ export default function ReceberAdicionais({ atendimentoId, inicial }: {
 }) {
   const [financeiro, setFinanceiro] = useState(inicial)
   const [consultado, setConsultado] = useState(Boolean(inicial))
+  const [dataEfetiva, setDataEfetiva] = useState('')
   const [forma, setForma] = useState<FormaPagamento>('pix')
   const [erro, setErro] = useState('')
   const [ocupado, setOcupado] = useState(false)
@@ -24,12 +25,14 @@ export default function ReceberAdicionais({ atendimentoId, inicial }: {
     setErro('')
     try {
       if (receber && financeiro && financeiro.saldo > 0) {
+        if (!dataEfetivaValida(dataEfetiva)) { setErro('Informe a data efetiva do pagamento.'); return }
         chave.current ??= crypto.randomUUID()
         const resultado = await executarDadosConclusao({
           operacao: 'receber', destino: 'adicionais', atendimentoId,
-          chaveIdempotencia: chave.current, valor: financeiro.saldo, formaPagamento: forma,
+          chaveIdempotencia: chave.current, valor: financeiro.saldo, formaPagamento: forma, dataEfetiva,
         })
         if (resultado.status !== 'registrado') {
+          chave.current = null
           setErro('mensagem' in resultado ? String(resultado.mensagem) : 'Não foi possível registrar o recebimento.')
           return
         }
@@ -56,10 +59,11 @@ export default function ReceberAdicionais({ atendimentoId, inicial }: {
         && <p>Valor original: {moeda.format(financeiro.valorOriginal)}</p>}
       <p>Valor final: {moeda.format(financeiro.valorFinal)} · Recebido: {moeda.format(financeiro.totalRecebido)} · Saldo: {moeda.format(financeiro.saldo)}</p>
       {financeiro.saldo > 0 && <>
+        <label>Data efetiva do pagamento dos adicionais <input type="date" max={hojeFinanceiro()} value={dataEfetiva} disabled={ocupado || Boolean(chave.current)} onChange={e => setDataEfetiva(e.target.value)} required /></label>
         <label>Forma de pagamento dos adicionais <select value={forma} disabled={ocupado || Boolean(chave.current)} onChange={evento => setForma(evento.target.value as FormaPagamento)}>
           {FORMAS_PAGAMENTO.map(item => <option key={item} value={item}>{item}</option>)}
         </select></label>
-        <Button disabled={ocupado} onClick={() => void atualizar(true)}>Registrar {moeda.format(financeiro.saldo)} dos adicionais</Button>
+        <Button disabled={ocupado || !dataEfetivaValida(dataEfetiva)} onClick={() => void atualizar(true)}>Registrar {moeda.format(financeiro.saldo)} dos adicionais</Button>
       </>}
     </>}
     {erro && <p role="alert">{erro}</p>}

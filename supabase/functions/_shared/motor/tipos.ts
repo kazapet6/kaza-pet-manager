@@ -23,7 +23,7 @@ export type EntradaDisponibilidade = {
 
 export type IntervaloMinutos = { inicio: number; fim: number }
 export type PetMotor = Omit<PetMotorBase,'clienteId'> & { clienteId?: string }
-export type ServicoMotor = { id: string; nome: string; ativo: boolean }
+export type ServicoMotor = import('./procedimentos.ts').ServicoProcedimentos & { ativo: boolean }
 export type DependenciaMotor = { servicoId: string; dependenciaServicoId: string; ativo: boolean }
 export type AcoplamentoMotor = { servicoId: string; etapaAlvoId: string; ativo: boolean }
 export type RegraPrecoMotor = {
@@ -44,7 +44,12 @@ export type ElegibilidadeMotor = {
   portes: { servicoId: string; porte: PortePetMotor; ativo: boolean }[]
   racasBloqueadas: { servicoId: string; racaId: string; ativo: boolean }[]
 }
+export type HabilitacaoEtapaMotor = { servicoId: string; servicoEtapaId: string; explicita?: boolean }
+
 export type EtapaMotor = {
+  especieAplicavel?: PetMotor['especie']
+  porteAplicavel?: PetMotor['porte']
+  habilitacaoExplicita?: boolean
   id: string
   servicoId: string
   nome: string
@@ -159,9 +164,9 @@ export type ContribuicaoAcoplada = {
   duracaoCalculada: number
   modificadoresAplicados: string[]
   recursos: RecursoEtapaMotor[]
-  habilitacoesNecessarias: { servicoId: string; servicoEtapaId: string }[]
+  habilitacoesNecessarias: HabilitacaoEtapaMotor[]
 }
-export type EtapaCalculada = EtapaMotor & { servicoNome: string; servicoOrdem: number; duracaoBaseCalculada: number; duracaoCalculada: number; modificadoresAplicados: string[]; recursos: RecursoEtapaMotor[]; habilitacoesNecessarias: { servicoId: string; servicoEtapaId: string }[]; contribuicoesAcopladas: ContribuicaoAcoplada[] }
+export type EtapaCalculada = EtapaMotor & { servicoNome: string; servicoOrdem: number; duracaoBaseCalculada: number; duracaoCalculada: number; modificadoresAplicados: string[]; recursos: RecursoEtapaMotor[]; habilitacoesNecessarias: HabilitacaoEtapaMotor[]; contribuicoesAcopladas: ContribuicaoAcoplada[] }
 export type AlocacaoFuncionario = { id: string; nome: string }
 export type SupervisaoEquipamento = AlocacaoFuncionario & IntervaloMinutos
 export type AlocacaoEquipamento = { equipamentoId: string; equipamentoNome: string; unidadeId: string; unidadeNome: string; numero: number; supervisores: SupervisaoEquipamento[] }

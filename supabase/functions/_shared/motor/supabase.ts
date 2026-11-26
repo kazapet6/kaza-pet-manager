@@ -1,4 +1,5 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.112.2'
+import { codigoProcedimento, normalizarProcedimentos } from './procedimentos.ts'
 import { horaParaMinutos } from './tempo.ts'
 import type { DadosDisponibilidade, EntradaDisponibilidade, ExcecaoEstabelecimentoMotor, PetMotor } from './tipos.ts'
 
@@ -22,13 +23,13 @@ export async function carregarDadosDisponibilidadeComCliente(
   const [configuracoes, pets, servicos, dependencias, acoplamentos, especies, portes, racasBloqueadas, etapas, recursos, modificadores, blocos, excecoes, excecaoBlocos, funcionarios, jornadas, intervalos, funcionarioServicos, funcionarioEtapas, equipamentos, unidades, perfis, itensPerfis, atendimentos, atendimentoEtapas, reservasFuncionarios, reservasEquipamentos, reservasCiclos, ciclosTaxidog, cicloDias, gruposIgnorados] = await Promise.all([
     consultar('configuracao_agenda', 'timezone, espera_normal_minutos'),
     cliente.from('pets').select('id, cliente_id, nome, especie, raca_id, sexo, porte, pelagem, peso, temperamento, raca:racas!pets_raca_especie_fkey(nome)').eq('id', entrada.petId).then(({ data, error }) => { if (error) throw error; return (data ?? []) as unknown as Linha[] }),
-    consultar('servicos', 'id, nome, ativo'),
+    consultar('servicos', 'id, nome, ativo, procedimento_incluso_em_servico_id, procedimentos_inclusos, procedimento_avulso_codigo'),
     consultar('servico_dependencias', 'servico_id, dependencia_servico_id, ativo'),
     consultar('servico_acoplamentos', 'servico_id, etapa_alvo_id, ativo'),
     consultar('servico_especies', 'servico_id, especie, ativo'),
     consultar('servico_portes', 'servico_id, porte, ativo'),
     consultar('servico_racas_bloqueadas', 'servico_id, raca_id, ativo'),
-    consultar('servico_etapas', 'id, servico_id, nome, ordem, duracao_minutos, ativo, politica_espera_antes, espera_antes_minutos'),
+    consultar('servico_etapas', 'id, servico_id, nome, ordem, duracao_minutos, ativo, politica_espera_antes, espera_antes_minutos, especie_aplicavel, porte_aplicavel, habilitacao_explicita'),
     consultar('servico_etapa_recursos', 'id, servico_etapa_id, tipo, equipamento_id, quantidade, ativo'),
     consultar('servico_modificadores', 'id, servico_id, servico_etapa_id, criterio, acrescimo_minutos, ativo, raca_id, porte, pelagem, temperamento, peso_min, peso_max'),
     consultar('estabelecimento_blocos', 'dia_semana, inicio, fim, ativo'),
@@ -74,7 +75,7 @@ export async function carregarDadosDisponibilidadeComCliente(
   return {
     configuracao: { granularidadeMinutos: GRANULARIDADE_CANDIDATOS_V1, esperaNormalMinutos: numero(configuracao.espera_normal_minutos), timezone },
     pets: pets.map(paraPet),
-    servicos: servicos.map((item) => ({ id: texto(item.id), nome: texto(item.nome), ativo: Boolean(item.ativo) })),
+    servicos: servicos.map((item) => ({ id: texto(item.id), nome: texto(item.nome), ativo: Boolean(item.ativo), procedimentoInclusoEmServicoId: nuloOuTexto(item.procedimento_incluso_em_servico_id), procedimentosInclusos: normalizarProcedimentos(item.procedimentos_inclusos), procedimentoAvulsoCodigo: codigoProcedimento(item.procedimento_avulso_codigo) })),
     dependencias: dependencias.map((item) => ({ servicoId: texto(item.servico_id), dependenciaServicoId: texto(item.dependencia_servico_id), ativo: Boolean(item.ativo) })),
     acoplamentos: acoplamentos.map((item) => ({ servicoId: texto(item.servico_id), etapaAlvoId: texto(item.etapa_alvo_id), ativo: Boolean(item.ativo) })),
     elegibilidade: {
@@ -82,7 +83,7 @@ export async function carregarDadosDisponibilidadeComCliente(
       portes: portes.map((item) => ({ servicoId: texto(item.servico_id), porte: texto(item.porte) as NonNullable<PetMotor['porte']>, ativo: Boolean(item.ativo) })),
       racasBloqueadas: racasBloqueadas.map((item) => ({ servicoId: texto(item.servico_id), racaId: texto(item.raca_id), ativo: Boolean(item.ativo) })),
     },
-    etapas: etapas.map((item) => ({ id: texto(item.id), servicoId: texto(item.servico_id), nome: texto(item.nome), ordem: numero(item.ordem), duracaoMinutos: numero(item.duracao_minutos), ativo: Boolean(item.ativo), politicaEsperaAntes: texto(item.politica_espera_antes) as DadosDisponibilidade['etapas'][number]['politicaEsperaAntes'], esperaAntesMinutos: nuloOuNumero(item.espera_antes_minutos) })),
+    etapas: etapas.map((item) => ({ id: texto(item.id), servicoId: texto(item.servico_id), nome: texto(item.nome), ordem: numero(item.ordem), duracaoMinutos: numero(item.duracao_minutos), especieAplicavel: nuloOuTexto(item.especie_aplicavel) as PetMotor['especie'], porteAplicavel: nuloOuTexto(item.porte_aplicavel) as PetMotor['porte'], habilitacaoExplicita: Boolean(item.habilitacao_explicita), ativo: Boolean(item.ativo), politicaEsperaAntes: texto(item.politica_espera_antes) as DadosDisponibilidade['etapas'][number]['politicaEsperaAntes'], esperaAntesMinutos: nuloOuNumero(item.espera_antes_minutos) })),
     recursosEtapas: recursos.map((item) => ({ id: texto(item.id), servicoEtapaId: texto(item.servico_etapa_id), tipo: texto(item.tipo) as 'funcionario' | 'equipamento', equipamentoId: nuloOuTexto(item.equipamento_id), quantidade: numero(item.quantidade), ativo: Boolean(item.ativo) })),
     modificadoresDuracao: modificadores.map((item) => ({ id: texto(item.id), servicoId: texto(item.servico_id), servicoEtapaId: nuloOuTexto(item.servico_etapa_id), criterio: texto(item.criterio) as DadosDisponibilidade['modificadoresDuracao'][number]['criterio'], acrescimoMinutos: numero(item.acrescimo_minutos), ativo: Boolean(item.ativo), racaId: nuloOuTexto(item.raca_id), porte: nuloOuTexto(item.porte) as DadosDisponibilidade['modificadoresDuracao'][number]['porte'], pelagem: nuloOuTexto(item.pelagem) as DadosDisponibilidade['modificadoresDuracao'][number]['pelagem'], temperamento: nuloOuTexto(item.temperamento) as DadosDisponibilidade['modificadoresDuracao'][number]['temperamento'], pesoMin: nuloOuNumero(item.peso_min), pesoMax: nuloOuNumero(item.peso_max) })),
     funcionamentoConfigurado: blocos.length > 0,

@@ -45,9 +45,10 @@ export async function confirmarComBackendConfiavel(
     ),
     carregarDadosPrecificacaoComCliente(intencao.petId, admin),
   ])
-  const resultado = intencao.modalidade === 'taxidog'
+  const inicioConsultado = intencao.modalidade === 'taxidog' ? intencao.inicioTaxiDogConsultado : intencao.horarioEscolhido!
+  const resultado = inicioConsultado === undefined
     ? calcularDisponibilidade(entrada, dados)
-    : calcularDisponibilidadeNoHorario(entrada, dados, intencao.horarioEscolhido!)
+    : calcularDisponibilidadeNoHorario(entrada, dados, inicioConsultado)
   const opcao = resultado.opcoes[0]
   if(resultado.erro?.codigo==='CADASTRO_PET_INCOMPLETO')return{status:'invalido',codigo:'CADASTRO_PET_INCOMPLETO',mensagem:resultado.motivos[0],campos:resultado.erro.campos}
   if (!opcao) return indisponivel(intencao, resultado.motivos[0], versoes.ocupacao)

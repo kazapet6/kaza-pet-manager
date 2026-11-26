@@ -16,6 +16,9 @@ import type { Cliente } from '../types/Cliente.ts'
 import type { Pet } from '../types/Pet.ts'
 import { buscarClientes, construirEntradaNovoAgendamento, criarControleConsultas, diasDoCalendario, deslocarMes, pendenciasPet, petsDoCliente } from './novoAgendamento.ts'
 import { horario, type ContextoGrade } from './gradeTemporal.ts'
+import { camposNecessariosDisponibilidade, camposNecessariosPrecificacao } from '../../../supabase/functions/_shared/motor/cadastroPet.ts'
+import { ErroProcedimentoIncluso, ROTULOS_PROCEDIMENTOS } from '../../../supabase/functions/_shared/motor/procedimentos.ts'
+import { resolverServicos } from '../../../supabase/functions/_shared/motor/regras.ts'
 
 type Props = { aberto: boolean; dataInicial: string; contextoInicial?: ContextoGrade; onClose: () => void; onConfirmado: (data: string) => Promise<void> }
 type EtapaFluxo = 1 | 2 | 3 | 4 | 5 | 6
@@ -47,6 +50,7 @@ export default function NovoAgendamentoModal({ aberto, dataInicial, contextoInic
   const [confirmando, setConfirmando] = useState(false)
   const [erroConfirmacao, setErroConfirmacao] = useState<string | null>(null)
   const [respostaConfirmacao, setRespostaConfirmacao] = useState<ConfirmacaoAgendamentoResposta | null>(null)
+  const [formaPrevista, setFormaPrevista] = useState<import('../confirmacao/contrato.ts').FormaPagamentoPrevista | ''>('')
   const [valoresDigitados, setValoresDigitados] = useState<Record<string, string>>({})
   const [preco, setPreco] = useState<EstadoPreco>({ status: 'inativo' })
   const consultas = useRef(criarControleConsultas())
@@ -59,7 +63,21 @@ export default function NovoAgendamentoModal({ aberto, dataInicial, contextoInic
   const camposPet = pet ? pendenciasPet(pet) : []
   const clientesEncontrados = useMemo(() => buscarClientes(sistema.clientes, buscaCliente), [sistema.clientes, buscaCliente])
   const pets = useMemo(() => petsDoCliente(sistema.pets, clienteId), [sistema.pets, clienteId])
-  const servicos = agenda.servicos.filter((item) => item.ativo)
+  const servicos = agenda.servicos.filter((item) => item.ativo && !item.exigeCreditoDeServicoId)
+  const prevalidacao = useMemo(() => {
+    if (!pet || !servicoIds.length || agenda.carregandoAgenda) return { campos: [], erro: null }
+    try {
+      const resolvidos = resolverServicos({ servicoIds }, { servicos: agenda.servicos, dependencias: agenda.servicoDependencias })
+      const campos = [...new Set([
+        ...camposNecessariosPrecificacao(pet, resolvidos, { regrasPreco: agenda.servicoRegrasPreco }),
+        ...camposNecessariosDisponibilidade(pet, resolvidos, {
+          elegibilidade: { especies: agenda.servicoEspecies, portes: agenda.servicoPortes, racasBloqueadas: agenda.servicoRacasBloqueadas },
+          modificadoresDuracao: agenda.servicoModificadores, etapas: agenda.servicoEtapas, recursosEtapas: agenda.servicoEtapaRecursos,
+        }),
+      ])]
+      return { campos, erro: null }
+    } catch (error) { return { campos: [], erro: error instanceof ErroProcedimentoIncluso ? error.message : "A configuração de dependências dos serviços selecionados precisa ser revisada." } }
+  }, [agenda, pet, servicoIds])
   const servicosSelecionados = servicos.filter((item) => servicoIds.includes(item.id))
   const ciclos = useMemo(() => data ? ciclosAtivosNaData(agenda.taxidogCiclos.map((ciclo) => ({ ...ciclo, diasSemana: agenda.taxidogCicloDias.filter((dia) => dia.cicloId === ciclo.id && dia.ativo).map((dia) => dia.diaSemana) })), data).sort((a, b) => a.ordem - b.ordem) : [], [agenda.taxidogCiclos, agenda.taxidogCicloDias, data])
 
@@ -71,6 +89,7 @@ export default function NovoAgendamentoModal({ aberto, dataInicial, contextoInic
 
   async function consultar(dataConsulta = data, modalidadeConsulta = modalidade, cicloConsulta = cicloTaxidogId) {
     if (!pet || !servicoIds.length || !dataConsulta) return setErro('Revise pet, serviços e data antes de consultar.')
+    if (prevalidacao.campos.length || prevalidacao.erro) return
     if (!modalidadeConsulta) return setErro('Escolha como o pet chegará até nós.')
     const token = consultas.current.iniciar()
     setConsultando(true); setErro(null); setResultado(null); setResultadosCiclos(null); setOpcao(null); setFuncionarioResponsavelId(''); setVersoes(null)
@@ -143,6 +162,8 @@ export default function NovoAgendamentoModal({ aberto, dataInicial, contextoInic
     }
     const montada = montarIntencaoConfirmacao({
       valoresNegociados,
+      formaPagamentoPrevista: formaPrevista || undefined,
+      ...(modalidade === 'taxidog' ? { inicioTaxiDogConsultado: opcao.horarioApresentado } : {}),
       petId, servicoIds, data, horarioEscolhido: opcao.horarioApresentado,
       modalidade, cicloTaxidogId: modalidade === 'taxidog' ? cicloTaxidogId : null,
       preferenciaFuncionario: funcionarioSelecionadoId ? 'obrigatorio' : 'automatico', funcionarioPreferidoId: funcionarioSelecionadoId || null, funcionarioResponsavelId,
@@ -169,8 +190,8 @@ export default function NovoAgendamentoModal({ aberto, dataInicial, contextoInic
       }
       if (resposta.codigo === 'IDEMPOTENCIA_CONFLITANTE') setTentativa(null)
       setErroConfirmacao(mensagemConfirmacao(resposta))
-    } catch {
-      setErroConfirmacao('Não foi possível confirmar o agendamento. Verifique a conexão e tente novamente.')
+    } catch (erro) {
+      setErroConfirmacao(erro instanceof Error ? erro.message : 'A confirmação não retornou um resultado verificável.')
     } finally {
       if (!confirmou) { confirmacaoEmAndamento.current = false; setConfirmando(false) }
     }
@@ -190,7 +211,7 @@ export default function NovoAgendamentoModal({ aberto, dataInicial, contextoInic
   function avancar() {
     if (etapa === 1 && cliente) setEtapa(2)
     else if (etapa === 2 && pet) setEtapa(3)
-    else if (etapa === 3 && servicoIds.length) setEtapa(4)
+    else if (etapa === 3 && servicoIds.length && !prevalidacao.campos.length && !prevalidacao.erro) setEtapa(4)
     else if (etapa === 4 && data) { setEtapa(5); if (modalidade) void consultar(data, modalidade, '') }
     else if (etapa === 5 && opcao) { setEtapa(6); void calcularValorRevisao(opcao) }
   }
@@ -206,6 +227,11 @@ export default function NovoAgendamentoModal({ aberto, dataInicial, contextoInic
           <p>Dados ausentes no cadastro de {pet.nome}: {camposPet.join(', ')}. A necessidade depende dos serviços escolhidos.</p>
           <Button variant="secondary" onClick={() => setEditandoPet(true)}>Editar cadastro do pet</Button>
         </div>}
+        {etapa >= 3 && pet && prevalidacao.campos.length > 0 && <div role="alert" className="novo-agendamento-erro">
+          <p>Complete o cadastro de {pet.nome}: {prevalidacao.campos.join(', ')}.</p>
+          <Button variant="secondary" onClick={() => setEditandoPet(true)}>Editar cadastro do pet</Button>
+        </div>}
+        {etapa === 3 && prevalidacao.erro && <p role="alert">{prevalidacao.erro}</p>}
         {editandoPet && pet && <EditorPet key={pet.id} pet={pet} fixarCliente onClose={() => { setEditandoPet(false); invalidarResultado() }} />}
         {etapa === 5 && modalidade === 'sem_transporte' && data === dataInicial && contextoInicial?.horario !== undefined && resultado && !consultando && <p role="status" className="agenda-sugestao-contexto">{resultado.estado === 'OK' && resultado.opcoes.some(item => item.horarioApresentado === contextoInicial.horario) ? 'O horário sugerido foi validado. Confira a equipe e as etapas na revisão.' : 'O horário sugerido não foi validado. Escolha uma das opções permitidas abaixo ou consulte outra data.'}</p>}
         {carregando ? <Estado titulo="Carregando dados..." texto="Preparando clientes, pets e serviços." />
@@ -215,13 +241,13 @@ export default function NovoAgendamentoModal({ aberto, dataInicial, contextoInic
                 : etapa === 3 ? <EtapaServicos servicos={servicos} selecionados={servicoIds} alterar={alterarServico} />
                   : etapa === 4 ? <EtapaDataFuncionario data={data} dataVisivelInicial={dataInicial} escolherData={escolherData} funcionarios={agenda.funcionarios.filter((item)=>item.ativo)} funcionarioId={funcionarioSelecionadoId} alterarFuncionario={escolherFuncionario} />
                     : etapa === 5 ? <EtapaTransporteDisponibilidade data={data} modalidade={modalidade} alterarModalidade={(valor) => { setModalidade(valor); setCicloTaxidogId(''); invalidarResultado(); void consultar(data, valor, '') }} ciclos={ciclos} resultadosCiclos={resultadosCiclos} cicloId={cicloTaxidogId} alterarCiclo={escolherCiclo} resultado={resultado} opcao={opcao} consultando={consultando} erro={erro} consultar={() => void consultar()} selecionar={selecionarOpcao} />
-                      : opcao && cliente && pet ? <EtapaRevisao cliente={cliente} pet={pet} funcionarioNome={agenda.funcionarios.find((item)=>item.id===funcionarioResponsavelId)?.nome ?? 'Não identificado'} data={data} modalidade={modalidade} cicloNome={cicloSelecionado?.nome} opcao={opcao} preco={preco} valoresDigitados={valoresDigitados} editarValor={(id, valor) => setValoresDigitados(atuais => ({ ...atuais, [id]: valor }))} confirmarEmAndamento={confirmando} tentarPreco={() => void calcularValorRevisao(opcao)} /> : <Estado titulo="Opção desatualizada" texto="Volte e consulte novamente a disponibilidade." />}
+                      : opcao && cliente && pet ? <EtapaRevisao cliente={cliente} pet={pet} funcionarioNome={agenda.funcionarios.find((item)=>item.id===funcionarioResponsavelId)?.nome ?? 'Não identificado'} data={data} modalidade={modalidade} cicloNome={cicloSelecionado?.nome} opcao={opcao} preco={preco} valoresDigitados={valoresDigitados} editarValor={(id, valor) => setValoresDigitados(atuais => ({ ...atuais, [id]: valor }))} formaPrevista={formaPrevista} editarFormaPrevista={setFormaPrevista} confirmarEmAndamento={confirmando} tentarPreco={() => void calcularValorRevisao(opcao)} /> : <Estado titulo="Opção desatualizada" texto="Volte e consulte novamente a disponibilidade." />}
         {etapa === 6 && erroConfirmacao && <div className="novo-confirmacao-feedback erro" role="alert"><strong>Não foi possível concluir</strong><p>{erroConfirmacao}</p></div>}
         {etapa === 6 && respostaConfirmacao?.status === 'confirmado' && <div className="novo-confirmacao-feedback sucesso" role="status"><strong>Agendamento confirmado com sucesso.</strong>{modalidade === "taxidog" && <span>Confira a janela de coleta e as previsões na revisão acima.</span>}</div>}
       </main>
       {!carregando && !erroCatalogo && (etapa === 6
         ? <RodapeConfirmacao pet={pet} servicos={servicosSelecionados.map((item) => item.nome)} data={data} voltar={voltar} confirmando={confirmando} podeConfirmar={preco.status === 'pronto'} confirmar={() => void confirmar()} />
-        : <Rodape etapa={etapa} mostrarAvisoValor={etapa === 5} cliente={cliente} pet={pet} servicos={servicosSelecionados.map((item) => item.nome)} data={data} opcao={modalidade === 'taxidog' ? null : opcao} voltar={voltar} avancar={avancar} cancelar={onClose} podeAvancar={Boolean(etapa === 1 ? cliente : etapa === 2 ? pet : etapa === 3 ? servicoIds.length : etapa === 4 ? data : etapa === 5 ? opcao && funcionarioResponsavelId : false)} />)}
+        : <Rodape etapa={etapa} mostrarAvisoValor={etapa === 5} cliente={cliente} pet={pet} servicos={servicosSelecionados.map((item) => item.nome)} data={data} opcao={modalidade === 'taxidog' ? null : opcao} voltar={voltar} avancar={avancar} cancelar={onClose} podeAvancar={Boolean(etapa === 1 ? cliente : etapa === 2 ? pet : etapa === 3 ? servicoIds.length && !prevalidacao.campos.length && !prevalidacao.erro : etapa === 4 ? data : etapa === 5 ? opcao && funcionarioResponsavelId : false)} />)}
     </div>
   </Modal>
 }
@@ -246,7 +272,7 @@ function EtapaPet({ cliente, pets, petId, selecionar }: { cliente: Cliente; pets
 }
 
 function EtapaServicos(props: { servicos: AgendaContextType['servicos']; selecionados: string[]; alterar: (id: string) => void }) {
-  return <EtapaCabecalho numero="03" titulo="Selecione os serviços" texto="O Motor resolverá dependências, etapas, equipe e equipamentos."><div className="novo-servicos-visuais">{props.servicos.map((servico) => <label className={props.selecionados.includes(servico.id) ? 'selecionada' : ''} key={servico.id}><input type="checkbox" checked={props.selecionados.includes(servico.id)} onChange={() => props.alterar(servico.id)} /><span aria-hidden="true">✦</span><div><strong>{servico.nome}</strong><small>Preço-base: {moeda(servico.precoBase)}</small></div></label>)}</div></EtapaCabecalho>
+  return <EtapaCabecalho numero="03" titulo="Selecione os serviços" texto="O Motor resolverá dependências, etapas, equipe e equipamentos."><div className="novo-servicos-visuais">{props.servicos.map((servico) => <label className={props.selecionados.includes(servico.id) ? 'selecionada' : ''} key={servico.id}><input type="checkbox" checked={props.selecionados.includes(servico.id)} onChange={() => props.alterar(servico.id)} /><span aria-hidden="true">✦</span><div><strong>{servico.nome}</strong><small>Preço-base: {moeda(servico.precoBase)}</small>{Boolean(servico.procedimentosInclusos?.length) && <small>Inclusos sem cobrança adicional: {servico.procedimentosInclusos!.map(c => ROTULOS_PROCEDIMENTOS[c]).join(', ')}</small>}</div></label>)}</div></EtapaCabecalho>
 }
 
 function EtapaDataFuncionario(props: { data: string; dataVisivelInicial: string; escolherData: (v: string) => void; funcionarios: AgendaContextType['funcionarios']; funcionarioId: string; alterarFuncionario: (id: string) => void }) {
@@ -255,7 +281,11 @@ function EtapaDataFuncionario(props: { data: string; dataVisivelInicial: string;
 
 function EtapaTransporteDisponibilidade(props: { data: string; modalidade: ModalidadeSelecionada; alterarModalidade: (v: 'sem_transporte' | 'taxidog') => void; ciclos: AgendaContextType['taxidogCiclos']; resultadosCiclos: Record<string, ResultadoDisponibilidadeCiclo> | null; cicloId: string; alterarCiclo: (id: string) => void; resultado: ResultadoDisponibilidade | null; opcao: OpcaoDisponibilidade | null; consultando: boolean; erro: string | null; consultar: () => void; selecionar: (o: OpcaoDisponibilidade | null) => void }) {
   const ciclosDisponiveis = props.ciclos.filter((ciclo) => props.resultadosCiclos?.[ciclo.id]?.disponivel)
-  return <EtapaCabecalho numero="05" titulo="Transporte e disponibilidade" texto="A disponibilidade usa a data e o funcionário definidos na etapa anterior."><section className="novo-modalidade-inline novo-transporte-opcoes"><div><label className={props.modalidade === 'sem_transporte' ? 'selecionada' : ''}><input type="radio" name="novo-modalidade" checked={props.modalidade === 'sem_transporte'} onChange={() => props.alterarModalidade('sem_transporte')} /><span><strong>Sem transporte</strong><small>O tutor leva e busca o pet</small></span></label><label className={props.modalidade === 'taxidog' ? 'selecionada' : ''}><input type="radio" name="novo-modalidade" checked={props.modalidade === 'taxidog'} onChange={() => props.alterarModalidade('taxidog')} /><span><strong>TaxiDog</strong><small>Buscamos e levamos o pet</small></span></label></div></section>{props.consultando ? <Estado titulo="Calculando disponibilidade..." texto="Avaliando serviços, equipe, equipamentos e transporte." /> : props.erro ? <div className="novo-agendamento-erro"><strong>Não foi possível consultar</strong><p>{props.erro}</p><Button variant="secondary" onClick={props.consultar}>Tentar novamente</Button></div> : props.modalidade === 'sem_transporte' ? <section className="novo-horarios-painel"><header><span>Horários disponíveis</span><strong>{dataCurta(props.data)}</strong></header>{props.resultado?.estado === 'OK' ? <Horarios opcoes={props.resultado.opcoes} selecionada={props.opcao} selecionar={props.selecionar} /> : props.resultado ? <div className="novo-sem-horarios"><strong>{rotuloEstado(props.resultado.estado)}</strong>{props.resultado.motivos.map((motivo) => <p key={motivo}>{motivo}</p>)}</div> : null}</section> : props.modalidade === 'taxidog' ? <section className="novo-ciclos"><h4>Ciclos TaxiDog disponíveis em {dataCurta(props.data)}</h4>{ciclosDisponiveis.length ? <div>{ciclosDisponiveis.map((ciclo) => <button type="button" className={props.cicloId === ciclo.id ? 'selecionada' : ''} key={ciclo.id} onClick={() => props.alterarCiclo(ciclo.id)}><strong>{ciclo.nome}</strong><small>Coleta {horaSimples(ciclo.coletaInicio)}–{horaSimples(ciclo.coletaFim)}</small></button>)}</div> : props.resultadosCiclos ? <p className="novo-agendamento-vazio">Não há ciclos TaxiDog disponíveis em {dataCurta(props.data)}.</p> : null}</section> : <Estado titulo="Escolha o transporte" texto="Depois da escolha, o Motor calculará a disponibilidade para a data selecionada." />}</EtapaCabecalho>
+  return <EtapaCabecalho numero="05" titulo="Transporte e disponibilidade" texto="A disponibilidade usa a data e o funcionário definidos na etapa anterior."><section className="novo-modalidade-inline novo-transporte-opcoes"><div><label className={props.modalidade === 'sem_transporte' ? 'selecionada' : ''}><input type="radio" name="novo-modalidade" checked={props.modalidade === 'sem_transporte'} onChange={() => props.alterarModalidade('sem_transporte')} /><span><strong>Sem transporte</strong><small>O tutor leva e busca o pet</small></span></label><label className={props.modalidade === 'taxidog' ? 'selecionada' : ''}><input type="radio" name="novo-modalidade" checked={props.modalidade === 'taxidog'} onChange={() => props.alterarModalidade('taxidog')} /><span><strong>TaxiDog</strong><small>Buscamos e levamos o pet</small></span></label></div></section>{props.consultando ? <Estado titulo="Calculando disponibilidade..." texto="Avaliando serviços, equipe, equipamentos e transporte." /> : props.erro ? <div className="novo-agendamento-erro"><strong>Não foi possível consultar</strong><p>{props.erro}</p><Button variant="secondary" onClick={props.consultar}>Tentar novamente</Button></div> : props.modalidade === 'sem_transporte' ? <section className="novo-horarios-painel"><header><span>Horários disponíveis</span><strong>{dataCurta(props.data)}</strong></header>{props.resultado?.estado === 'OK' ? <Horarios opcoes={props.resultado.opcoes} selecionada={props.opcao} selecionar={props.selecionar} /> : props.resultado ? <div className="novo-sem-horarios"><strong>{rotuloEstado(props.resultado.estado)}</strong>{props.resultado.motivos.map((motivo) => <p key={motivo}>{motivo}</p>)}</div> : null}</section> : props.modalidade === 'taxidog' ? <section className="novo-ciclos"><h4>Ciclos TaxiDog disponíveis em {dataCurta(props.data)}</h4>{ciclosDisponiveis.length ? <div>{ciclosDisponiveis.map((ciclo) => <button type="button" className={props.cicloId === ciclo.id ? 'selecionada' : ''} key={ciclo.id} onClick={() => props.alterarCiclo(ciclo.id)}><strong>{ciclo.nome}</strong><small>Coleta {horaSimples(ciclo.coletaInicio)}–{horaSimples(ciclo.coletaFim)}</small><small>{rotuloPrevisaoCiclo(props.resultadosCiclos?.[ciclo.id]?.opcao)}</small></button>)}</div> : props.resultadosCiclos ? <p className="novo-agendamento-vazio">Não há ciclos TaxiDog disponíveis em {dataCurta(props.data)}.</p> : null}</section> : <Estado titulo="Escolha o transporte" texto="Depois da escolha, o Motor calculará a disponibilidade para a data selecionada." />}</EtapaCabecalho>
+}
+
+function rotuloPrevisaoCiclo(opcao: OpcaoDisponibilidade | null | undefined) {
+  return opcao ? 'Atendimento previsto ' + minutosParaHora(opcao.inicioOperacional) + '–' + minutosParaHora(opcao.conclusaoPrevista) : null
 }
 
 export function PainelHorariosTaxidog({ ciclo, horarios, resultado, selecionada, consultando, erro, consultar, selecionar, linguagem = 'tecnica' }: { ciclo?: { nome: string; coletaInicio: string; coletaFim: string }; horarios: ResultadoDisponibilidade | null; resultado: ResultadoDisponibilidadeCiclo | null; selecionada: OpcaoDisponibilidade | null; consultando: boolean; erro: string | null; consultar: () => void; selecionar: (o: OpcaoDisponibilidade) => void; linguagem?: 'tecnica' | 'operacional' }) {
@@ -265,7 +295,7 @@ export function PainelHorariosTaxidog({ ciclo, horarios, resultado, selecionada,
   const relevantes = horarios?.opcoes ?? []
   const horariosVisiveis=[...new Set([...relevantes.map(item=>item.horarioApresentado),janela].filter(item=>item>=0))].sort((a,b)=>a-b)
   const operacional = linguagem === 'operacional'
-  return <section className={`novo-horarios-painel ${operacional ? 'taxidog-operacional' : ''}`}><header><span>{operacional ? 'Disponibilidade para a coleta' : 'Horários e janelas'}</span><strong>{ciclo?.nome || 'TaxiDog'}</strong></header><div className="novo-horarios-taxidog">{horariosVisiveis.map(horario=>{const ehJanela=horario===janela;const habilitado=ehJanela&&Boolean(resultado?.disponivel&&resultado.opcao);const estado=habilitado?'disponivel':ehJanela?'sem-capacidade':'fora-janela';const explicacao=habilitado?'Disponível':ehJanela?'Sem capacidade':operacional?'Indisponível para esta coleta':'Fora da janela do TaxiDog';return <button type="button" key={horario} disabled={!habilitado} aria-label={`${minutosParaHora(horario)} · ${explicacao}`} title={explicacao} className={`${estado} ${selecionada&&habilitado?'selecionado':''}`} onClick={()=>resultado?.opcao&&selecionar(resultado.opcao)}><strong>{minutosParaHora(horario)}</strong>{(!operacional||estado!=='fora-janela')&&<small>{operacional?explicacao:habilitado?'Janela TaxiDog disponível':ehJanela?'Sem capacidade':'Fora da janela do TaxiDog'}</small>}</button>})}</div>{operacional&&horariosVisiveis.length>0&&<div className="taxidog-operacional-legenda"><span><i className="indisponivel"/>Esmaecido: indisponível para esta coleta</span><span><i className="lotado"/>Tracejado: sem capacidade</span></div>}{resultado&&!resultado.disponivel&&<p className="novo-taxidog-motivo">{operacional?'Este horário de coleta está sem capacidade operacional.':'A janela existe, mas a capacidade operacional está esgotada.'}</p>}</section>
+  return <section className={`novo-horarios-painel ${operacional ? 'taxidog-operacional' : ''}`}><header><span>{operacional ? 'Disponibilidade para a coleta' : 'Horários e janelas'}</span><strong>{ciclo?.nome || 'TaxiDog'}</strong></header><div className="novo-horarios-taxidog">{horariosVisiveis.map(horario=>{const ehJanela=horario===janela;const habilitado=ehJanela&&Boolean(resultado?.disponivel&&resultado.opcao);const estado=habilitado?'disponivel':ehJanela?'sem-capacidade':'fora-janela';const explicacao=habilitado?'Disponível':ehJanela?'Sem capacidade':operacional?'Indisponível para esta coleta':'Fora da janela do TaxiDog';return <button type="button" key={horario} disabled={!habilitado} aria-label={ehJanela ? `Coleta ${minutosParaHora(horario)}–${horaSimples(ciclo?.coletaFim ?? '')} · ${explicacao}` : `${minutosParaHora(horario)} · ${explicacao}`} title={explicacao} className={`${estado} ${selecionada&&habilitado?'selecionado':''}`} onClick={()=>resultado?.opcao&&selecionar(resultado.opcao)}><strong>{minutosParaHora(horario)}</strong>{(!operacional||estado!=='fora-janela')&&<small>{operacional?explicacao:habilitado?'Janela TaxiDog disponível':ehJanela?'Sem capacidade':'Fora da janela do TaxiDog'}</small>}</button>})}</div>{operacional && ciclo && resultado?.opcao && <p>Coleta {horaSimples(ciclo.coletaInicio)}–{horaSimples(ciclo.coletaFim)} · Início previsto do atendimento {minutosParaHora(resultado.opcao.inicioOperacional)} · Conclusão prevista {minutosParaHora(resultado.opcao.conclusaoPrevista)}</p>}{operacional&&horariosVisiveis.length>0&&<div className="taxidog-operacional-legenda"><span><i className="indisponivel"/>Esmaecido: indisponível para esta coleta</span><span><i className="lotado"/>Tracejado: sem capacidade</span></div>}{resultado&&!resultado.disponivel&&<p className="novo-taxidog-motivo">{operacional?'Este horário de coleta está sem capacidade operacional.':'A janela existe, mas a capacidade operacional está esgotada.'}</p>}</section>
 }
 
 export function Calendario({ data, dataVisivelInicial = data || hojeLocal(), selecionar }: { data: string; dataVisivelInicial?: string; selecionar: (v: string) => void }) {
@@ -274,7 +304,7 @@ export function Calendario({ data, dataVisivelInicial = data || hojeLocal(), sel
   const dias = diasDoCalendario(mesVisivel.ano, mesVisivel.mes)
   const hoje = hojeLocal()
   function mover(deslocamento: number) { setMesVisivel(deslocarMes(mesVisivel.ano, mesVisivel.mes, deslocamento)) }
-  return <section className="novo-calendario"><header><button type="button" aria-label="Mês anterior" onClick={() => mover(-1)}>‹</button><strong>{nomeMes(mesVisivel.ano, mesVisivel.mes)}</strong><button type="button" aria-label="Próximo mês" onClick={() => mover(1)}>›</button></header><div className="novo-calendario-semana">{['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((dia) => <span key={dia}>{dia}</span>)}</div><div className="novo-calendario-dias">{dias.map((dia) => <button type="button" key={dia.data} className={`${dia.mesAtual ? '' : 'outro-mes'} ${dia.data === hoje ? 'hoje' : ''} ${dia.data === data ? 'selecionado' : ''}`} onClick={() => { selecionar(dia.data); if (!dia.mesAtual) { const [a, m] = dia.data.split('-').map(Number); setMesVisivel({ ano: a, mes: m - 1 }) } }}>{dia.dia}</button>)}</div></section>
+  return <section className="novo-calendario"><header><button type="button" aria-label="Mês anterior" onClick={() => mover(-1)}>‹</button><strong>{nomeMes(mesVisivel.ano, mesVisivel.mes)}</strong><button type="button" aria-label="Próximo mês" onClick={() => mover(1)}>›</button></header><div className="novo-calendario-semana">{['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((dia) => <span key={dia}>{dia}</span>)}</div><div className="novo-calendario-dias">{dias.map((dia) => <button type="button" key={dia.data} aria-label={dataCurta(dia.data)} title={dataCurta(dia.data)} aria-pressed={dia.data === data} className={`${dia.mesAtual ? '' : 'outro-mes'} ${dia.data === hoje ? 'hoje' : ''} ${dia.data === data ? 'selecionado' : ''}`} onClick={() => { selecionar(dia.data); if (!dia.mesAtual) { const [a, m] = dia.data.split('-').map(Number); setMesVisivel({ ano: a, mes: m - 1 }) } }}>{dia.dia}</button>)}</div></section>
 }
 
 export function Horarios({ opcoes, selecionada, selecionar }: { opcoes: OpcaoDisponibilidade[]; selecionada: OpcaoDisponibilidade | null; selecionar: (o: OpcaoDisponibilidade) => void }) {
@@ -283,9 +313,19 @@ export function Horarios({ opcoes, selecionada, selecionar }: { opcoes: OpcaoDis
   return <div className="novo-horarios-grupos">{grupos.filter((grupo) => grupo.itens.length).map((grupo) => <section key={grupo.titulo}><h4>{grupo.titulo}</h4><div>{grupo.itens.map((item) => <button type="button" className={selecionada?.horarioApresentado === item.horarioApresentado ? 'selecionado' : ''} key={item.horarioApresentado} onClick={() => selecionar(item)}><strong>{minutosParaHora(item.horarioApresentado)}</strong><small>até {minutosParaHora(item.conclusaoPrevista)}</small></button>)}</div></section>)}</div>
 }
 
-function EtapaRevisao({ cliente, pet, funcionarioNome, data, modalidade, cicloNome, opcao, preco, valoresDigitados, editarValor, confirmarEmAndamento, tentarPreco }: { cliente: Cliente; pet: Pet; funcionarioNome: string; data: string; modalidade: ModalidadeSelecionada; cicloNome?: string; opcao: OpcaoDisponibilidade; preco: EstadoPreco; valoresDigitados: Record<string, string>; editarValor: (id: string, valor: string) => void; confirmarEmAndamento: boolean; tentarPreco: () => void }) {
+function EtapaRevisao({ cliente, pet, funcionarioNome, data, modalidade, cicloNome, opcao, preco, valoresDigitados, editarValor, formaPrevista, editarFormaPrevista, confirmarEmAndamento, tentarPreco }: { cliente: Cliente; pet: Pet; funcionarioNome: string; data: string; modalidade: ModalidadeSelecionada; cicloNome?: string; opcao: OpcaoDisponibilidade; preco: EstadoPreco; valoresDigitados: Record<string, string>; editarValor: (id: string, valor: string) => void; formaPrevista: import('../confirmacao/contrato.ts').FormaPagamentoPrevista | ''; editarFormaPrevista: (forma: import('../confirmacao/contrato.ts').FormaPagamentoPrevista | '') => void; confirmarEmAndamento: boolean; tentarPreco: () => void }) {
   const chegada = modalidade === 'taxidog' ? `TaxiDog${cicloNome ? ` · Ciclo: ${cicloNome}` : ''}` : 'Sem transporte'
-  const valor = <><div className="novo-revisao-chegada"><small>Funcionário responsável</small><strong>{funcionarioNome}</strong></div><BlocoValor preco={preco} tentar={tentarPreco} />{preco.status === 'pronto' && <ValoresNegociados preco={preco} opcao={opcao} digitados={valoresDigitados} editar={editarValor} desabilitado={confirmarEmAndamento} />}</>
+  const valor = <><div className="novo-revisao-chegada"><small>Funcionário responsável</small><strong>{funcionarioNome}</strong></div><BlocoValor preco={preco} tentar={tentarPreco} /><label>Forma de pagamento prevista
+    <select value={formaPrevista} disabled={confirmarEmAndamento} onChange={(event) => {
+      const forma = event.target.value
+      editarFormaPrevista(forma === 'dinheiro' || forma === 'pix' || forma === 'cartao' ? forma : '')
+    }}>
+      <option value="">Não definida</option>
+      <option value="dinheiro">Dinheiro</option>
+      <option value="pix">PIX</option>
+      <option value="cartao">Cartão</option>
+    </select>
+  </label>{preco.status === 'pronto' && <ValoresNegociados preco={preco} opcao={opcao} digitados={valoresDigitados} editar={editarValor} desabilitado={confirmarEmAndamento} />}</>
   if (modalidade === 'taxidog') return <EtapaCabecalho numero="06" titulo="Revisar agendamento" texto="Confira o ciclo, os serviços e o valor antes de confirmar."><div className="novo-revisao-identidade"><span>{inicial(pet.nome)}</span><div><strong>{pet.nome}</strong><small>Tutor: {cliente.nome}</small></div><div><strong>{dataCurta(data)}</strong><small>Data operacional</small></div></div><div className="novo-revisao-servicos">{opcao.servicos.map((servico) => <span key={servico.id}>{servico.nome}{servico.origem === 'dependencia' ? ' · dependência' : ''}</span>)}</div><div className="novo-revisao-chegada"><small>Como o pet chegará até nós</small><strong>{chegada}</strong></div>{opcao.cicloTaxidog && <div className="novo-revisao-taxidog"><strong>{opcao.cicloTaxidog.nome}</strong><span>Coleta {minutosParaHora(opcao.cicloTaxidog.coletaInicio)}–{minutosParaHora(opcao.cicloTaxidog.coletaFim)}</span><span>Início previsto do atendimento: {minutosParaHora(opcao.inicioOperacional)}</span><span>Conclusão prevista: {minutosParaHora(opcao.conclusaoPrevista)}</span></div>}{valor}</EtapaCabecalho>
   return <EtapaCabecalho numero="06" titulo="Revisar agendamento" texto="Confira o planejamento e o valor antes de confirmar."><div className="novo-revisao-identidade"><span>{inicial(pet.nome)}</span><div><strong>{pet.nome}</strong><small>Tutor: {cliente.nome}</small></div><div><strong>{minutosParaHora(opcao.horarioApresentado)} → {minutosParaHora(opcao.conclusaoPrevista)}</strong><small>{dataCurta(data)}</small></div></div><div className="novo-revisao-servicos">{opcao.servicos.map((servico) => <span key={servico.id}>{servico.nome}{servico.origem === 'dependencia' ? ' · dependência' : ''}</span>)}</div><div className="novo-revisao-chegada"><small>Como o pet chegará até nós</small><strong>{chegada}</strong></div><section><h4>Planejamento operacional</h4><div className="novo-revisao-etapas">{opcao.etapas.map((etapa) => { const espera = opcao.esperas.find((item) => item.antesDaEtapaId === etapa.etapaId); return <div key={etapa.etapaId}>{espera && <aside><time>{minutosParaHora(espera.inicio)}–{minutosParaHora(espera.fim)}</time><span>Espera · {espera.duracaoMinutos} min</span></aside>}<article><time>{minutosParaHora(etapa.inicio)}</time><i /><div><strong>{rotuloEtapaComAcoplamentos(etapa, etapa.nome)}</strong><span>{[...etapa.funcionarios.map((item) => `Equipe: ${item.nome}`), ...etapa.equipamentos.map((item) => `Equipamento: ${item.equipamentoNome} · ${item.unidadeNome}`)].join(', ') || 'Sem recurso exclusivo'}</span></div><time>{minutosParaHora(etapa.fim)}</time></article></div> })}</div></section>{opcao.cicloTaxidog && <div className="novo-revisao-taxidog"><strong>TaxiDog · {opcao.cicloTaxidog.nome}</strong><span>Coleta {minutosParaHora(opcao.cicloTaxidog.coletaInicio)}–{minutosParaHora(opcao.cicloTaxidog.coletaFim)} · conclusão limite {minutosParaHora(opcao.cicloTaxidog.conclusaoLimite)}</span></div>}{valor}</EtapaCabecalho>
 }

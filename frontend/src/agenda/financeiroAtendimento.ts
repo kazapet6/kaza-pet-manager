@@ -8,6 +8,7 @@ export function financeiroDaResposta(resposta: ConclusaoDadosResposta): AgendaDi
 
 export function resumirFinanceiro(financeiro: FinanceiroAtendimento): AgendaDiariaFinanceiro {
   return {
+    ...(financeiro.formaPagamentoPrevista === undefined ? {} : { formaPagamentoPrevista: financeiro.formaPagamentoPrevista, versao: financeiro.versao }),
     valorFinal: financeiro.valorFinal,
     totalRecebido: financeiro.totalRecebido,
     saldo: financeiro.saldo,

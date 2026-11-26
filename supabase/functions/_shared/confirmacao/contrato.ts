@@ -7,13 +7,21 @@ export type ValorNegociadoServico = {
   readonly final: number
 }
 
+export type FormaPagamentoPrevista = 'dinheiro' | 'pix' | 'cartao'
+
+function formaPrevistaValida(valor: unknown): valor is FormaPagamentoPrevista {
+  return valor === 'dinheiro' || valor === 'pix' || valor === 'cartao'
+}
+
 export type ConfirmacaoAgendamentoIntent = {
   readonly chaveIdempotencia: string
   readonly petId: string
   readonly servicoIds: readonly string[]
+  readonly formaPagamentoPrevista?: FormaPagamentoPrevista
   readonly valoresNegociados?: readonly ValorNegociadoServico[]
   readonly data: string
   readonly horarioEscolhido: number | null
+  readonly inicioTaxiDogConsultado?: number
   readonly modalidade: ModalidadeConfirmacao
   readonly cicloTaxidogId: string | null
   readonly preferenciaFuncionario: PreferenciaFuncionario
@@ -109,9 +117,11 @@ export function validarIntencaoConfirmacao(
   if (intencao.valoresNegociados && !valoresNegociadosValidos(intencao.valoresNegociados, intencao.servicoIds)) {
     erros.push(erro('valoresNegociados', 'FORMATO_INVALIDO', 'Informe valores negociados válidos para os serviços escolhidos.'))
   }
+  if (intencao.formaPagamentoPrevista !== undefined && !formaPrevistaValida(intencao.formaPagamentoPrevista)) erros.push(erro('formaPagamentoPrevista', 'FORMATO_INVALIDO', 'Forma de pagamento prevista inválida.'))
   if (!dataValida(intencao.data)) erros.push(erro('data', 'FORMATO_INVALIDO', 'Informe uma data válida no formato AAAA-MM-DD.'))
   if (intencao.modalidade === 'sem_transporte' && (!Number.isInteger(intencao.horarioEscolhido) || Number(intencao.horarioEscolhido) < 0 || Number(intencao.horarioEscolhido) >= 24 * 60)) erros.push(erro('horarioEscolhido', 'FORMATO_INVALIDO', 'Sem transporte exige um minuto válido do dia.'))
   if (intencao.modalidade === 'taxidog' && intencao.horarioEscolhido !== null) erros.push(erro('horarioEscolhido', 'COMBINACAO_INVALIDA', 'TaxiDog escolhe o ciclo, não um horário operacional interno.'))
+  if (intencao.inicioTaxiDogConsultado !== undefined && (intencao.modalidade !== 'taxidog' || !Number.isInteger(intencao.inicioTaxiDogConsultado) || intencao.inicioTaxiDogConsultado < 0 || intencao.inicioTaxiDogConsultado >= 1440)) erros.push(erro('inicioTaxiDogConsultado', 'FORMATO_INVALIDO', 'Previsão TaxiDog inválida.'))
   if (!Number.isSafeInteger(intencao.versaoConfiguracaoConsultada) || intencao.versaoConfiguracaoConsultada <= 0) erros.push(erro('versaoConfiguracaoConsultada', 'FORMATO_INVALIDO', 'A versão de configuração deve ser positiva.'))
   if (!Number.isSafeInteger(intencao.versaoOcupacaoConsultada) || intencao.versaoOcupacaoConsultada <= 0) erros.push(erro('versaoOcupacaoConsultada', 'FORMATO_INVALIDO', 'A versão de ocupação deve ser positiva.'))
 
@@ -133,8 +143,10 @@ export function normalizarIntencaoParaHash(
     ...(intencao.valoresNegociados?.length ? {
       valoresNegociados: [...intencao.valoresNegociados].sort((a, b) => compararIds(a.servicoId, b.servicoId)),
     } : {}),
+    ...(intencao.formaPagamentoPrevista ? { formaPagamentoPrevista: intencao.formaPagamentoPrevista } : {}),
     data: intencao.data,
     horarioEscolhido: intencao.horarioEscolhido,
+    ...(intencao.inicioTaxiDogConsultado === undefined ? {} : { inicioTaxiDogConsultado: intencao.inicioTaxiDogConsultado }),
     modalidade: intencao.modalidade,
     cicloTaxidogId: intencao.cicloTaxidogId,
     preferenciaFuncionario: intencao.preferenciaFuncionario,
@@ -171,12 +183,15 @@ export function lerIntencaoConfirmacao(
     || !['automatico', 'preferencial', 'obrigatorio']
       .includes(texto(valor.preferenciaFuncionario))) return null
   if (valor.valoresNegociados !== undefined && !valoresNegociadosValidos(valor.valoresNegociados, valor.servicoIds)) return null
+  if (valor.formaPagamentoPrevista !== undefined && !formaPrevistaValida(valor.formaPagamentoPrevista)) return null
   const intencao: ConfirmacaoAgendamentoIntent = {
+    ...(valor.formaPagamentoPrevista ? { formaPagamentoPrevista: valor.formaPagamentoPrevista } : {}),
     chaveIdempotencia: texto(valor.chaveIdempotencia),
     petId: texto(valor.petId),
     servicoIds: valor.servicoIds as string[],
     ...(valor.valoresNegociados?.length ? { valoresNegociados: valor.valoresNegociados.map(({ servicoId, original, final }) => ({ servicoId, original, final })) } : {}),
     data: texto(valor.data),
+    ...(valor.inicioTaxiDogConsultado === undefined ? {} : { inicioTaxiDogConsultado: typeof valor.inicioTaxiDogConsultado === 'number' ? valor.inicioTaxiDogConsultado : NaN }),
     horarioEscolhido: valor.horarioEscolhido === null ? null : numero(valor.horarioEscolhido),
     modalidade: valor.modalidade === 'taxidog' ? 'taxidog' : 'sem_transporte',
     cicloTaxidogId: textoNulo(valor.cicloTaxidogId),

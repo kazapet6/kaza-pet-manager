@@ -185,4 +185,26 @@ teste('AJ68', 'grade usa um card total e mantém etapas somente no detalhe', () 
 teste('AJ69', 'grade permite rolagem controlada em telas estreitas', () => {
   assert.ok(fonteEstilos.includes('.agenda-timeline-scroll { overflow:auto;'))
 })
-console.log(`${aprovados} testes AJ01–AJ69 aprovados.`)
+teste('AJ70', 'procedimentos inclusos usam snapshot deduplicado sem alterar preço', () => {
+  const d = fixture(); Object.assign(d.servicos[0], { procedimentos_inclusos_snapshot: ['corte_unhas','limpeza_ouvidos','tosa_higienica','corte_unhas','invalido'] })
+  const item = montar(d).secoes[0].atendimentos[0]
+  assert.deepEqual(item.procedimentosInclusos, ['tosa_higienica','limpeza_ouvidos','corte_unhas'])
+  assert.equal(item.valorFinal, 55); assert.equal(item.servicos.length, 1); assert.equal(item.etapas.length, 3)
+})
+teste('AJ71', 'registros antigos não presumem procedimentos executados ou contratados', () => {
+  const d = fixture(); Object.assign(d.servicos[0], { procedimentos_inclusos_snapshot: null })
+  assert.deepEqual(montar(d).secoes[0].atendimentos[0].procedimentosInclusos, [])
+})
+teste('AJ72', 'serviço inativo não adiciona procedimentos ao atendimento', () => {
+  const d = fixture(); d.servicos.push({ ...d.servicos[0], id: 'as2' }); Object.assign(d.servicos[1], { ativo: false, procedimentos_inclusos_snapshot: ['corte_unhas'] })
+  const item = montar(d).secoes[0].atendimentos[0]
+  assert.deepEqual(item.procedimentosInclusos, []); assert.equal(item.servicos.length, 1)
+})
+teste('AJ73', 'apenas a marca autoritativa identifica adicional de pacote', () => {
+  const d = fixture(); d.servicos.push({ ...d.servicos[0], id: 'as2', servico_id: 's-tosa', nome_snapshot: 'Tosa' });
+  Object.assign(d.servicos[1], { adicional_pacote: true });
+  const servicos = montar(d).secoes[0].atendimentos[0].servicos;
+  assert.equal(servicos.find(x => x.id === 'as1')?.adicionalPacote, false);
+  assert.equal(servicos.find(x => x.id === 'as2')?.adicionalPacote, true);
+})
+console.log(`${aprovados} testes AJ01–AJ73 aprovados.`)

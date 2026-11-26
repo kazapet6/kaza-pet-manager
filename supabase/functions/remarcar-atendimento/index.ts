@@ -10,4 +10,4 @@ if (!url || !anonKey || !serviceRoleKey) throw new Error('Configuracao segura da
 const auth = createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false } })
 const admin = createClient(url, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
 const origens = criarOrigensPermitidas(Deno.env.get('ALLOWED_ORIGINS'))
-Deno.serve(criarHandlerRemarcacao({ validarToken: criarValidadorTokenRemarcacao(auth), remarcar: (item) => remarcarComBackendConfiavel(item, admin) }, origens))
+Deno.serve(criarHandlerRemarcacao({ validarToken: criarValidadorTokenRemarcacao(auth), remarcar: (item, operadorId) => remarcarComBackendConfiavel(item, admin, operadorId) }, origens))

@@ -1,3 +1,4 @@
+import { normalizarProcedimentos } from '../../../supabase/functions/_shared/motor/procedimentos.ts'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type {
   AgendaDiariaAtendimento,
@@ -53,7 +54,7 @@ export async function carregarAgendaDiaria(
   const [clientes, pets, servicos, etapas, esperas, vinculosOriginais, reaproveitamentos] = await Promise.all([
     consultarEm(cliente, 'clientes', 'id, nome', 'id', clienteIds),
     consultarEm(cliente, 'pets', 'id, nome', 'id', petIds),
-    consultarEm(cliente, 'atendimento_servicos', 'id, atendimento_id, servico_id, nome_snapshot, ordem, origem', 'atendimento_id', atendimentoIds),
+    consultarEm(cliente, 'atendimento_servicos', 'id, atendimento_id, servico_id, nome_snapshot, ordem, origem, ativo, adicional_pacote, procedimentos_inclusos_snapshot', 'atendimento_id', atendimentoIds),
     consultarEm(cliente, 'atendimento_etapas', 'id, atendimento_id, nome_snapshot, ordem_snapshot, inicio_planejado, fim_planejado', 'atendimento_id', atendimentoIds),
     consultarEm(cliente, 'atendimento_esperas', 'id, atendimento_id, inicio, fim, motivo', 'atendimento_id', atendimentoIds),
     consultarEm(cliente, 'contrato_ciclo_ocorrencias', 'id, atendimento_id, ciclo_id, ordem', 'atendimento_id', atendimentoIds),
@@ -180,16 +181,20 @@ export function montarAgendaDiaria(
       petNome: texto(atendimento.pet_nome_snapshot) || texto(pet?.nome) || 'Pet não identificado',
       tutorNome: texto(cliente?.nome) || 'Tutor não identificado',
       servicos: [...new Map(tabelas.servicos
-        .filter((item) => texto(item.atendimento_id) === texto(atendimento.id))
+        .filter((item) => texto(item.atendimento_id) === texto(atendimento.id) && item.ativo !== false)
         .map((item) => [texto(item.id), item])).values()]
         .map((item) => ({
           id: texto(item.id), servicoId: texto(item.servico_id),
           nome: texto(item.nome_snapshot) || 'Serviço',
           origem: texto(item.origem) === 'dependencia' ? 'dependencia' as const : 'solicitado' as const,
           ordem: numero(item.ordem),
+          adicionalPacote: item.adicional_pacote === true,
           contratado: Boolean(vinculoContrato && servicosContratados.has(texto(item.servico_id))),
         }))
         .sort((a, b) => a.ordem - b.ordem || comparar(a.nome, b.nome)),
+      procedimentosInclusos: normalizarProcedimentos(tabelas.servicos
+        .filter(item => texto(item.atendimento_id) === texto(atendimento.id) && item.ativo !== false)
+        .flatMap(item => normalizarProcedimentos(item.procedimentos_inclusos_snapshot))),
       status: texto(atendimento.status) || 'desconhecido', modalidade,
       observacoes, valorFinal: numero(atendimento.valor_final), financeiro: null, vinculoContrato,
       historicoOperacional: montarHistoricoOperacional(atendimento),

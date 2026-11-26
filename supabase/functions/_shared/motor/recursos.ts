@@ -45,10 +45,10 @@ function funcionariosDisponiveis(etapa: EtapaCalculada, periodo: IntervaloMinuto
   })
 }
 
-function funcionarioHabilitado(funcionarioId: string, habilitacao: { servicoId: string; servicoEtapaId: string }, dados: DadosDisponibilidade) {
+export function funcionarioHabilitado(funcionarioId: string, habilitacao: { servicoId: string; servicoEtapaId: string; explicita?: boolean },  dados: DadosDisponibilidade) {
   if (!dados.habilitacoes.servicos.some((item) => item.funcionarioId === funcionarioId && item.servicoId === habilitacao.servicoId && item.ativo)) return false
   const regraEtapa = dados.habilitacoes.etapas.find((item) => item.funcionarioId === funcionarioId && item.servicoEtapaId === habilitacao.servicoEtapaId)
-  return !regraEtapa || regraEtapa.ativo
+  return regraEtapa?.ativo ?? !habilitacao.explicita
 }
 
 function unidadesDisponiveis(equipamentoId: string, periodo: IntervaloMinutos, dia: number, pet: PetMotor, dados: DadosDisponibilidade, planejados: RecursosPlanejados) {

@@ -8,7 +8,7 @@ import { calcularPrecificacao } from '../_shared/motor/precificacao.ts'
 import { ErroCadastroPetIncompleto } from '../_shared/motor/cadastroPet.ts'
 
 type Linha = Record<string, unknown>
-export async function remarcarComBackendConfiavel(intencao: RemarcacaoIntent, admin: SupabaseClient): Promise<RemarcacaoResposta> {
+export async function remarcarComBackendConfiavel(intencao: RemarcacaoIntent, admin: SupabaseClient, operadorId?: string): Promise<RemarcacaoResposta> {
   const hash = await calcularHashRemarcacao(intencao)
   const idempotencia = await admin.from('atendimento_remarcacoes').select('hash_requisicao, resposta').eq('chave_idempotencia', intencao.chaveIdempotencia).maybeSingle()
   if (idempotencia.error) throw idempotencia.error
@@ -39,10 +39,13 @@ export async function remarcarComBackendConfiavel(intencao: RemarcacaoIntent, ad
   }
   const modalidadeAtual = String(grupo.modalidade) === 'taxidog' ? 'taxidog' : 'sem_transporte'
   if (modalidadeAtual !== intencao.modalidade) return invalida('A modalidade original deve ser preservada.')
-  const servicosResposta = await admin.from('atendimento_servicos').select('id, servico_id, origem').eq('atendimento_id', intencao.atendimentoId).eq('ativo', true)
+  const servicosResposta = await admin.from('atendimento_servicos').select('id, servico_id, origem, adicional_pacote').eq('atendimento_id', intencao.atendimentoId).eq('ativo', true)
   if (servicosResposta.error) throw servicosResposta.error
   const servicos = (servicosResposta.data ?? []) as unknown as Linha[]
-  const solicitados = servicos.filter((item) => item.origem === 'solicitado').map((item) => String(item.servico_id))
+  const removido = intencao.removerAdicionalId ? servicos.find(item => item.id === intencao.removerAdicionalId && item.adicional_pacote === true && item.origem === 'solicitado') : null
+  if (intencao.removerAdicionalId && (!removido || !operadorId)) return invalida('Escolha um adicional válido e não pago.')
+  const restantes = servicos.filter(item => item.id !== removido?.id)
+  const solicitados = restantes.filter((item) => item.origem === 'solicitado').map((item) => String(item.servico_id))
   const adicional = intencao.adicional
   if (adicional && servicos.some(item => item.servico_id === adicional.servicoId)) return invalida('Esse serviço já está no atendimento.')
   if (adicional) solicitados.push(adicional.servicoId)
@@ -57,7 +60,7 @@ export async function remarcarComBackendConfiavel(intencao: RemarcacaoIntent, ad
   }
   const opcao = resultado.opcoes[0]
   if (!opcao) return { status: 'disponibilidade_alterada', codigo: intencao.modalidade === 'taxidog' ? 'CICLO_TAXIDOG_INVALIDO' : 'HORARIO_INDISPONIVEL', mensagem: resultado.motivos[0] ?? 'A nova programacao nao esta mais disponivel.', versaoOcupacaoAtual: versaoOcupacao }
-  const mapa = new Map(servicos.map((item) => [String(item.servico_id), String(item.id)]))
+  const mapa = new Map(restantes.map((item) => [String(item.servico_id), String(item.id)]))
   let dadosAdicional: Record<string, unknown> | null = null
   if (adicional) {
     const extra = opcao.servicos.find(item => item.id === adicional.servicoId && item.origem === 'solicitado')
@@ -79,7 +82,10 @@ export async function remarcarComBackendConfiavel(intencao: RemarcacaoIntent, ad
   const plano = montarPlanoRemarcacaoRpc(intencao, dados, opcao, mapa, hash)
   const { data, error } = dadosAdicional
     ? await admin.rpc('incluir_adicional_pacote_049', { p_plano: plano, p_adicional: dadosAdicional, p_servicos_esperados: servicos.map(item => item.id) })
-    : await admin.rpc('remarcar_atendimento_transacional', { p_plano: plano })
+    : removido
+      ? await admin.rpc('remover_adicional_pacote_058', { p_plano: plano, p_adicional_id: removido.id, p_servicos_esperados: servicos.map(item => item.id), p_operador: operadorId })
+      : await admin.rpc('remarcar_atendimento_transacional', { p_plano: plano })
+  if (error?.code === 'P0054') return invalida(error.message)
   if (error) { console.error({ evento: 'remarcacao_rpc_erro', codigo: error.code, mensagem: error.message, details: error.details, hint: error.hint, chaveIdempotencia: intencao.chaveIdempotencia, atendimentoId: intencao.atendimentoId }); throw error }
   return traduzir(data, opcao, intencao.modalidade)
 }

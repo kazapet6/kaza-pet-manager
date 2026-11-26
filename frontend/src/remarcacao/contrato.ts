@@ -12,6 +12,7 @@ export type RemarcacaoIntent = {
   readonly cicloTaxidogId: string | null
   readonly versaoConfiguracaoConsultada: number
   readonly versaoOcupacaoConsultada: number
+  readonly removerAdicionalId?: string
   readonly adicional?: { readonly servicoId: string; readonly valor: number; readonly original: number }
 }
 
@@ -27,6 +28,8 @@ export function lerRemarcacaoIntent(valor: unknown): RemarcacaoIntent | null {
   const modalidade = valor.modalidade === 'taxidog' ? 'taxidog' : valor.modalidade === 'sem_transporte' ? 'sem_transporte' : null
   const status = valor.statusEsperado === 'agendado' || valor.statusEsperado === 'confirmado' ? valor.statusEsperado : null
   const adicional = valor.adicional
+  const removerAdicionalId = valor.removerAdicionalId
+  if (removerAdicionalId !== undefined && (!uuid(texto(removerAdicionalId)) || adicional !== undefined)) return null
   if (adicional !== undefined && (!registro(adicional) || !uuid(texto(adicional.servicoId))
     || !precoValido(adicional.valor) || !precoValido(adicional.original))) return null
   const intencao: RemarcacaoIntent = {
@@ -39,13 +42,15 @@ export function lerRemarcacaoIntent(valor: unknown): RemarcacaoIntent | null {
     modalidade: modalidade!, cicloTaxidogId: valor.cicloTaxidogId === null ? null : texto(valor.cicloTaxidogId),
     versaoConfiguracaoConsultada: Number(valor.versaoConfiguracaoConsultada),
     versaoOcupacaoConsultada: Number(valor.versaoOcupacaoConsultada),
+    ...(removerAdicionalId !== undefined ? { removerAdicionalId: texto(removerAdicionalId) } : {}),
     ...(adicional ? { adicional: { servicoId: texto(adicional.servicoId), valor: Number(adicional.valor), original: Number(adicional.original) } } : {}),
   }
   return modalidade && status && validarRemarcacaoIntent(intencao) ? intencao : null
 }
 
 export function validarRemarcacaoIntent(item: RemarcacaoIntent) {
-  return uuid(item.chaveIdempotencia) && uuid(item.atendimentoId)
+  return (item.removerAdicionalId === undefined || (uuid(item.removerAdicionalId) && item.adicional === undefined))
+    && uuid(item.chaveIdempotencia) && uuid(item.atendimentoId)
     && uuid(item.grupoAgendamentoIdEsperado) && Boolean(Date.parse(item.inicioOperacionalEsperado))
     && (item.funcionarioResponsavelIdEsperado === null || uuid(item.funcionarioResponsavelIdEsperado))
     && uuid(item.funcionarioResponsavelId)

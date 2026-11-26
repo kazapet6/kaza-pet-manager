@@ -1,3 +1,4 @@
+import { codigoProcedimento, normalizarProcedimentos } from '../../../supabase/functions/_shared/motor/procedimentos.ts'
 import { supabase } from '../lib/supabase'
 import type {
   Atendimento,
@@ -37,7 +38,7 @@ async function consultar<T>(tabela: string, colunas: string) {
 async function consultarServicos(): Promise<Servico[]> {
   const { data, error } = await supabase
     .from('servicos')
-    .select('id, nome, descricao, ativo, preco_base, agendamento_cliente, created_at')
+    .select('id, nome, descricao, ativo, preco_base, agendamento_cliente, created_at, exige_credito_de_servico_id, procedimento_incluso_em_servico_id, procedimentos_inclusos, procedimento_avulso_codigo')
 
   if (error) throw error
 
@@ -46,6 +47,10 @@ async function consultarServicos(): Promise<Servico[]> {
     nome: servico.nome as string,
     descricao: servico.descricao as string,
     ativo: servico.ativo as boolean,
+    exigeCreditoDeServicoId: servico.exige_credito_de_servico_id == null ? null : String(servico.exige_credito_de_servico_id),
+    procedimentoInclusoEmServicoId: servico.procedimento_incluso_em_servico_id == null ? null : String(servico.procedimento_incluso_em_servico_id),
+    procedimentosInclusos: normalizarProcedimentos(servico.procedimentos_inclusos),
+    procedimentoAvulsoCodigo: codigoProcedimento(servico.procedimento_avulso_codigo),
     precoBase: normalizarNumero(servico.preco_base),
     agendamentoCliente: Boolean(servico.agendamento_cliente),
     criadoEm: servico.created_at as string,

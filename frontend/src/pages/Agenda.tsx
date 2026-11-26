@@ -11,13 +11,16 @@ import { carregarAgendaDiaria } from '../data/agendaDiaria.ts'
 import { supabase } from '../lib/supabase.ts'
 import { alterarStatusAtendimento } from '../statusAtendimento/clienteSupabase.ts'
 import ObservacoesAtendimentoModal from '../observacoesAtendimento/ObservacoesAtendimentoModal.tsx'
+import EditarFormaPrevista from '../conclusaoAtendimento/EditarFormaPrevista.tsx'
 import ReceberAdicionais from "../conclusaoAtendimento/ReceberAdicionais"
+import ReceberPacoteAntecipado from "../conclusaoAtendimento/ReceberPacoteAntecipado.tsx"
 import ConclusaoAtendimentoModal from '../conclusaoAtendimento/ConclusaoAtendimentoModal.tsx'
 import { podeAbrirConclusao } from '../conclusaoAtendimento/contrato.ts'
 import { executarDadosConclusao } from '../conclusaoAtendimento/clienteSupabase.ts'
 import { financeiroDaResposta, textoFinanceiro } from '../agenda/financeiroAtendimento.ts'
 import { statusAtendimento, type AcaoExcepcionalAtendimento, type AlterarStatusIntent, type AlterarStatusResposta, type StatusOperacionalEditavel } from '../statusAtendimento/contrato.ts'
 import { opcoesStatusOperacional, podeEditarStatus, podeExecutarAcaoExcepcional, rotuloStatusAtendimento } from '../statusAtendimento/politica.ts'
+import { ROTULOS_PROCEDIMENTOS } from '../../../supabase/functions/_shared/motor/procedimentos.ts'
 import type {
   AgendaDiariaAtendimento,
   AgendaDiariaResultado,
@@ -193,6 +196,10 @@ function Detalhes({ atendimento, timezone, fechar, executarAcao, pularBanho, rem
         <Item rotulo={atendimento.vinculoContrato ? 'Valor de referência' : 'Valor final'} valor={moeda(atendimento.valorFinal)} />
         {!atendimento.vinculoContrato && <Item rotulo="Financeiro" valor={textoFinanceiro(atendimento.financeiro)} />}
       </div>
+      {!atendimento.vinculoContrato && (status === 'agendado' || status === 'confirmado')
+        && atendimento.financeiro?.versao !== undefined
+        && <EditarFormaPrevista key={atendimento.id} atendimentoId={atendimento.id}
+          forma={atendimento.financeiro.formaPagamentoPrevista ?? null} versao={atendimento.financeiro.versao} />}
       <section className="agenda-status-operacional">
         <span className="agenda-status-titulo">Status do atendimento</span>
         {editavel ? <div className="agenda-status-opcoes" role="group" aria-label="Status do atendimento">
@@ -202,6 +209,7 @@ function Detalhes({ atendimento, timezone, fechar, executarAcao, pularBanho, rem
         {mensagem && <p role="alert">{mensagem}</p>}
       </section>
       <div className="agenda-detalhes-tags" aria-label="Serviços">{atendimento.servicos.map((item, indice) => <span key={`${item.nome}-${indice}`}>{item.nome}{item.contratado ? ' · Pacote' : item.origem === 'dependencia' ? ' · dependência' : ''}</span>)}</div>
+      {Boolean(atendimento.procedimentosInclusos?.length) && <Bloco titulo="Procedimentos inclusos"><p>Checklist previsto no serviço, sem cobrança adicional. Não indica execução concluída.</p><ul aria-label="Procedimentos previstos">{atendimento.procedimentosInclusos!.map(c => <li key={c}>{ROTULOS_PROCEDIMENTOS[c]}</li>)}</ul></Bloco>}
       <Bloco titulo="Etapas do atendimento"><div className="agenda-etapas">{atendimento.etapas.map((etapa) => <article key={etapa.id}><time>{hora(etapa.inicio, timezone)}</time><i aria-hidden="true" /><div><header><strong>{etapa.nome}</strong><time>{hora(etapa.fim, timezone)}</time></header>{etapa.funcionarios.length > 0 && <p><span className="agenda-recurso-tipo">Equipe</span>{etapa.funcionarios.map((item) => item.nome).join(', ')}</p>}{etapa.equipamentos.length > 0 && <p><span className="agenda-recurso-tipo">Equipamento</span>{etapa.equipamentos.map((item) => `${item.nome} · ${item.unidade}`).join(', ')}</p>}{!etapa.funcionarios.length && !etapa.equipamentos.length && <p>Sem recurso exclusivo</p>}</div></article>)}</div></Bloco>
       {atendimento.historicoOperacional.length > 0 && <Bloco titulo="Histórico do atendimento"><div className="agenda-historico-operacional">{atendimento.historicoOperacional.map((evento) => <span key={evento.tipo}><strong>{evento.rotulo}</strong><time>{hora(evento.ocorridoEm, timezone)}</time></span>)}</div></Bloco>}
       <div className="agenda-complementos">
@@ -209,6 +217,7 @@ function Detalhes({ atendimento, timezone, fechar, executarAcao, pularBanho, rem
         {atendimento.taxidog && <Bloco titulo="TaxiDog"><div className="agenda-taxidog-resumo"><Item rotulo="Ciclo" valor={atendimento.taxidog.cicloNome} /><Item rotulo="Janela de coleta" valor={`${horaSimples(atendimento.taxidog.coletaInicio)}–${horaSimples(atendimento.taxidog.coletaFim)}`} /><Item rotulo="Limite operacional de conclusão" valor={horaSimples(atendimento.taxidog.conclusaoLimite)} /></div></Bloco>}
         {atendimento.observacoes && <Bloco titulo="Observações"><p className="agenda-observacoes">{atendimento.observacoes}</p></Bloco>}
       </div>
+      {atendimento.vinculoContrato && (status === 'agendado' || status === 'confirmado') && <ReceberPacoteAntecipado key={`pacote-${atendimento.id}`} atendimentoId={atendimento.id} />}
       {atendimento.vinculoContrato && (status === 'agendado' || status === 'confirmado') && <ReceberAdicionais key={`adicionais-${atendimento.id}`} atendimentoId={atendimento.id} />}
       {atendimento.vinculoContrato && (status === 'agendado' || status === 'confirmado') && <PuloBanho key={atendimento.id} executar={(motivo, senha) => pularBanho(atendimento, motivo, senha)} />}
       <footer>

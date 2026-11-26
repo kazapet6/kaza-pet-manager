@@ -22,7 +22,7 @@ teste('NA03', 'busca cliente por nome e telefone com limite', () => { const iten
 teste('NA04', 'seleção de cliente é explícita', () => assert.ok(fonteModal.includes('selecionar={selecionarCliente}') && fonteModal.includes('onClick={() => selecionar(item)}') && fonteModal.includes('Cliente selecionado')))
 teste('NA05', 'pets são filtrados pelo cliente', () => assert.deepEqual(petsDoCliente([pet('2', 'b', 'Bia'), pet('1', 'a', 'Zeca'), pet('3', 'a', 'Ana')], 'a').map((i) => i.id), ['3', '1']))
 teste('NA06', 'pet único pode ser selecionado', () => assert.ok(fonteModal.includes('onClick={() => selecionar(pet.id)}') && fonteModal.includes("setPetId(id)")))
-teste('NA07', 'somente serviços ativos são apresentados', () => assert.ok(fonteModal.includes("agenda.servicos.filter((item) => item.ativo)")))
+teste('NA07', 'somente serviços ativos são apresentados', () => assert.ok(fonteModal.includes("agenda.servicos.filter((item) => item.ativo && !item.exigeCreditoDeServicoId)")))
 teste('NA08', 'múltiplos serviços são preservados deterministicamente', () => assert.deepEqual(construirEntradaNovoAgendamento({ petId: 'p', servicoIds: ['z', 'a'], data: '2026-08-15', modalidade: 'sem_transporte', cicloTaxidogId: '', funcionarioSelecionadoId:'f1' }).servicoIds, ['a', 'z']))
 teste('NA09', 'modalidade usa contrato existente', () => { assert.equal(construirEntradaNovoAgendamento({ petId: 'p', servicoIds: ['s'], data: '2026-08-15', modalidade: 'sem_transporte', cicloTaxidogId: 'x', funcionarioSelecionadoId:'f1' }).cicloTaxidogId, null); assert.equal(construirEntradaNovoAgendamento({ petId: 'p', servicoIds: ['s'], data: '2026-08-15', modalidade: 'taxidog', cicloTaxidogId: 'x', funcionarioSelecionadoId:'f1' }).cicloTaxidogId, 'x') })
 teste('NA10', 'consulta usa API pública real do Motor', () => assert.ok(fonteModal.includes('const entrada = construirEntradaNovoAgendamento(') && fonteModal.includes('consultarDisponibilidade(entrada)')))
@@ -64,7 +64,7 @@ teste('NA42', 'confirmação envia ajustes por serviço e não sobrescreve o tot
   assert.doesNotMatch(intencao, /valorFinal:|valorCalculado:/)
 })
 teste('NA43', 'estado de processamento bloqueia navegação final', () => assert.ok(fonteModal.includes("confirmando ? 'Confirmando agendamento...' : 'Confirmar agendamento'") && fonteModal.includes('disabled={confirmando}>Voltar')))
-teste('NA44', 'erro técnico externo é sanitizado', () => assert.ok(fonteModal.includes('Não foi possível confirmar o agendamento. Verifique a conexão e tente novamente.') && !fonteModal.includes('stack')))
+teste('NA44', 'erro técnico externo é sanitizado', () => assert.ok(fonteModal.includes('A confirmação não retornou um resultado verificável.') && !fonteModal.includes('stack')))
 teste('NA45', 'revisão apresenta valor original do atendimento e valor final', () => {
   assert.ok(fonteModal.includes('<BlocoValor preco={preco}'))
   assert.ok(fonteModal.includes('Valor original do atendimento') && fonteModal.includes('Valor final:'))

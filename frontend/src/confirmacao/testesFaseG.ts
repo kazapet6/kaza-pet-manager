@@ -115,6 +115,26 @@ await teste('FT', 'sem Authorization retorna 401', async () => assert.equal((awa
 await teste('FU', 'JWT invalido retorna 401', async () => assert.equal((await handler(null)(request(base))).status, 401))
 await teste('FV', 'authenticated sem internal retorna 403', async () => assert.equal((await handler('user')(request(base))).status, 403))
 await teste('FW', 'internal valido passa autorizacao', async () => assert.equal((await handler('internal')(request(base))).status, 200))
+await teste('FWT', 'TaxiDog valida e inclui o início operacional consultado na idempotência', async () => {
+  const ciclo = { ...base, modalidade: 'taxidog' as const, horarioEscolhido: null, cicloTaxidogId: 'ciclo-ficticio' }
+  const intencao = { ...ciclo, inicioTaxiDogConsultado: 810 }
+  assert.deepEqual(lerIntencaoConfirmacao(intencao), intencao)
+  assert.equal(lerIntencaoConfirmacao({ ...intencao, inicioTaxiDogConsultado: 1440 }), null)
+  assert.equal(lerIntencaoConfirmacao({ ...base, inicioTaxiDogConsultado: 810 }), null)
+  assert.notEqual(await calcularHashIntencao(intencao), await calcularHashIntencao(ciclo))
+})
+
+await teste('FORMA_PREVISTA', 'valida a intenção e mantém compatibilidade do hash quando não definida', async () => {
+  const hashOriginal = await calcularHashIntencao(base)
+  for (const formaPagamentoPrevista of ['dinheiro', 'pix', 'cartao'] as const) {
+    const intencao = { ...base, formaPagamentoPrevista }
+    assert.deepEqual(lerIntencaoConfirmacao(intencao), intencao)
+    assert.notEqual(await calcularHashIntencao(intencao), hashOriginal)
+  }
+  assert.equal(lerIntencaoConfirmacao({ ...base, formaPagamentoPrevista: 'debito' }), null)
+  assert.equal(await calcularHashIntencao({ ...base, formaPagamentoPrevista: undefined }), hashOriginal)
+})
+
 await teste('FX', 'preco extra nao vira autoridade', () => assert.deepEqual(lerIntencaoConfirmacao({ ...base, valorFinal: 1 }), base))
 await teste('FX1', 'negociação por serviço participa da idempotência e rejeita linhas inválidas', async () => {
   const valoresNegociados = [
@@ -145,7 +165,7 @@ await teste('GA', 'ocupacao alterada ainda recalcula', () => {
 })
 await teste('GB', 'horario perdido retorna disponibilidade alterada', () => assert.ok(fonteServico.includes('if (!opcao) return indisponivel')))
 await teste('GC', 'horario escolhido e preservado exatamente', () => assert.ok(
-  fonteServico.includes('entrada, dados, intencao.horarioEscolhido'),
+  fonteServico.includes('calcularDisponibilidadeNoHorario(entrada, dados, inicioConsultado)') && fonteServico.includes('intencao.inicioTaxiDogConsultado : intencao.horarioEscolhido'),
 ))
 await teste('GD', 'automatico usa alocacao atual do Motor', () => assert.ok(fontePlano.includes('etapa.funcionarios.map')))
 await teste('GE', 'preferencia segue integralmente para o Motor', () => assert.ok(fonteServico.includes('preferenciaFuncionario: intencao.preferenciaFuncionario')))
@@ -300,5 +320,5 @@ await teste('HC', 'erro interno mantem resposta externa generica e log seguro', 
   assert.ok(!serializado.includes('payload'))
   assert.ok(!serializado.includes('SQL'))
 })
-assert.equal(quantidade, 40)
+assert.equal(quantidade, 42)
 console.log(`${quantidade} testes unitarios FT-HC aprovados.`)

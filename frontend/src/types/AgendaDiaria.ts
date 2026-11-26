@@ -1,6 +1,8 @@
 export type AgendaDiariaFuncionario = { id: string; nome: string }
 
 export type AgendaDiariaFinanceiro = {
+  formaPagamentoPrevista?: import('../confirmacao/contrato.ts').FormaPagamentoPrevista | null
+  versao?: number
   valorFinal: number
   totalRecebido: number
   saldo: number
@@ -38,7 +40,8 @@ export type AgendaDiariaAtendimento = {
   conclusao: string
   petNome: string
   tutorNome: string
-  servicos: { id: string; servicoId: string; nome: string; origem: 'solicitado' | 'dependencia'; ordem: number; contratado: boolean }[]
+  servicos: { id: string; servicoId: string; nome: string; origem: 'solicitado' | 'dependencia'; ordem: number; contratado: boolean; adicionalPacote?: boolean }[]
+  procedimentosInclusos?: import('../../../supabase/functions/_shared/motor/procedimentos.ts').CodigoProcedimento[]
   status: string
   modalidade: 'normal' | 'taxidog'
   observacoes: string

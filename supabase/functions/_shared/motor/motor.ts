@@ -1,4 +1,4 @@
-import { alocacoesPossiveis } from './recursos.ts'
+import { alocacoesPossiveis, funcionarioHabilitado } from './recursos.ts'
 import { calcularEtapas, resolverServicos, validarElegibilidade } from './regras.ts'
 import { diaSemana } from './tempo.ts'
 import { ciclosAtivosNaData } from './ciclosTaxidog.ts'
@@ -64,10 +64,10 @@ function calcularDisponibilidadeInterna(entrada: EntradaDisponibilidade, dados: 
       dados.configuracao.granularidadeMinutos,
       horarioEscolhido,
     )) {
-      opcoes.push(...avaliarHorario(
+      for (const opcao of avaliarHorario(
         candidato, bloco, etapas, dia, pet, entrada, dados,
         servicos, cicloTaxidog, limitePorHorario,
-      ))
+      )) opcoes.push(opcao)
     }
   }
 
@@ -111,33 +111,38 @@ function avaliarHorario(
   cicloTaxidog: CicloTaxidogMotor | null,
   limitePorHorario: number,
 ) {
-  const planos = planejarEtapas(
+  const planos: PlanoParcial[] = []
+  planejarEtapas(
     etapas, 0, candidato, bloco, dia, pet, entrada, dados,
     { etapas: [], esperas: [] },
+    (plano) => {
+      planos.push(plano)
+      planos.sort((a, b) => compararPlanos(a, b, entrada))
+      if (planos.length > limitePorHorario) planos.pop()
+    },
+    // Espera, penalidades, trocas e fim só podem aumentar ao acrescentar etapas.
+    (plano) => planos.length < limitePorHorario
+      || compararPlanos(plano, planos[planos.length - 1], entrada) < 0,
   )
-  return planos
-    .sort((a, b) => compararPlanos(a, b, entrada))
-    .slice(0, limitePorHorario)
-    .map((plano) => montarOpcao(candidato, servicos, plano, cicloTaxidog))
+  return planos.map((plano) => montarOpcao(candidato, servicos, plano, cicloTaxidog))
 }
 
-function planejarEtapas(etapas: EtapaCalculada[], indice: number, instanteDisponivel: number, bloco: IntervaloMinutos, dia: number, pet: DadosDisponibilidade['pets'][number], entrada: EntradaDisponibilidade, dados: DadosDisponibilidade, plano: PlanoParcial): PlanoParcial[] {
-  if (indice >= etapas.length) return [plano]
+function planejarEtapas(etapas: EtapaCalculada[], indice: number, instanteDisponivel: number, bloco: IntervaloMinutos, dia: number, pet: DadosDisponibilidade['pets'][number], entrada: EntradaDisponibilidade, dados: DadosDisponibilidade, plano: PlanoParcial, aceitar: (plano: PlanoParcial) => void, podeMelhorar: (plano: PlanoParcial) => boolean): void {
+  if (indice > 0 && !podeMelhorar(plano)) return
+  if (indice >= etapas.length) { aceitar(plano); return }
   const etapa = etapas[indice]
   const limiteEspera = indice === 0 ? 0 : etapa.politicaEsperaAntes === 'padrao' ? dados.configuracao.esperaNormalMinutos : etapa.politicaEsperaAntes === 'personalizada' ? etapa.esperaAntesMinutos ?? -1 : bloco.fim - instanteDisponivel
-  if (limiteEspera < 0) return []
+  if (limiteEspera < 0) return
   const ultimoInicio = Math.min(instanteDisponivel + limiteEspera, bloco.fim - etapa.duracaoCalculada)
-  const solucoes: PlanoParcial[] = []
   for (let inicio = instanteDisponivel; inicio <= ultimoInicio; inicio += 1) {
     const fim = inicio + etapa.duracaoCalculada
     const alocacoes = alocacoesPossiveis(etapa, { inicio, fim }, dia, pet, entrada, dados, plano.etapas)
     for (const alocacao of alocacoes) {
       const espera = inicio > instanteDisponivel ? [{ antesDaEtapaId: etapa.id, inicio: instanteDisponivel, fim: inicio, duracaoMinutos: inicio - instanteDisponivel, politica: etapa.politicaEsperaAntes }] : []
       const etapaPlanejada: EtapaPlanejada = { etapaId: etapa.id, servicoId: etapa.servicoId, servicoNome: etapa.servicoNome, nome: etapa.nome, inicio, fim, duracaoBaseMinutos: etapa.duracaoBaseCalculada, duracaoMinutos: etapa.duracaoCalculada, funcionarios: alocacao.funcionarios, equipamentos: alocacao.equipamentos, modificadoresAplicados: etapa.modificadoresAplicados, contribuicoesAcopladas: etapa.contribuicoesAcopladas }
-      solucoes.push(...planejarEtapas(etapas, indice + 1, fim, bloco, dia, pet, entrada, dados, { etapas: [...plano.etapas, etapaPlanejada], esperas: [...plano.esperas, ...espera] }))
+      planejarEtapas(etapas, indice + 1, fim, bloco, dia, pet, entrada, dados, { etapas: [...plano.etapas, etapaPlanejada], esperas: [...plano.esperas, ...espera] }, aceitar, podeMelhorar)
     }
   }
-  return solucoes
 }
 
 function blocosDoDia(data: string, dia: number, dados: DadosDisponibilidade) {
@@ -163,9 +168,7 @@ function diagnosticarConfiguracaoRecursos(etapas: EtapaCalculada[], dia: number,
         if (!funcionario.ativo) return false
         if (entrada.preferenciaFuncionario === 'obrigatorio' && funcionario.id !== entrada.funcionarioPreferidoId) return false
         const habilitado = etapa.habilitacoesNecessarias.every((habilitacao) => {
-          if (!dados.habilitacoes.servicos.some((item) => item.funcionarioId === funcionario.id && item.servicoId === habilitacao.servicoId && item.ativo)) return false
-          const regraEtapa = dados.habilitacoes.etapas.find((item) => item.funcionarioId === funcionario.id && item.servicoEtapaId === habilitacao.servicoEtapaId)
-          return !regraEtapa || regraEtapa.ativo
+          return funcionarioHabilitado(funcionario.id, habilitacao, dados)
         })
         return habilitado && dados.jornadas.some((item) => item.funcionarioId === funcionario.id && item.diaSemana === dia && item.ativo)
       })

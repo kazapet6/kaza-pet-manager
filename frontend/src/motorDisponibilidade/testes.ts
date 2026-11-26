@@ -553,3 +553,68 @@ caso('FA','campo desconhecido não relacionado não bloqueia',()=>{const d=fixtu
 caso('FB','Motor lista somente campos necessários ausentes',()=>{const d=fixture();d.pets[0]={...d.pets[0],porte:null,sexo:null};const r=executar(d);exigir(r.estado==='CADASTRO_PET_INCOMPLETO','Código de domínio ausente.');exigir(r.erro?.campos.join(',')==='porte,sexo','Lista de campos necessários incorreta.')})
 caso('FC','modificador de duração não é ignorado se o atributo faltar',()=>{const d=fixture();d.recursosEtapas=d.recursosEtapas.filter((x)=>x.tipo!=='equipamento');d.elegibilidade.portes=[];d.pets[0]={...d.pets[0],pelagem:null};d.modificadoresDuracao.push({id:'p',servicoId:'banho',servicoEtapaId:'lavar',criterio:'pelagem',acrescimoMinutos:5,ativo:true,racaId:null,porte:null,pelagem:'longa',temperamento:null,pesoMin:null,pesoMax:null});const r=executar(d);exigir(r.estado==='CADASTRO_PET_INCOMPLETO'&&r.erro?.campos[0]==='pelagem','Modificador foi ignorado silenciosamente.')})
 caso('FD','regra de preço não é ignorada se o atributo faltar',()=>{const d=fixture();const pet={...d.pets[0],temperamento:null};let erro:unknown;try{calcularPrecificacao(pet,[{id:'banho',nome:'Banho',origem:'solicitado',ordem:1,paisDiretos:[],raizesSolicitadas:['banho']}],{servicos:[{id:'banho',nome:'Banho',precoBase:50,ativo:true}],regrasPreco:[{id:'r',servicoId:'banho',criterio:'temperamento',porte:null,pelagem:null,racaId:null,pesoMin:null,pesoMax:null,temperamento:'dificil',acrescimoValor:10,ativo:true}]})}catch(e){erro=e}exigir(erro instanceof Error&&'codigo' in erro&&(erro as {codigo:string}).codigo==='CADASTRO_PET_INCOMPLETO','Preço não gerou erro estruturado.')})
+
+caso('FE', 'Múltiplas etapas com espera ampla mantêm a melhor opção sem acumular todos os planos', () => {
+  const dados = fixture()
+  dados.etapas = Array.from({ length: 6 }, (_, indice) => ({
+    id: `teste-${indice}`, servicoId: 'banho', nome: `Etapa ${indice + 1}`, ordem: indice + 1,
+    duracaoMinutos: 5, ativo: true, politicaEsperaAntes: 'sem_limite_operacional', esperaAntesMinutos: null,
+  }))
+  dados.recursosEtapas = dados.etapas.map(etapa => ({
+    id: `recurso-${etapa.id}`, servicoEtapaId: etapa.id, tipo: 'funcionario',
+    equipamentoId: null, quantidade: 1, ativo: true,
+  }))
+  const resultado = calcularDisponibilidadeNoHorario(entradaBase, dados, 540)
+  exigir(resultado.estado === 'OK', 'O atendimento de seis etapas deveria caber na jornada.')
+  const primeira = resultado.opcoes[0]
+  exigir(primeira.tempoEspera === 0 && primeira.trocasFuncionario === 0
+    && primeira.conclusaoPrevista === 570, 'A opção sem espera e sem troca deve continuar em primeiro lugar.')
+})
+
+caso('FF', 'Procedimento incluso não pode ser cobrado como serviço avulso no mesmo atendimento', () => {
+  const dados = fixture()
+  dados.servicos[1].procedimentoInclusoEmServicoId = 'banho'
+  dados.dependencias = []
+  const avulso = calcularDisponibilidadeNoHorario({ ...entradaBase, servicoIds: ['hidratacao'] }, dados, 540)
+  exigir(avulso.estado === 'OK', 'O procedimento avulso deve permanecer disponível.')
+  const conjunto = calcularDisponibilidadeNoHorario({ ...entradaBase, servicoIds: ['banho', 'hidratacao'] }, dados, 540)
+  exigir(conjunto.estado === 'SERVICO_INVALIDO' && conjunto.motivos[0].includes('já está incluso'), 'O plano não pode agendar e cobrar o procedimento duas vezes.')
+})
+
+caso('FG', 'Etapa exclusiva exige porte elegível e habilitação explícita', () => {
+  const dados = etapaUnicaHumana()
+  const base = dados.etapas[0]
+  dados.etapas.push({ ...base, id: 'tosa', ordem: base.ordem + 1, duracaoMinutos: 30,
+    especieAplicavel: 'cao', porteAplicavel: 'pequeno', habilitacaoExplicita: true })
+  dados.recursosEtapas.push({ ...dados.recursosEtapas[0], id: 'recurso-tosa', servicoEtapaId: 'tosa' })
+  const consultar = () => calcularDisponibilidadeNoHorario(entradaBase, dados, 540)
+  exigir(consultar().estado !== 'OK', 'A etapa exige habilitação própria.')
+  dados.habilitacoes.etapas.push({ funcionarioId: 'agata', servicoEtapaId: 'tosa', ativo: true })
+  exigir(consultar().opcoes[0]?.duracaoProcessamento === base.duracaoMinutos + 30, 'Os 30 min devem ser somados para cão pequeno.')
+  dados.elegibilidade.portes.push({ servicoId: 'banho', porte: 'medio', ativo: true })
+  dados.pets[0].porte = 'medio'
+  exigir(consultar().opcoes[0]?.duracaoProcessamento === base.duracaoMinutos, 'O porte médio deve preservar a duração anterior.')
+  dados.pets[0].porte = null
+  exigir(consultar().estado === 'CADASTRO_PET_INCOMPLETO', 'Porte ausente não pode omitir a etapa.')
+})
+
+
+caso('FH', 'Procedimentos do banho não acrescentam etapas nem duração', () => {
+  const dados = fixture()
+  const antes = calcularDisponibilidadeNoHorario(entradaBase, dados, 540)
+  dados.servicos[0].procedimentosInclusos = ['tosa_higienica', 'limpeza_ouvidos', 'corte_unhas']
+  const depois = calcularDisponibilidadeNoHorario(entradaBase, dados, 540)
+  exigir(JSON.stringify(depois) === JSON.stringify(antes), 'Checklist não deve alterar o plano operacional nem a duração.')
+})
+caso('FI', 'Código de procedimento impede cobrança duplicada também no banho combinado', () => {
+  const dados = fixture()
+  dados.dependencias = []
+  dados.servicos[0].nome = 'Banho e tosa na tesoura'
+  dados.servicos[0].procedimentosInclusos = ['tosa_higienica', 'limpeza_ouvidos', 'corte_unhas']
+  dados.servicos[1].nome = 'Corte de unhas'
+  dados.servicos[1].procedimentoAvulsoCodigo = 'corte_unhas'
+  const avulso = calcularDisponibilidadeNoHorario({ ...entradaBase, servicoIds: ['hidratacao'] }, dados, 540)
+  exigir(avulso.estado === 'OK', 'Corte de unhas avulso permanece disponível.')
+  const conjunto = calcularDisponibilidadeNoHorario({ ...entradaBase, servicoIds: ['banho','hidratacao'] }, dados, 540)
+  exigir(conjunto.estado === 'SERVICO_INVALIDO' && conjunto.motivos[0].includes('já está incluso'), 'Não cobrar procedimento duas vezes.')
+})
