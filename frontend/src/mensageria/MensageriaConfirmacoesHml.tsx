@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import ConfiguracaoLembretesHml from './ConfiguracaoLembretesHml'
 import AuditoriaRegistroHml from './AuditoriaRegistroHml'
 import { categorias as CATEGORIAS_TRIAGEM, UUID } from './auditoriaHml'
 import type { Caso as CasoInvestigacao } from './auditoriaHml'
@@ -174,6 +175,7 @@ export default function MensageriaConfirmacoesHml() {
       <button className="msg-quiet" type="button" onClick={()=>void atualizar()}
         disabled={carregando}>{carregando?'Consultando…':'↻ Atualizar'}</button>
     </div>
+    <ConfiguracaoLembretesHml/>
     {erro&&<p role="alert" className="msg-issues">{erro}</p>}
     {!dados&&!erro&&<p role="status" className="msg-hint">Consultando dados da homologação…</p>}
     {dados&&<>
