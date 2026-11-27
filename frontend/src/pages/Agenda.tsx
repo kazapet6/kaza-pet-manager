@@ -132,8 +132,15 @@ export default function Agenda({ onVerContrato }: { onVerContrato: (contratoId: 
       atendimentoId: atendimento.id, statusEsperado: atendimento.status, acao: 'pular_banho', motivo, senha, inicioOperacionalEsperado: atendimento.inicio,
     })
     if (resposta.status !== 'atualizado') throw Object.assign(new Error(resposta.mensagem), { codigo: resposta.codigo })
-    await carregar(atendimento.dataOperacional)
-    setSucesso('Banho pulado. O ciclo foi reprogramado automaticamente, sem gerar créditos livres.')
+    setSucesso(null); setAviso(null)
+    const atualizada = await carregar(atendimento.dataOperacional)
+    if (resposta.reutilizado) {
+      setAviso(atualizada ? 'Este banho já foi reprogramado. A agenda foi atualizada; nenhum novo pulo foi realizado.' : 'Este banho já foi reprogramado. Nenhum novo pulo foi realizado. Atualize a agenda.')
+    } else if (atualizada) {
+      setSucesso('Banho pulado. O ciclo foi reprogramado automaticamente, sem gerar créditos livres.')
+    } else {
+      setAviso('Banho pulado, mas não foi possível atualizar a agenda. Recarregue antes de continuar.')
+    }
   }
 
   return <section className="agenda-diaria">
