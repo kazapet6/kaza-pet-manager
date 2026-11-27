@@ -21,5 +21,6 @@ RUN npm run build
 
 FROM nginx:alpine
 COPY --from=build /app/frontend/dist/ /usr/share/nginx/html/
-RUN printf '%s\n' 'server {' '    listen 80;' '    server_name _;' '    root /usr/share/nginx/html;' '    index index.html;' '    add_header X-Robots-Tag "noindex, nofollow" always;' '    location / { try_files $uri $uri/ /index.html; }' '    location /assets/ { try_files $uri =404; }' '}' > /etc/nginx/conf.d/default.conf
+RUN printf '%s\n' 'server {' '    listen 80;' '    server_name _;' '    root /usr/share/nginx/html;' '    index index.html;' '    add_header X-Robots-Tag "noindex, nofollow" always;' '    location = /healthz { access_log off; default_type text/plain; return 200 "ok"; }' '    location / { try_files $uri $uri/ /index.html; }' '    location /assets/ { try_files $uri =404; }' '}' > /etc/nginx/conf.d/default.conf
 EXPOSE 80
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD wget -q -O /dev/null http://127.0.0.1:80/healthz && test -s /usr/share/nginx/html/index.html || exit 1
