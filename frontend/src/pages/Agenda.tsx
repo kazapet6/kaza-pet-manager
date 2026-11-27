@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import NovoAgendamentoModal from '../agenda/NovoAgendamentoModal.tsx'
 import RemarcarAtendimentoModal from '../agenda/RemarcarAtendimentoModal.tsx'
 import GradeAgenda from '../agenda/GradeAgenda.tsx'
+import '../agenda/AcoesAtendimento.css'
 import type { ContextoGrade, Expediente } from '../agenda/gradeTemporal.ts'
 import { carregarBlocosEstabelecimento } from '../data/funcionamentoAgenda.ts'
 import { obterAcaoRapidaAtendimento } from '../agenda/acaoRapidaAtendimento.ts'
@@ -129,7 +130,7 @@ export default function Agenda({ onVerContrato }: { onVerContrato: (contratoId: 
     const resposta = await alterarStatusAtendimento({
       atendimentoId: atendimento.id, statusEsperado: atendimento.status, acao: 'pular_banho', motivo, senha, inicioOperacionalEsperado: atendimento.inicio,
     })
-    if (resposta.status !== 'atualizado') throw new Error(resposta.mensagem)
+    if (resposta.status !== 'atualizado') throw Object.assign(new Error(resposta.mensagem), { codigo: resposta.codigo })
     await carregar(atendimento.dataOperacional)
     setSucesso('Banho pulado. O ciclo foi reprogramado automaticamente, sem gerar créditos livres.')
   }
@@ -156,10 +157,21 @@ function Detalhes({ atendimento, timezone, fechar, executarAcao, pularBanho, rem
   const [acaoAtualizando, setAcaoAtualizando] = useState<AcaoExcepcionalAtendimento | null>(null)
   const [mensagem, setMensagem] = useState<string | null>(null)
   const [observacoesAberto, setObservacoesAberto] = useState(false)
+  const [puloAberto, setPuloAberto] = useState(false)
   const emAndamento = useRef(false)
-  useEffect(() => { setMensagem(null); setConfirmacao(null); setAcaoAtualizando(null); setObservacoesAberto(false); emAndamento.current = false; setAtualizando(false); setStatusAtualizando(null) }, [atendimento?.id, atendimento?.status])
+  useEffect(() => { setMensagem(null); setConfirmacao(null); setAcaoAtualizando(null); setObservacoesAberto(false); setPuloAberto(false); emAndamento.current = false; setAtualizando(false); setStatusAtualizando(null) }, [atendimento?.id, atendimento?.status])
   const status = atendimento && statusAtendimento(atendimento.status) ? atendimento.status : null
   const editavel = status ? status !== 'concluido' && podeEditarStatus(status) : false
+  const podeRemarcar = status === 'agendado' || status === 'confirmado'
+  const podePular = Boolean(atendimento?.vinculoContrato && podeRemarcar)
+  const podeFalta = Boolean(status && podeExecutarAcaoExcepcional(status, 'registrar_falta'))
+  const podeCancelar = Boolean(status && podeExecutarAcaoExcepcional(status, 'cancelar'))
+  async function executarPulo(motivo: string, senha?: string) {
+    if (!atendimento || emAndamento.current) return
+    emAndamento.current = true; setAtualizando(true); setMensagem(null)
+    try { await pularBanho(atendimento, motivo, senha) }
+    finally { emAndamento.current = false; setAtualizando(false) }
+  }
   async function alterar(novoStatus: string) {
     if (!atendimento || !status || !podeEditarStatus(novoStatus) || novoStatus === status || emAndamento.current) return
     if (novoStatus === 'concluido' && podeAbrirConclusao(status)) { concluir(atendimento); return }
@@ -182,7 +194,7 @@ function Detalhes({ atendimento, timezone, fechar, executarAcao, pularBanho, rem
     } catch { setMensagem('Não foi possível atualizar o atendimento. Tente novamente.') }
     finally { emAndamento.current = false; setAtualizando(false); setAcaoAtualizando(null) }
   }
-  return <><Modal aberto={Boolean(atendimento)} titulo={atendimento ? <span className="agenda-modal-identidade"><span className="agenda-modal-avatar">{inicialPet(atendimento.petNome)}</span><span><strong>{atendimento.petNome}</strong><small>Tutor: {atendimento.tutorNome}</small></span><Status valor={atendimento.status} /></span> : 'Atendimento'} onClose={fechar} maxWidth="900px" className="agenda-modal">
+  return <><Modal aberto={Boolean(atendimento)} titulo={atendimento ? <span className="agenda-modal-identidade"><span className="agenda-modal-avatar">{inicialPet(atendimento.petNome)}</span><span><strong>{atendimento.petNome}</strong><small>Tutor: {atendimento.tutorNome}</small></span><Status valor={atendimento.status} /></span> : 'Atendimento'} onClose={() => { if (!emAndamento.current) fechar() }} maxWidth="900px" className="agenda-modal">
     {atendimento && <div className="agenda-detalhes">
       {atendimento.vinculoContrato && <section className="agenda-vinculo-pacote" aria-label="Origem contratual do atendimento">
         <span className="agenda-vinculo-icone" aria-hidden="true">📦</span>
@@ -203,10 +215,10 @@ function Detalhes({ atendimento, timezone, fechar, executarAcao, pularBanho, rem
       <section className="agenda-status-operacional">
         <span className="agenda-status-titulo">Status do atendimento</span>
         {editavel ? <div className="agenda-status-opcoes" role="group" aria-label="Status do atendimento">
-          {opcoesStatusOperacional.map((opcao) => <button type="button" className={`status-${opcao.valor}${status === opcao.valor ? ' atual' : ''}${statusAtualizando === opcao.valor ? ' processando' : ''}`} aria-pressed={status === opcao.valor} disabled={atualizando} onClick={() => void alterar(opcao.valor)} key={opcao.valor}>{statusAtualizando === opcao.valor ? <><i className="agenda-status-spinner" aria-hidden="true" />Atualizando...</> : <>{status === opcao.valor && <span aria-hidden="true">✓</span>}{opcao.rotulo}</>}</button>)}
+          {opcoesStatusOperacional.map((opcao) => <button type="button" className={`status-${opcao.valor}${status === opcao.valor ? ' atual' : ''}${statusAtualizando === opcao.valor ? ' processando' : ''}`} aria-pressed={status === opcao.valor} disabled={atualizando || puloAberto || Boolean(confirmacao)} onClick={() => void alterar(opcao.valor)} key={opcao.valor}>{statusAtualizando === opcao.valor ? <><i className="agenda-status-spinner" aria-hidden="true" />Atualizando...</> : <>{status === opcao.valor && <span aria-hidden="true">✓</span>}{opcao.rotulo}</>}</button>)}
         </div> : <span className={`agenda-status-somente-leitura status-${atendimento.status}`}>{rotuloStatus(atendimento.status)}</span>}
         {!editavel && <small>{status ? 'Este status possui fluxo específico e está disponível somente para leitura.' : 'Status histórico desconhecido. Nenhuma alteração disponível.'}</small>}
-        {mensagem && <p role="alert">{mensagem}</p>}
+        {mensagem && !confirmacao && <p role="alert">{mensagem}</p>}
       </section>
       <div className="agenda-detalhes-tags" aria-label="Serviços">{atendimento.servicos.map((item, indice) => <span key={`${item.nome}-${indice}`}>{item.nome}{item.contratado ? ' · Pacote' : item.origem === 'dependencia' ? ' · dependência' : ''}</span>)}</div>
       {Boolean(atendimento.procedimentosInclusos?.length) && <Bloco titulo="Procedimentos inclusos"><p>Checklist previsto no serviço, sem cobrança adicional. Não indica execução concluída.</p><ul aria-label="Procedimentos previstos">{atendimento.procedimentosInclusos!.map(c => <li key={c}>{ROTULOS_PROCEDIMENTOS[c]}</li>)}</ul></Bloco>}
@@ -219,53 +231,90 @@ function Detalhes({ atendimento, timezone, fechar, executarAcao, pularBanho, rem
       </div>
       {atendimento.vinculoContrato && (status === 'agendado' || status === 'confirmado') && <ReceberPacoteAntecipado key={`pacote-${atendimento.id}`} atendimentoId={atendimento.id} />}
       {atendimento.vinculoContrato && (status === 'agendado' || status === 'confirmado') && <ReceberAdicionais key={`adicionais-${atendimento.id}`} atendimentoId={atendimento.id} />}
-      {atendimento.vinculoContrato && (status === 'agendado' || status === 'confirmado') && <PuloBanho key={atendimento.id} executar={(motivo, senha) => pularBanho(atendimento, motivo, senha)} />}
-      <footer>
-      <div className="agenda-rodape-acoes"><div><button type="button" className="agenda-acao-observacoes" onClick={() => setObservacoesAberto(true)}>Observacoes</button></div></div>
-      {status && (status === 'agendado' || status === 'confirmado' || podeExecutarAcaoExcepcional(status, 'registrar_falta') || podeExecutarAcaoExcepcional(status, 'cancelar')) && <div className="agenda-rodape-acoes">
-        {!confirmacao ? <div>
-          {(status === 'agendado' || status === 'confirmado') && <button type="button" className="agenda-acao-remarcar" disabled={atualizando} onClick={() => remarcar(atendimento)}>Remarcar atendimento</button>}
-          {podeExecutarAcaoExcepcional(status, 'registrar_falta') && <button type="button" className="agenda-acao-falta" disabled={atualizando} onClick={() => setConfirmacao('registrar_falta')}>Registrar falta</button>}
-          {podeExecutarAcaoExcepcional(status, 'cancelar') && <button type="button" className="agenda-acao-cancelar" disabled={atualizando} onClick={() => setConfirmacao('cancelar')}>Cancelar atendimento</button>}
-        </div> : <div className={`agenda-confirmacao-excepcional ${confirmacao === 'cancelar' ? 'cancelamento' : 'falta'}`} role="alertdialog" aria-labelledby="agenda-confirmacao-titulo">
-          <div><strong id="agenda-confirmacao-titulo">{confirmacao === 'cancelar' ? 'Cancelar atendimento?' : 'Registrar falta?'}</strong><p>{confirmacao === 'cancelar' ? 'O horário deixará de ocupar a Agenda.' : 'O atendimento será marcado como falta e deixará de ocupar a Agenda.'}</p></div>
-          <span><button type="button" disabled={atualizando} onClick={() => setConfirmacao(null)}>Voltar</button><button type="button" disabled={atualizando} onClick={() => void confirmarAcaoExcepcional()}>{acaoAtualizando === confirmacao ? <><i className="agenda-status-spinner" aria-hidden="true" />Atualizando...</> : confirmacao === 'cancelar' ? 'Confirmar cancelamento' : 'Confirmar falta'}</button></span>
-        </div>}
-      </div>}
-      <Button variant="secondary" onClick={fechar}>Fechar</Button></footer>
+      <section className="agenda-acoes-painel" aria-label="Ações do atendimento">
+        {puloAberto && podePular ? <PuloBanho key={atendimento.id} executar={executarPulo} voltar={() => setPuloAberto(false)} />
+          : confirmacao ? <div className="agenda-acao-confirmar" role="group" aria-labelledby="agenda-confirmacao-titulo">
+            <div className="agenda-acao-cabecalho">
+              <span className="agenda-acao-icone agenda-acao-icone--perigo"><IconeAcao nome={confirmacao === 'cancelar' ? 'cancelar' : 'falta'} /></span>
+              <div><h4 id="agenda-confirmacao-titulo">{confirmacao === 'cancelar' ? 'Cancelar atendimento?' : 'Registrar falta?'}</h4>
+                <p>{confirmacao === 'cancelar' ? 'O horário deixará de ocupar a agenda.' : 'O atendimento será marcado como falta e deixará de ocupar a agenda.'}</p></div>
+            </div>
+            {mensagem && <p className="agenda-acao-feedback" role="alert">{mensagem}</p>}
+            <div className="agenda-acao-confirmacao-botoes">
+              <AcaoModal disabled={atualizando} onClick={() => { setConfirmacao(null); setMensagem(null) }}>Voltar</AcaoModal>
+              <AcaoModal variante="perigo-forte" disabled={atualizando} onClick={() => void confirmarAcaoExcepcional()}>{acaoAtualizando === confirmacao ? <><i className="agenda-status-spinner" aria-hidden="true" />Atualizando...</> : confirmacao === 'cancelar' ? 'Confirmar cancelamento' : 'Confirmar falta'}</AcaoModal>
+            </div>
+          </div> : <>
+            <header><h3>Ações do atendimento</h3><p>Gerencie o agendamento e as ocorrências operacionais.</p></header>
+            <div className="agenda-acoes-grupo"><small>Gestão do atendimento</small><div className="agenda-acoes-linha">
+              <AcaoModal icone="observacoes" disabled={atualizando} onClick={() => setObservacoesAberto(true)}>Observações</AcaoModal>
+              {podeRemarcar && <AcaoModal variante="primario" icone="remarcar" disabled={atualizando} onClick={() => remarcar(atendimento)}>Remarcar atendimento</AcaoModal>}
+            </div></div>
+            {podePular && <div className="agenda-acoes-grupo"><small>Rotina do pacote</small><div className="agenda-acoes-linha">
+              <AcaoModal variante="especial" icone="pular" disabled={atualizando} onClick={() => { setMensagem(null); setPuloAberto(true) }}>Pular banho</AcaoModal>
+            </div><small>Reprograma o ciclo sem liberar créditos.</small></div>}
+            {(podeFalta || podeCancelar) && <div className="agenda-acoes-grupo"><small>Ocorrências</small><div className="agenda-acoes-linha">
+              {podeFalta && <AcaoModal variante="perigo" icone="falta" disabled={atualizando} onClick={() => { setMensagem(null); setConfirmacao('registrar_falta') }}>Registrar falta</AcaoModal>}
+              {podeCancelar && <AcaoModal variante="perigo" icone="cancelar" disabled={atualizando} onClick={() => { setMensagem(null); setConfirmacao('cancelar') }}>Cancelar atendimento</AcaoModal>}
+            </div></div>}
+          </>}
+      </section>
+      {!puloAberto && !confirmacao && <footer className="agenda-fechar-rodape"><AcaoModal disabled={atualizando} onClick={fechar}>Fechar</AcaoModal></footer>}
     </div>}
   </Modal>{atendimento && observacoesAberto && <ObservacoesAtendimentoModal atendimento={atendimento} onClose={() => setObservacoesAberto(false)} onSalvo={notificar} />}</>
 }
 
-function PuloBanho({ executar }: { executar(motivo: string, senha?: string): Promise<void> }) {
-  const [aberto, setAberto] = useState(false)
+type NomeAcao = 'observacoes' | 'remarcar' | 'pular' | 'falta' | 'cancelar'
+function IconeAcao({ nome }: { nome: NomeAcao }) {
+  const caminhos: Record<NomeAcao, React.ReactNode> = {
+    observacoes: <><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></>,
+    remarcar: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18M9 15h6m-2-2 2 2-2 2"/></>,
+    pular: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18m-12 5h6m-3-3 3 3-3 3"/></>,
+    falta: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5m0 4h.01"/></>,
+    cancelar: <><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6m0-6-6 6"/></>,
+  }
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{caminhos[nome]}</svg>
+}
+function AcaoModal({ children, variante, icone, type = 'button', disabled, onClick }: { children: React.ReactNode; variante?: 'primario' | 'especial' | 'especial-forte' | 'perigo' | 'perigo-forte'; icone?: NomeAcao; type?: 'button' | 'submit'; disabled?: boolean; onClick?: () => void }) {
+  return <button type={type} className={`agenda-operacao-btn${variante ? ' agenda-operacao-btn--' + variante : ''}`} disabled={disabled} onClick={onClick}>{icone && <IconeAcao nome={icone}/>} {children}</button>
+}
+
+function PuloBanho({ executar, voltar }: { executar(motivo: string, senha?: string): Promise<void>; voltar(): void }) {
   const [motivo, setMotivo] = useState('')
   const [senha, setSenha] = useState('')
   const [administrativo, setAdministrativo] = useState(false)
+  const [exigeAdmin, setExigeAdmin] = useState(false)
   const [erro, setErro] = useState('')
   const [ocupado, setOcupado] = useState(false)
   const enviando = useRef(false)
 
   async function confirmar() {
-    if (enviando.current || !motivo.trim() || (administrativo && !senha)) return
+    if (enviando.current || !motivo.trim() || (exigeAdmin && !administrativo) || (administrativo && !senha)) return
     enviando.current = true
     setOcupado(true)
     setErro('')
     try { await executar(motivo, administrativo ? senha : undefined) }
-    catch (error) { setErro(mensagemErro(error)) }
+    catch (error) {
+      const codigo = typeof error === 'object' && error !== null && 'codigo' in error ? error.codigo : null
+      if (codigo === 'PULO_EXIGE_ADMIN' || codigo === 'AUTORIZACAO_PULO_INVALIDA') setExigeAdmin(true)
+      setErro(mensagemErro(error))
+    }
     finally { setSenha(''); enviando.current = false; setOcupado(false) }
   }
-  if (!aberto) return <Button variant="secondary" onClick={() => setAberto(true)}>Pular banho</Button>
-  return <form className="agenda-confirmacao-excepcional" onSubmit={(evento) => { evento.preventDefault(); void confirmar() }}>
-    <div>
-      <strong>Pular banho e reprogramar o ciclo</strong>
-      <p>O banho será transferido para o dia fixo da próxima semana, e os atendimentos seguintes serão recalculados. Nenhum crédito será liberado.</p>
-      <label>Motivo do pulo <input value={motivo} maxLength={500} onChange={(evento) => setMotivo(evento.target.value)} required /></label>
-      <label><input type="checkbox" checked={administrativo} onChange={(evento) => { setAdministrativo(evento.target.checked); setSenha('') }} /> Autorizar como administrador</label>
-      {administrativo && <label>Senha administrativa <input type="password" autoComplete="current-password" value={senha} onChange={(evento) => setSenha(evento.target.value)} required /></label>}
-      {erro && <p role="alert">{erro}</p>}
+  return <form className="agenda-pulo-form" onSubmit={(evento) => { evento.preventDefault(); void confirmar() }} aria-labelledby="agenda-pulo-titulo">
+    <div className="agenda-acao-cabecalho">
+      <span className="agenda-acao-icone"><IconeAcao nome="pular" /></span>
+      <div><h4 id="agenda-pulo-titulo">Pular banho e reprogramar o ciclo</h4><p>O banho será transferido para o dia fixo da próxima semana, e os atendimentos seguintes serão recalculados.</p></div>
     </div>
-    <span><button type="button" disabled={ocupado} onClick={() => { setAberto(false); setSenha(''); setErro('') }}>Voltar</button><button type="submit" disabled={ocupado}>Confirmar pulo</button></span>
+    <div className="agenda-pulo-regra"><strong>Nenhum crédito será liberado.</strong> Todos os serviços contratados serão mantidos. A partir do terceiro pulo, é necessária autorização administrativa.</div>
+    <label className="agenda-pulo-campo">Motivo do pulo<input value={motivo} maxLength={500} placeholder="Ex.: cliente não poderá comparecer nesta semana" disabled={ocupado} onChange={(evento) => setMotivo(evento.target.value)} required /></label>
+    {exigeAdmin && <><label className="agenda-pulo-admin"><input type="checkbox" checked={administrativo} disabled={ocupado} onChange={(evento) => { setAdministrativo(evento.target.checked); setSenha('') }} /><span>Autorizar como administrador<small>Confirme com sua senha administrativa para continuar.</small></span></label>
+      {administrativo && <label className="agenda-pulo-campo">Senha administrativa<input type="password" autoComplete="current-password" value={senha} disabled={ocupado} onChange={(evento) => setSenha(evento.target.value)} required /></label>}</>}
+    {erro && <p className="agenda-acao-feedback" role="alert">{erro}</p>}
+    <div className="agenda-acao-confirmacao-botoes">
+      <AcaoModal disabled={ocupado} onClick={() => { setSenha(''); voltar() }}>Voltar</AcaoModal>
+      <AcaoModal type="submit" variante="especial-forte" disabled={ocupado || !motivo.trim() || (exigeAdmin && !administrativo) || (administrativo && !senha)}>{ocupado ? <><i className="agenda-status-spinner" aria-hidden="true" />Reprogramando...</> : 'Confirmar pulo'}</AcaoModal>
+    </div>
   </form>
 }
 
