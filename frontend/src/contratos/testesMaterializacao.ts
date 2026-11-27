@@ -17,11 +17,14 @@ import type {
 } from '../../../supabase/functions/_shared/motor/tipos.ts'
 
 const sql=readFileSync(new URL('../../../banco/031_materializacao_ciclos_agenda.sql',import.meta.url),'utf8')
+const sqlEstado=readFileSync(new URL('../../../banco/042_estado_materializacao_contratos.sql',import.meta.url),'utf8')
 const materializador=readFileSync(new URL('../../../supabase/functions/_shared/materializacao-ciclo.ts',import.meta.url),'utf8')
 const carregadorMotor=readFileSync(new URL('../../../supabase/functions/_shared/motor/supabase.ts',import.meta.url),'utf8')
 const venda=readFileSync(new URL('../../../supabase/functions/vender-contrato/servico.ts',import.meta.url),'utf8')
 const agenda=readFileSync(new URL('../data/agendaDiaria.ts',import.meta.url),'utf8')
 const remarcacao=readFileSync(new URL('../../../banco/023_remarcacao_transacional_atendimento.sql',import.meta.url),'utf8')
+const vendaUi=readFileSync(new URL('./Contratos.tsx',import.meta.url),'utf8')
+const detalheUi=readFileSync(new URL('./DetalheContrato.tsx',import.meta.url),'utf8')
 let total=0
 async function teste(nome:string,executar:()=>void|Promise<void>){await executar();total+=1;console.log(`✓ ${nome}`)}
 const banho:ItemRecorrente={servicoId:'banho',servicoNome:'Banho',quantidadePorCiclo:4,intervaloQuantidade:1,intervaloUnidade:'semana',offsetInicialQuantidade:0,offsetInicialUnidade:'dia'}
@@ -44,7 +47,7 @@ await teste('M13 remarcação preserva o mesmo atendimento vinculado',()=>{asser
 await teste('M14 requer_revisao não materializa',()=>assert.match(sql,/v_ciclo\.estado='requer_revisao'/))
 await teste('M15 atendimento materializado usa carregamento oficial da Agenda',()=>assert.match(agenda,/from\('atendimentos'\)|from\("atendimentos"\)/))
 await teste('M16 falha reverte o lote e retry é idempotente',()=>{assert.match(sql,/exception when sqlstate 'PCM01'/);assert.match(sql,/confirmar_agendamento_transacional/)})
-await teste('M17 venda não informa sucesso total quando materialização falha',()=>{assert.match(venda,/materializacao_pendente/);assert.match(venda,/Agenda ainda não/)})
+await teste('M17 venda não informa sucesso total quando materialização falha',()=>{assert.match(venda,/materializacao_pendente/);assert.match(venda,/Pacote criado/);assert.doesNotMatch(venda,/Falha ao vender pacote/)})
 await teste('M18 E2E 4 Banhos + 2 Hidratações preserva quatro ocorrências às 09:00',()=>{
   const e2e=ocorrenciasDoCiclo([banho,hidratacao],'2026-09-02')
   assert.equal(9*60,540)
@@ -148,6 +151,13 @@ await teste('M24 erro estrutural não é mascarado nem repetido',async()=>{
 })
 await teste('M25 materialização exige e revalida o responsável padrão do Ciclo',()=>{assert.match(materializador,/funcionario_responsavel_padrao_id/);assert.match(materializador,/preferenciaFuncionario: 'obrigatorio'/);assert.match(materializador,/funcionarioResponsavelId/)})
 await teste('M26 materialização preserva cadastro incompleto do Motor e da precificação',()=>{assert.match(materializador,/CADASTRO_PET_INCOMPLETO/);assert.match(materializador,/ErroCadastroPetIncompleto/);assert.match(materializador,/resultado\.erro\.campos/);assert.match(materializador,/erro\.campos/)})
+await teste('M27 Ciclo possui estados duráveis e lease recuperável',()=>{assert.match(sqlEstado,/in \('pendente','materializando','materializado','erro'\)/);assert.match(sqlEstado,/materializacao_lease_ate=statement_timestamp\(\)\+interval '5 minutes'/);assert.match(sqlEstado,/materializacao_lease_ate>statement_timestamp\(\)/)})
+await teste('M28 concorrência usa advisory lock, linha bloqueada e token exclusivo',()=>{assert.match(sqlEstado,/pg_advisory_xact_lock\(hashtextextended\('ciclo:materializar:'/);assert.match(sqlEstado,/where id=p_ciclo_id for update/);assert.match(sqlEstado,/materializacao_lease_token is distinct from p_token/)})
+await teste('M29 hash comercial exclui estado mutável da Agenda',()=>{const normalizador=sqlEstado.slice(sqlEstado.indexOf('create or replace function public.normalizar_intencao_comercial_venda_042'),sqlEstado.indexOf('with snapshots as'));assert.doesNotMatch(normalizador,/ocupacaoAgendaVersao|configuracaoAgendaVersao|ocorrencias|plano/);assert.match(normalizador,/clienteId/);assert.match(normalizador,/petId/);assert.match(normalizador,/pacoteId/)})
+await teste('M30 retry reconhece venda antes de validar dados operacionais mutáveis',()=>{const consulta=sqlEstado.indexOf('select * into v_existente');const ocupacao=sqlEstado.indexOf("pg_advisory_xact_lock(hashtextextended('agenda:ocupacao'");assert.ok(consulta>=0&&ocupacao>consulta)})
+await teste('M31 materialização de quatro ocorrências permanece transacional',()=>{assert.match(sqlEstado,/begin\s+for v_item in select value from jsonb_array_elements\(p_materializacoes\)/);assert.match(sqlEstado,/exception when sqlstate 'PCM01'/);assert.match(sqlEstado,/registrar_erro_materializacao_ciclo_042/)})
+await teste('M32 backfill é conservador e preserva históricos ambíguos como NULL',()=>{assert.match(sqlEstado,/x\.modelo_operacional_versao=30/);assert.match(sqlEstado,/else null end/);assert.match(sqlEstado,/where x\.id=c\.id and c\.materializacao_estado is null/)})
+await teste('M33 UI distingue materialização pendente, em andamento e erro',()=>{assert.match(detalheUi,/Materialização pendente/);assert.match(detalheUi,/Materializando atendimentos/);assert.match(detalheUi,/Requer atenção/);assert.match(vendaUi,/Pacote criado · requer atenção/);assert.doesNotMatch(vendaUi,/Tentar criar agenda novamente/)})
 console.log(`${total} testes de materialização passaram.`)
 
 function resolverE2E(servicoIds:string[]){

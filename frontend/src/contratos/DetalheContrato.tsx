@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Button from '../components/ui/Button'
 import Modal from '../components/ui/Modal'
+import RenovarContrato from './RenovarContrato.tsx'
+import ReaproveitarCredito from './ReaproveitarCredito.tsx'
 import type { ContratoResumo } from './contrato'
 import type { ContagemCreditos, DetalheCicloCreditos, DetalheUnidadeCredito, EventoCredito, ResumoContratoCreditos, ResumoServicoCredito, UnidadeCredito } from '../../../supabase/functions/_shared/credito-contrato.ts'
 import { carregarDetalheCiclo, carregarDetalheCredito, carregarResumoCreditosContrato, decidirCreditoContrato, reverterConclusaoContrato } from './clienteSupabase'
@@ -10,7 +12,7 @@ type Nivel = 'contrato' | 'ciclo' | 'servico' | 'credito'
 type Acao = ({ tipo: 'reverter' } | { tipo: 'credito'; operacao: 'decidir_falta' | 'corrigir_decisao' | 'decidir_encerramento'; decisao: 'perder' | 'preservar' }) & { chaveIdempotencia: string }
 type NovaAcao = { tipo: 'reverter' } | { tipo: 'credito'; operacao: 'decidir_falta' | 'corrigir_decisao' | 'decidir_encerramento'; decisao: 'perder' | 'preservar' }
 
-export default function DetalheContrato({ contrato, onClose }: { contrato: ContratoResumo; onClose: () => void }) {
+export default function DetalheContrato({ contrato, onClose, onAtualizar }: { contrato: ContratoResumo; onClose: () => void; onAtualizar?: () => Promise<void> }) {
   const [nivel, setNivel] = useState<Nivel>('contrato'), [resumo, setResumo] = useState<ResumoContratoCreditos | null>(null), [ciclo, setCiclo] = useState<DetalheCicloCreditos | null>(null), [servico, setServico] = useState<ResumoServicoCredito | null>(null), [credito, setCredito] = useState<DetalheUnidadeCredito | null>(null), [estado, setEstado] = useState<'carregando' | 'pronto' | 'erro'>('carregando'), [erro, setErro] = useState('')
   const carregarResumo = useCallback(async () => { setEstado('carregando'); setErro(''); try { setResumo(await carregarResumoCreditosContrato(contrato.id)); setEstado('pronto') } catch (e) { setErro(mensagem(e)); setEstado('erro') } }, [contrato.id])
   useEffect(() => { void carregarResumo() }, [carregarResumo])
@@ -25,9 +27,11 @@ export default function DetalheContrato({ contrato, onClose }: { contrato: Contr
     {estado === 'carregando' && <Estado titulo="Carregando…" texto="Buscando informações autoritativas do Contrato." />}
     {estado === 'erro' && <Estado titulo="Não foi possível carregar" texto={erro}><Button onClick={() => void (nivel === 'contrato' ? carregarResumo() : ciclo ? abrirCiclo(ciclo.id) : carregarResumo())}>Tentar novamente</Button></Estado>}
     {estado === 'pronto' && nivel === 'contrato' && resumo && <NivelContrato contrato={contrato} resumo={resumo} abrirCiclo={abrirCiclo} />}
+    {estado === 'pronto' && nivel === 'contrato' && resumo && resumo.ciclos.map(item => <RenovarContrato key={item.id} contratoId={contrato.id} cicloId={item.id} cicloNumero={item.numero} elegivel={item.elegivelRenovacao} aposRenovacao={async () => { await carregarResumo(); await onAtualizar?.() }} />)}
     {estado === 'pronto' && nivel === 'ciclo' && ciclo && <NivelCiclo ciclo={ciclo} abrirServico={abrirServico} />}
     {estado === 'pronto' && nivel === 'servico' && servico && <NivelServico servico={servico} abrirCredito={abrirCredito} />}
     {estado === 'pronto' && nivel === 'credito' && credito && <NivelCredito credito={credito} aposAcao={recarregarCredito} onClose={onClose} />}
+    {estado === 'pronto' && nivel === 'credito' && credito && <ReaproveitarCredito credito={credito} aposReserva={async () => { await recarregarCredito(); await onAtualizar?.() }} />}
   </Modal>
 }
 
@@ -37,7 +41,7 @@ function NivelContrato({ contrato, resumo, abrirCiclo }: { contrato: ContratoRes
     <section className="contrato-identidade-card"><div className="contrato-avatar-grande" aria-hidden="true">{contrato.petNome.slice(0, 1).toUpperCase()}</div><div className="contrato-identidade-texto"><div><h2>{contrato.petNome}</h2><span className={`ux-status ${contrato.status === 'ativo' ? 'ok' : 'muted'}`}>{contrato.status}</span></div><p>♙ {contrato.clienteNome} <small>(tutor)</small></p><strong>{contrato.pacoteNome}</strong><span>↻ {contrato.renovacaoAutomatica ? 'Renovação automática' : 'Renovação manual'}</span></div><div className="contrato-identidade-valor"><span>Valor por ciclo</span><strong>{moeda.format(contrato.valorContratado)} <small>/ ciclo</small></strong></div></section>
     <section className="contrato-faixa-resumo tres"><Indicador icone={<IconeCiclo compacto />} rotulo="Ciclo atual" valor={atual ? `Ciclo ${atual.numero}` : '—'} /><Indicador icone="◴" rotulo="Consumo geral" valor={`${atual?.consumoPercentual ?? 0}%`} /><Indicador icone="☆" rotulo="Disponíveis" valor={`${atual?.disponiveis ?? 0} créditos`} /></section>
     <TituloSecao titulo="Ciclos" />
-    <div className="contrato-ciclos">{resumo.ciclos.map((item) => <button type="button" className={`contrato-ciclo-card ${item.atual ? 'atual' : ''}`} onClick={() => void abrirCiclo(item.id)} key={item.id}><IconeCiclo renovacao grande /><div className="contrato-ciclo-info"><div><strong>Ciclo {item.numero}{item.atual ? ' · Atual' : ''}</strong>{item.atual && <em>Atual</em>}</div><span>{data(item.inicio)} → {data(item.fim)}</span><small>{item.consumidos} de {item.contratados} créditos utilizados</small><BarraSimples contagem={item} /><ResumoInline contagem={item} /></div><i aria-hidden="true">›</i></button>)}</div>
+    <div className="contrato-ciclos">{resumo.ciclos.map((item) => <button type="button" className={`contrato-ciclo-card ${item.atual ? 'atual' : ''}`} onClick={() => void abrirCiclo(item.id)} key={item.id}><IconeCiclo renovacao grande /><div className="contrato-ciclo-info"><div><strong>Ciclo {item.numero}{item.atual ? ' · Atual' : ''}</strong>{item.atual && <em>Atual</em>}</div><span>Previsão da Agenda: {data(item.inicio)} → {data(item.fim)}</span><small>{item.comercialmenteConcluido ? "Comercialmente concluído" : item.estado === "cancelado" ? "Cancelado" : "Comercialmente vigente"}{item.elegivelRenovacao ? " / Elegível para renovação" : " / Renovação bloqueada"}</small><small>{item.consumidos} de {item.contratados} créditos utilizados</small><BarraSimples contagem={item} /><ResumoInline contagem={item} /></div><i aria-hidden="true">›</i></button>)}</div>
     {!resumo.ciclos.length && <Estado titulo="Nenhum Ciclo" texto="Este Contrato ainda não possui Ciclo no modelo operacional atual." />}
     <div className="contrato-duas-colunas"><section className="contrato-painel-compacto"><h3>Serviços contratados</h3>{contrato.itens.map((item) => <div className="contrato-servico-resumo" key={item.servicoId}><IconeServico nome={item.servicoNome} /><div><strong>{item.servicoNome}</strong><span>{item.quantidadePorCiclo} por ciclo</span><small>A cada {item.intervaloQuantidade} {unidade(item.intervaloUnidade, item.intervaloQuantidade)}</small></div></div>)}</section><section className="contrato-painel-compacto"><h3>Rotina</h3><ListaRotina contrato={contrato} /></section></div>
     <details className="contrato-detalhes-tecnicos"><summary>▤ <span>Informações de registro</span><b>⌄</b></summary><p>Contrato {contrato.id}</p><p>Registrado em {new Date(contrato.criadoEm).toLocaleString('pt-BR')}</p></details>
@@ -45,9 +49,24 @@ function NivelContrato({ contrato, resumo, abrirCiclo }: { contrato: ContratoRes
 }
 
 function NivelCiclo({ ciclo, abrirServico }: { ciclo: DetalheCicloCreditos; abrirServico: (servico: ResumoServicoCredito) => void }) {
+  const proximo = ciclo.servicos.flatMap((servico) => servico.unidades)
+    .filter((item) => item.data && item.estadoComercial === 'reservado' && (item.statusAtendimento === 'agendado' || item.statusAtendimento === 'confirmado'))
+    .sort((a, b) => a.data.localeCompare(b.data) || a.horarioInicio.localeCompare(b.horarioInicio))[0]
   return <div className="contrato-nivel-conteudo">
-    <section className="contrato-ciclo-hero"><IconeCiclo grande /><div><div><h2>Ciclo {ciclo.numero}</h2><TagEstado valor={ciclo.estado} /></div><p>{data(ciclo.inicio)} → {data(ciclo.fim)}</p></div><strong>{ciclo.consumidos} de {ciclo.contratados} utilizados</strong><div className="contrato-faixa-resumo tres"><Indicador icone={<IconeCiclo compacto />} rotulo="Valor do ciclo" valor={ciclo.valor === null ? '—' : moeda.format(ciclo.valor)} /><Indicador icone="◴" rotulo="Consumo geral" valor={`${ciclo.consumoPercentual}%`} /><Indicador icone="☆" rotulo="Disponíveis" valor={String(ciclo.disponiveis)} /></div></section>
+    <section className="contrato-ciclo-hero"><IconeCiclo grande /><div><div><h2>Ciclo {ciclo.numero}</h2><TagEstado valor={ciclo.comercialmenteConcluido ? "Comercialmente concluído" : ciclo.estado === "cancelado" ? "Cancelado" : "Comercialmente vigente"} /></div><p>Previsão da Agenda: {data(ciclo.inicio)} → {data(ciclo.fim)} / Sem vencimento comercial por data</p></div><strong>{ciclo.consumidos} de {ciclo.contratados} utilizados</strong><div className="contrato-faixa-resumo tres"><Indicador icone={<IconeCiclo compacto />} rotulo="Valor do ciclo" valor={ciclo.valor === null ? '—' : moeda.format(ciclo.valor)} /><Indicador icone="◴" rotulo="Consumo geral" valor={`${ciclo.consumoPercentual}%`} /><Indicador icone="☆" rotulo="Disponíveis" valor={String(ciclo.disponiveis)} /></div></section>
+    <p>{ciclo.materializacaoEstado === "materializado" ? "Agenda materializada" : "Agenda em preparação"} / {ciclo.elegivelRenovacao ? "Elegível para renovação" : "Renovação bloqueada"}</p>
+    {proximo && <p>Próximo atendimento agendado · {data(proximo.data)}{proximo.horarioInicio ? ` às ${proximo.horarioInicio}` : ''}</p>}
+    <section className="contrato-painel-compacto">
+      <h3>Pulos de banho</h3>
+      <p>{ciclo.pulos?.length ?? 0} registrados · limite de 2 sem autorização</p>
+      {Boolean(ciclo.pulos?.length) && <ul>{ciclo.pulos?.map(pulo => <li key={pulo.id}>
+        {pulo.numero}º pulo · {dataHora(pulo.ocorridoEm)} · {pulo.motivo}{pulo.autorizado ? ' · Autorizado pela administração' : ''}
+      </li>)}</ul>}
+    </section>
     <section className="contrato-progresso-geral"><h3>Progresso geral do ciclo</h3><BarraSimples contagem={ciclo} /><ResumoEstrutural contagem={ciclo} /></section>
+    {ciclo.materializacaoEstado === 'pendente' && <div className="contrato-aviso"><strong>Materialização pendente</strong><span>Os atendimentos deste Ciclo ainda estão sendo preparados.</span></div>}
+    {ciclo.materializacaoEstado === 'materializando' && <div className="contrato-aviso"><strong>Materializando atendimentos</strong><span>A criação dos atendimentos deste Ciclo já está em andamento.</span></div>}
+    {ciclo.materializacaoEstado === 'erro' && <div className="contrato-aviso"><strong>Requer atenção</strong><span>{ciclo.materializacaoUltimoErro || 'Os atendimentos deste Ciclo ainda não puderam ser criados.'}</span></div>}
     {ciclo.encerramentoPendente && <div className="contrato-aviso"><strong>Encerramento pendente</strong><span>Existem créditos sem destino definitivo neste Ciclo.</span></div>}
     <TituloSecao titulo="Serviços deste ciclo" />
     <div className="contrato-servicos">{ciclo.servicos.map((item) => <button type="button" className="contrato-servico-card" onClick={() => abrirServico(item)} key={item.contratoItemId}><IconeServico nome={item.nome} grande /><div className="contrato-servico-identidade"><strong>{item.nome}</strong><span>{item.consumidos} de {item.contratados} utilizados</span><small>A cada {item.intervaloQuantidade} {unidade(item.intervaloUnidade, item.intervaloQuantidade)}</small></div><BarraSimples contagem={item} /><div className="contrato-servico-percentual"><strong>{item.consumoPercentual}%</strong><span>Restam {item.disponiveis}</span></div><i aria-hidden="true">›</i></button>)}</div>

@@ -6,10 +6,10 @@ import {
 
 export type DependenciasHandler = {
   validarToken(token: string): Promise<UsuarioAutenticado | null>
-  confirmar(intencao: ConfirmacaoAgendamentoIntent): Promise<ConfirmacaoAgendamentoResposta>
+  confirmar(intencao: ConfirmacaoAgendamentoIntent, operadorId: string): Promise<ConfirmacaoAgendamentoResposta>
 }
 
-type UsuarioAutenticado = { app_metadata?: Record<string, unknown> }
+type UsuarioAutenticado = { id: string; app_metadata?: Record<string, unknown> }
 type ClienteAuth = {
   auth: { getUser(token: string): Promise<{
     data: { user: UsuarioAutenticado | null }, error: unknown
@@ -39,7 +39,7 @@ export function criarHandler(
     const token = bearer(requisicao.headers.get('authorization'))
     if (!token) return json(401, { mensagem: 'Autenticacao obrigatoria.' }, cors)
     const usuario = await dependencias.validarToken(token)
-    if (!usuario) return json(401, { mensagem: 'Sessao invalida ou expirada.' }, cors)
+    if (!usuario?.id) return json(401, { mensagem: 'Sessao invalida ou expirada.' }, cors)
     if (usuario.app_metadata?.role !== 'internal') {
       return json(403, { mensagem: 'Acesso nao autorizado.' }, cors)
     }
@@ -48,7 +48,7 @@ export function criarHandler(
     const intencao = lerIntencaoConfirmacao(corpo)
     if (!intencao) return json(400, respostaInvalida('Intencao de confirmacao invalida.'), cors)
     try {
-      return json(200, await dependencias.confirmar(intencao), cors)
+      return json(200, await dependencias.confirmar(intencao, usuario.id), cors)
     } catch (erro) {
       console.error({
         evento: 'confirmacao_edge_erro',

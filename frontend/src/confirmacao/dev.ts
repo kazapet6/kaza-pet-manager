@@ -5,14 +5,19 @@ import {
   type ConfirmacaoAgendamentoIntent,
   type ErroValidacaoIntencao,
   type ModalidadeConfirmacao,
+  type ValorNegociadoServico,
+  type FormaPagamentoPrevista,
 } from './contrato.ts'
 import type { PreferenciaFuncionario } from '../motorDisponibilidade/tipos.ts'
 
 export type DadosIntencaoConfirmacaoDev = {
   readonly petId: string
   readonly servicoIds: readonly string[]
+  readonly formaPagamentoPrevista?: FormaPagamentoPrevista
+  readonly valoresNegociados?: readonly ValorNegociadoServico[]
   readonly data: string
   readonly horarioEscolhido: number
+  readonly inicioTaxiDogConsultado?: number
   readonly modalidade: ModalidadeConfirmacao
   readonly cicloTaxidogId: string | null
   readonly preferenciaFuncionario: PreferenciaFuncionario
@@ -67,9 +72,12 @@ function criarIntencao(
     chaveIdempotencia,
     petId: dados.petId,
     servicoIds: [...dados.servicoIds],
+    ...(dados.valoresNegociados?.length ? { valoresNegociados: dados.valoresNegociados } : {}),
+    ...(dados.formaPagamentoPrevista ? { formaPagamentoPrevista: dados.formaPagamentoPrevista } : {}),
     data: dados.data,
     horarioEscolhido: dados.modalidade === 'taxidog' ? null : dados.horarioEscolhido,
     modalidade: dados.modalidade,
+    ...(dados.modalidade === 'taxidog' && dados.inicioTaxiDogConsultado !== undefined ? { inicioTaxiDogConsultado: dados.inicioTaxiDogConsultado } : {}),
     cicloTaxidogId: dados.modalidade === 'taxidog' ? dados.cicloTaxidogId : null,
     preferenciaFuncionario: dados.preferenciaFuncionario,
     funcionarioPreferidoId: dados.preferenciaFuncionario === 'automatico'

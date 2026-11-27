@@ -22,7 +22,13 @@ const base: ConfirmacaoAgendamentoIntent = {
 const raiz = '../supabase/functions/confirmar-agendamento/'
 const fonteServico = readFileSync(`${raiz}servico.ts`, 'utf8')
 const fontePlano = readFileSync('../supabase/functions/_shared/confirmacao/plano.ts', 'utf8')
-const fonteObservabilidade = readFileSync('../supabase/functions/_shared/confirmacao/observabilidade.ts', 'utf8')
+const operadorId = '3fa85f64-5717-4562-b3fc-2c963f66afa6'
+const respostaConfirmada = {
+  status: 'confirmado' as const, atendimentoId: 'a', grupoAgendamentoId: 'g',
+  statusAtendimento: 'agendado' as const, horarioConfirmado: 600,
+  conclusaoPrevista: 630, valorFinal: 10, versaoConfiguracao: 2,
+  versaoOcupacao: 4, reutilizadoPorIdempotencia: false, servicos: [],
+}
 let quantidade = 0
 async function teste(codigo: string, nome: string, executar: () => void | Promise<void>) {
   await executar(); quantidade += 1; console.log(`${codigo} OK - ${nome}`)
@@ -32,14 +38,9 @@ function request(corpo: unknown, token: string | null = 'token', origem = 'http:
   if (token) headers.authorization = `Bearer ${token}`
   return new Request('http://local/confirmar', { method: 'POST', headers, body: JSON.stringify(corpo) })
 }
-function handler(role: string | null, confirmar = async () => ({
-  status: 'confirmado' as const, atendimentoId: 'a', grupoAgendamentoId: 'g',
-  statusAtendimento: 'agendado' as const, horarioConfirmado: 600,
-  conclusaoPrevista: 630, valorFinal: 10, versaoConfiguracao: 2,
-  versaoOcupacao: 4, reutilizadoPorIdempotencia: false, servicos: [],
-})) {
+function handler(role: string | null, confirmar: Parameters<typeof criarHandler>[0]['confirmar'] = async () => respostaConfirmada) {
   return criarHandler({
-    validarToken: async () => role === null ? null : ({ app_metadata: { role } }), confirmar,
+    validarToken: async () => role === null ? null : ({ id: operadorId, app_metadata: { role } }), confirmar,
   }, new Set(['http://localhost:5173']))
 }
 
@@ -114,35 +115,96 @@ await teste('FT', 'sem Authorization retorna 401', async () => assert.equal((awa
 await teste('FU', 'JWT invalido retorna 401', async () => assert.equal((await handler(null)(request(base))).status, 401))
 await teste('FV', 'authenticated sem internal retorna 403', async () => assert.equal((await handler('user')(request(base))).status, 403))
 await teste('FW', 'internal valido passa autorizacao', async () => assert.equal((await handler('internal')(request(base))).status, 200))
+await teste('FWT', 'TaxiDog valida e inclui o início operacional consultado na idempotência', async () => {
+  const ciclo = { ...base, modalidade: 'taxidog' as const, horarioEscolhido: null, cicloTaxidogId: 'ciclo-ficticio' }
+  const intencao = { ...ciclo, inicioTaxiDogConsultado: 810 }
+  assert.deepEqual(lerIntencaoConfirmacao(intencao), intencao)
+  assert.equal(lerIntencaoConfirmacao({ ...intencao, inicioTaxiDogConsultado: 1440 }), null)
+  assert.equal(lerIntencaoConfirmacao({ ...base, inicioTaxiDogConsultado: 810 }), null)
+  assert.notEqual(await calcularHashIntencao(intencao), await calcularHashIntencao(ciclo))
+})
+
+await teste('FORMA_PREVISTA', 'valida a intenção e mantém compatibilidade do hash quando não definida', async () => {
+  const hashOriginal = await calcularHashIntencao(base)
+  for (const formaPagamentoPrevista of ['dinheiro', 'pix', 'cartao'] as const) {
+    const intencao = { ...base, formaPagamentoPrevista }
+    assert.deepEqual(lerIntencaoConfirmacao(intencao), intencao)
+    assert.notEqual(await calcularHashIntencao(intencao), hashOriginal)
+  }
+  assert.equal(lerIntencaoConfirmacao({ ...base, formaPagamentoPrevista: 'debito' }), null)
+  assert.equal(await calcularHashIntencao({ ...base, formaPagamentoPrevista: undefined }), hashOriginal)
+})
+
 await teste('FX', 'preco extra nao vira autoridade', () => assert.deepEqual(lerIntencaoConfirmacao({ ...base, valorFinal: 1 }), base))
+await teste('FX1', 'negociação por serviço participa da idempotência e rejeita linhas inválidas', async () => {
+  const valoresNegociados = [
+    { servicoId: 'a', original: 50, final: 39.99 },
+    { servicoId: 'b', original: 10, final: 0 },
+  ]
+  const intencao = { ...base, valoresNegociados }
+  assert.deepEqual(lerIntencaoConfirmacao(intencao), intencao)
+  assert.notEqual(await calcularHashIntencao(intencao), await calcularHashIntencao(base))
+  assert.equal(await calcularHashIntencao(intencao), await calcularHashIntencao({
+    ...base, valoresNegociados: [...valoresNegociados].reverse(),
+  }))
+  for (const ajuste of [
+    { servicoId: 'x', original: 50, final: 39.99 },
+    { servicoId: 'a', original: 50, final: 39.999 },
+    { servicoId: 'b', original: 10, final: -1 },
+  ]) assert.equal(lerIntencaoConfirmacao({ ...base, valoresNegociados: [ajuste] }), null)
+})
 await teste('FY', 'recursos extras nao viram autoridade', () => assert.deepEqual(lerIntencaoConfirmacao({ ...base, funcionarios: ['x'], equipamentos: ['y'] }), base))
-await teste('FZ', 'configuracao alterada tem resposta exclusiva', () => {
-  assert.ok(fonteServico.includes("codigo: 'CONFIGURACAO_ALTERADA'")); assert.ok(!fonteServico.includes("codigo: 'PRECO_ALTERADO'"))
+await teste('FYA', 'automatico aceita o responsavel derivado da opcao do Motor', () => { const intencao = { ...base, funcionarioResponsavelId: 'agata' }; assert.deepEqual(lerIntencaoConfirmacao(intencao), intencao) })
+await teste('FZ', 'mudanças de configuração e cotação negociada têm respostas próprias', () => {
+  assert.ok(fonteServico.includes("codigo: 'CONFIGURACAO_ALTERADA'"))
+  assert.ok(fonteServico.includes('original?.valorCalculado !== ajuste.original'))
+  assert.ok(fonteServico.includes("codigo: 'PRECO_ALTERADO'"))
 })
 await teste('GA', 'ocupacao alterada ainda recalcula', () => {
   assert.ok(fonteServico.includes('calcularDisponibilidadeNoHorario(')); assert.ok(!fonteServico.includes('versaoOcupacaoConsultada !=='))
 })
 await teste('GB', 'horario perdido retorna disponibilidade alterada', () => assert.ok(fonteServico.includes('if (!opcao) return indisponivel')))
 await teste('GC', 'horario escolhido e preservado exatamente', () => assert.ok(
-  fonteServico.includes('entrada, dados, intencao.horarioEscolhido'),
+  fonteServico.includes('calcularDisponibilidadeNoHorario(entrada, dados, inicioConsultado)') && fonteServico.includes('intencao.inicioTaxiDogConsultado : intencao.horarioEscolhido'),
 ))
 await teste('GD', 'automatico usa alocacao atual do Motor', () => assert.ok(fontePlano.includes('etapa.funcionarios.map')))
 await teste('GE', 'preferencia segue integralmente para o Motor', () => assert.ok(fonteServico.includes('preferenciaFuncionario: intencao.preferenciaFuncionario')))
 await teste('GF', 'TaxiDog recarrega ciclo atual', () => assert.ok(fonteServico.includes('carregarDadosDisponibilidadeComCliente')))
 await teste('GG', 'deadline nao vem do frontend', () => assert.deepEqual(lerIntencaoConfirmacao({ ...base, deadline: 1 }), base))
 await teste('GH', 'preco e recalculado', () => assert.ok(fonteServico.includes('calcularPrecificacao(precos.pet, opcao.servicos, precos.dados)')))
-await teste('GI', 'PRECO_ALTERADO permanece sem emissao nesta versao', () => assert.ok(!fonteServico.includes("codigo: 'PRECO_ALTERADO'")))
+await teste('GI', 'cotação negociada é revalidada antes da gravação', () => {
+  const verificarOriginal = fonteServico.indexOf('original?.valorCalculado !== ajuste.original')
+  const persistir = fonteServico.indexOf('await executarRpcConfirmacao')
+  assert.ok(verificarOriginal >= 0 && persistir > verificarOriginal)
+})
 await teste('GJ', 'hash e SHA-256 hexadecimal', async () => assert.match(await calcularHashIntencao(base), /^[0-9a-f]{64}$/))
 await teste('GK', 'mesma intencao normalizada gera mesmo hash', async () => assert.equal(await calcularHashIntencao(base), await calcularHashIntencao({ ...base, servicoIds: ['a', 'b'] })))
+await teste('GKA', 'responsavel automatico atribuido participa da idempotencia', async () => assert.notEqual(await calcularHashIntencao(base), await calcularHashIntencao({ ...base, funcionarioResponsavelId: 'agata' })))
 await teste('GL', 'chave diferente nao muda hash normalizado', async () => assert.equal(
   await calcularHashIntencao(base), await calcularHashIntencao({ ...base, chaveIdempotencia: '22222222-2222-4222-8222-222222222222' }),
 ))
 await teste('GM', 'plano contem proveniencia completa', () => assert.ok(fontePlano.includes('filho.paisDiretos.map')))
 await teste('GN', 'pai canonico usa ordem e ID', () => assert.ok(fontePlano.includes('a.ordem - b.ordem || comparar')))
 await teste('GO', 'supervisoes sao materializadas', () => assert.ok(fontePlano.includes('equipamento.supervisores')))
-await teste('GP', 'RPC recebe plano pelo cliente administrativo', () => {
-  assert.ok(fonteServico.includes('executarRpcConfirmacao(admin, plano, intencao)'))
-  assert.ok(fonteObservabilidade.includes("admin.rpc('confirmar_agendamento_transacional'"))
+await teste('GP', 'RPC recebe plano e UUID autenticado pelo cliente administrativo', async () => {
+  const plano = { grupo: { clienteId: 'cliente-ficticio' } }
+  const resposta = await executarRpcConfirmacao({
+    rpc: async (nome, argumentos) => {
+      assert.equal(nome, 'mensageria_confirmar_agendamento')
+      assert.deepEqual(argumentos, { p_plano: plano, p_operador: operadorId })
+      return { data: respostaConfirmada, error: null }
+    },
+  }, plano, base, operadorId)
+  assert.equal(resposta, respostaConfirmada)
+  assert.ok(fonteServico.includes('executarRpcConfirmacao(admin, plano, intencao, operadorId)'))
+})
+await teste('GPA', 'o corpo HTTP não pode definir a identidade do operador', async () => {
+  const chamar = handler('internal', async (intencao, usuarioAutenticado) => {
+    assert.deepEqual(intencao, base)
+    assert.equal(usuarioAutenticado, operadorId)
+    return respostaConfirmada
+  })
+  assert.equal((await chamar(request({ ...base, operadorId: 'operador-forjado', p_operador: 'operador-forjado' }))).status, 200)
 })
 await teste('GQ', 'resposta RPC e mapeada para a union', () => assert.ok(respostaConfirmacaoValida({
   status: 'confirmado', atendimentoId: 'a', grupoAgendamentoId: 'g',
@@ -214,7 +276,7 @@ await teste('HB', 'erro da RPC e registrado com campos permitidos e relancado', 
     await assert.rejects(
       executarRpcConfirmacao(
         { rpc: async () => ({ data: null, error: erroRpc }) } as never,
-        { plano: 'nao deve ser registrado' }, base,
+        { plano: 'nao deve ser registrado' }, base, operadorId,
       ),
       (erro) => erro === erroRpc,
     )
@@ -258,5 +320,5 @@ await teste('HC', 'erro interno mantem resposta externa generica e log seguro', 
   assert.ok(!serializado.includes('payload'))
   assert.ok(!serializado.includes('SQL'))
 })
-assert.equal(quantidade, 36)
+assert.equal(quantidade, 42)
 console.log(`${quantidade} testes unitarios FT-HC aprovados.`)

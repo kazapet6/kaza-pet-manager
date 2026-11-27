@@ -18,9 +18,17 @@ export async function executarRpcConfirmacao(
   admin: ClienteRpc,
   plano: Record<string, unknown>,
   intencao: ConfirmacaoAgendamentoIntent,
+  operadorId: string,
 ) {
-  const { data, error } = await admin.rpc('confirmar_agendamento_transacional', {
+  const negociados = intencao.valoresNegociados
+  const formaPrevista = intencao.formaPagamentoPrevista
+  const rpc = formaPrevista ? 'confirmar_agendamento_com_forma_prevista'
+    : negociados?.length ? 'confirmar_agendamento_com_valores_negociados' : 'mensageria_confirmar_agendamento'
+  const { data, error } = await admin.rpc(rpc, {
     p_plano: plano,
+    p_operador: operadorId,
+    ...(negociados?.length ? { p_valores: negociados } : {}),
+    ...(formaPrevista ? { p_forma_prevista: formaPrevista } : {}),
   })
   if (error) {
     console.error({

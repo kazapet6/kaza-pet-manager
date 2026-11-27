@@ -5,8 +5,9 @@ import type { AgendaDiariaAtendimento } from '../types/AgendaDiaria.ts'
 import { OCORRENCIAS_ATENDIMENTO, type TipoOcorrenciaAtendimento } from '../observacoesAtendimento/catalogo.ts'
 import { executarObservacoesAtendimento } from '../observacoesAtendimento/clienteSupabase.ts'
 import { alternarOcorrencia, normalizarObservacao, type ObservacoesAtendimento } from '../observacoesAtendimento/contrato.ts'
+import ReceberAdicionais from './ReceberAdicionais.tsx'
 import { executarDadosConclusao } from './clienteSupabase.ts'
-import { FORMAS_PAGAMENTO, type DadosConclusao, type FormaPagamento } from './contrato.ts'
+import { FORMAS_PAGAMENTO, dataEfetivaValida, hojeFinanceiro, type DadosConclusao, type FormaPagamento } from './contrato.ts'
 import { acaoPrincipalConclusao, carregarEstadoConclusao, etapaAnteriorConclusao, proximaEtapaConclusao, retornosForamAlterados, type EstadoCarregamentoConclusao, type EtapaConclusao } from './fluxo.ts'
 import type { AlterarStatusResposta } from '../statusAtendimento/contrato.ts'
 
@@ -28,6 +29,7 @@ export default function ConclusaoAtendimentoModal({ atendimento, statusEsperado,
   const [texto, setTexto] = useState('')
   const [intervalos, setIntervalos] = useState<Record<string, string>>({})
   const [valor, setValor] = useState('')
+  const [dataEfetiva, setDataEfetiva] = useState('')
   const [forma, setForma] = useState<FormaPagamento>('pix')
   const [erro, setErro] = useState<string | null>(null)
   const [ocupado, setOcupado] = useState(false)
@@ -62,6 +64,8 @@ export default function ConclusaoAtendimentoModal({ atendimento, statusEsperado,
     setTexto('')
     setIntervalos({})
     setValor('')
+    setDataEfetiva('')
+    chaveRecebimento.current = null
     setDescartar(false)
     void carregar()
     const controleCarga = cargaAtual
@@ -129,7 +133,8 @@ export default function ConclusaoAtendimentoModal({ atendimento, statusEsperado,
 
   async function receber() {
     if (!dados || trava.current) return
-    const numero = Number(valor.replace(',', '.'))
+    const numero = dados.financeiro.cicloPacoteId ? dados.financeiro.saldo : Number(valor.replace(',', '.'))
+    if (!dataEfetivaValida(dataEfetiva)) { setErro('Informe a data efetiva do pagamento.'); return }
     if (!(numero > 0) || numero > dados.financeiro.saldo) {
       setErro('Informe um valor positivo que nao ultrapasse o saldo.')
       return
@@ -140,15 +145,22 @@ export default function ConclusaoAtendimentoModal({ atendimento, statusEsperado,
     try {
       const resposta = await executarDadosConclusao({
         operacao: 'receber', atendimentoId: atendimento.id,
-        chaveIdempotencia: chaveRecebimento.current, valor: numero, formaPagamento: forma,
+        chaveIdempotencia: chaveRecebimento.current, valor: numero, formaPagamento: forma, dataEfetiva,
       })
       if (resposta.status !== 'registrado') {
+        chaveRecebimento.current = null
         setErro(mensagem(resposta, 'Falha ao registrar.'))
+        return
+      }
+      if (!(await recarregarDados())) {
+        setErro('Recebimento confirmado, mas saldo ainda não atualizado. Repita a consulta com os mesmos dados.')
         return
       }
       chaveRecebimento.current = null
       setValor('')
-      await recarregarDados()
+      setDataEfetiva('')
+    } catch {
+      setErro('Resultado ainda não confirmado. Repita o registro com os mesmos dados para evitar duplicação.')
     } finally {
       trava.current = false
       setOcupado(false)
@@ -201,7 +213,7 @@ export default function ConclusaoAtendimentoModal({ atendimento, statusEsperado,
       {estadoCarregamento.estado === 'erro' && <div className="conclusao-estado-erro"><p role="alert" className="observacoes-erro">{estadoCarregamento.mensagem}</p><Button variant="secondary" onClick={() => void carregar()}>Tentar novamente</Button></div>}
       {pronto && <>
         {etapa === 0 && <div className="observacoes-categorias">{OCORRENCIAS_ATENDIMENTO.map((categoria) => <section key={categoria.categoria}><h3>{categoria.categoria}</h3><div>{categoria.itens.map(([tipo, rotulo]) => <button key={tipo} type="button" aria-pressed={tipos.includes(tipo)} onClick={() => setTipos(alternarOcorrencia(tipos, tipo))}>{rotulo}</button>)}</div></section>)}<label className="observacoes-campo conclusao-observacao"><span>Observacao operacional <small>opcional</small></span><textarea rows={3} maxLength={1000} value={texto} onChange={(evento) => setTexto(evento.target.value)} /><small>{texto.length}/1000</small></label></div>}
-        {etapa === 1 && <section className="conclusao-pagamento"><ResumoFinanceiro dados={dados} /><div className="conclusao-receber"><label>Valor a receber agora<input inputMode="decimal" value={valor} disabled={dados.financeiro.isento || ocupado} onChange={(evento) => { chaveRecebimento.current = null; setValor(evento.target.value) }} /></label><fieldset><legend>Forma</legend>{FORMAS_PAGAMENTO.map((item) => <button type="button" className={forma === item ? 'ativo' : ''} onClick={() => { chaveRecebimento.current = null; setForma(item) }} key={item}>{item}</button>)}</fieldset><Button disabled={dados.financeiro.isento || ocupado || dados.financeiro.saldo === 0} onClick={() => void receber()}>Registrar recebimento</Button></div><button type="button" className="conclusao-isentar" disabled={dados.financeiro.totalRecebido > 0 || ocupado} onClick={() => void isentar()}>{dados.financeiro.isento ? 'Remover isencao' : 'Marcar como isento'}</button></section>}
+        {etapa === 1 && <section className="conclusao-pagamento"><ResumoFinanceiro dados={dados} />{dados.financeiro.cicloPacoteId && <p>Pagamento integral do ciclo do pacote</p>}{dados.financeiro.adicionais && <ReceberAdicionais atendimentoId={atendimento.id} inicial={dados.financeiro.adicionais} />}<div className="conclusao-receber"><label>Valor a receber agora<input inputMode="decimal" value={dados.financeiro.cicloPacoteId ? dados.financeiro.saldo.toFixed(2).replace('.', ',') : valor} readOnly={Boolean(dados.financeiro.cicloPacoteId)} disabled={dados.financeiro.isento || ocupado || Boolean(chaveRecebimento.current)} onChange={(evento) => { chaveRecebimento.current = null; setValor(evento.target.value) }} /></label><label>Data efetiva do pagamento<input type="date" value={dataEfetiva} max={hojeFinanceiro()} disabled={ocupado || Boolean(chaveRecebimento.current)} onChange={evento => setDataEfetiva(evento.target.value)} required /></label><fieldset><legend>Forma</legend>{FORMAS_PAGAMENTO.map((item) => <button type="button" className={forma === item ? 'ativo' : ''} disabled={ocupado || Boolean(chaveRecebimento.current)} onClick={() => { chaveRecebimento.current = null; setForma(item) }} key={item}>{item}</button>)}</fieldset><Button disabled={dados.financeiro.isento || ocupado || dados.financeiro.saldo === 0 || !dataEfetivaValida(dataEfetiva)} onClick={() => void receber()}>Registrar recebimento</Button></div>{!dados.financeiro.cicloPacoteId && <button type="button" className="conclusao-isentar" disabled={dados.financeiro.totalRecebido > 0 || ocupado} onClick={() => void isentar()}>{dados.financeiro.isento ? 'Remover isencao' : 'Marcar como isento'}</button>}</section>}
         {etapa === 2 && <section className="conclusao-retornos">{dados.retornos.map((item) => <label key={item.atendimentoServicoId}><strong>{item.nome}</strong><span>Retornar em <input type="number" min="1" max="3650" value={intervalos[item.atendimentoServicoId] ?? ''} onChange={(evento) => setIntervalos({ ...intervalos, [item.atendimentoServicoId]: evento.target.value })} /> dias</span><small>{intervalos[item.atendimentoServicoId] ? dataSomada(atendimento.dataOperacional, Number(intervalos[item.atendimentoServicoId])) : 'Sem recomendacao de retorno'}</small></label>)}</section>}
         {etapa === 3 && <section className="conclusao-revisao"><div><h3>Observacoes</h3><p>{tipos.length ? tipos.join(', ') : 'Nenhuma ocorrencia'}{normalizarObservacao(texto) ? <><br />{normalizarObservacao(texto)}</> : null}</p></div><div><h3>Pagamento</h3><ResumoFinanceiro dados={dados} /></div><div><h3>Retorno</h3>{dados.retornos.filter((item) => intervalos[item.atendimentoServicoId]).map((item) => <p key={item.atendimentoServicoId}>{item.nome}: {intervalos[item.atendimentoServicoId]} dias · {dataSomada(atendimento.dataOperacional, Number(intervalos[item.atendimentoServicoId]))}</p>)}{!Object.values(intervalos).some(Boolean) && <p>Sem recomendacao</p>}</div></section>}
       </>}
@@ -214,7 +226,7 @@ export default function ConclusaoAtendimentoModal({ atendimento, statusEsperado,
 
 function ResumoFinanceiro({ dados }: { dados: DadosConclusao }) {
   const financeiro = dados.financeiro
-  return <div className="conclusao-financeiro-resumo"><span>Valor<strong>{moeda(financeiro.valorFinal)}</strong></span><span>Recebido<strong>{moeda(financeiro.totalRecebido)}</strong></span><span>Saldo<strong>{moeda(financeiro.saldo)}</strong></span><span>Situacao<strong>{financeiro.situacao}</strong></span></div>
+  return <div className="conclusao-financeiro-resumo">{financeiro.valorOriginal !== undefined && financeiro.valorOriginal !== financeiro.valorFinal && <span>Valor original<strong>{moeda(financeiro.valorOriginal)}</strong></span>}{!financeiro.cicloPacoteId && <span>Forma prevista<strong>{financeiro.formaPagamentoPrevista === 'cartao' ? 'Cartão' : financeiro.formaPagamentoPrevista === 'pix' ? 'PIX' : financeiro.formaPagamentoPrevista === 'dinheiro' ? 'Dinheiro' : 'Não definida'}</strong></span>}<span>Valor final<strong>{moeda(financeiro.valorFinal)}</strong></span><span>Recebido<strong>{moeda(financeiro.totalRecebido)}</strong></span><span>Saldo<strong>{moeda(financeiro.saldo)}</strong></span><span>Situacao<strong>{financeiro.situacao}</strong></span></div>
 }
 
 function moeda(valor: number) { return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }

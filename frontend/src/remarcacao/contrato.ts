@@ -12,6 +12,8 @@ export type RemarcacaoIntent = {
   readonly cicloTaxidogId: string | null
   readonly versaoConfiguracaoConsultada: number
   readonly versaoOcupacaoConsultada: number
+  readonly removerAdicionalId?: string
+  readonly adicional?: { readonly servicoId: string; readonly valor: number; readonly original: number }
 }
 
 export type RemarcacaoResposta =
@@ -25,6 +27,11 @@ export function lerRemarcacaoIntent(valor: unknown): RemarcacaoIntent | null {
   if (!registro(valor)) return null
   const modalidade = valor.modalidade === 'taxidog' ? 'taxidog' : valor.modalidade === 'sem_transporte' ? 'sem_transporte' : null
   const status = valor.statusEsperado === 'agendado' || valor.statusEsperado === 'confirmado' ? valor.statusEsperado : null
+  const adicional = valor.adicional
+  const removerAdicionalId = valor.removerAdicionalId
+  if (removerAdicionalId !== undefined && (!uuid(texto(removerAdicionalId)) || adicional !== undefined)) return null
+  if (adicional !== undefined && (!registro(adicional) || !uuid(texto(adicional.servicoId))
+    || !precoValido(adicional.valor) || !precoValido(adicional.original))) return null
   const intencao: RemarcacaoIntent = {
     chaveIdempotencia: texto(valor.chaveIdempotencia), atendimentoId: texto(valor.atendimentoId),
     grupoAgendamentoIdEsperado: texto(valor.grupoAgendamentoIdEsperado), statusEsperado: status!,
@@ -35,12 +42,15 @@ export function lerRemarcacaoIntent(valor: unknown): RemarcacaoIntent | null {
     modalidade: modalidade!, cicloTaxidogId: valor.cicloTaxidogId === null ? null : texto(valor.cicloTaxidogId),
     versaoConfiguracaoConsultada: Number(valor.versaoConfiguracaoConsultada),
     versaoOcupacaoConsultada: Number(valor.versaoOcupacaoConsultada),
+    ...(removerAdicionalId !== undefined ? { removerAdicionalId: texto(removerAdicionalId) } : {}),
+    ...(adicional ? { adicional: { servicoId: texto(adicional.servicoId), valor: Number(adicional.valor), original: Number(adicional.original) } } : {}),
   }
   return modalidade && status && validarRemarcacaoIntent(intencao) ? intencao : null
 }
 
 export function validarRemarcacaoIntent(item: RemarcacaoIntent) {
-  return uuid(item.chaveIdempotencia) && uuid(item.atendimentoId)
+  return (item.removerAdicionalId === undefined || (uuid(item.removerAdicionalId) && item.adicional === undefined))
+    && uuid(item.chaveIdempotencia) && uuid(item.atendimentoId)
     && uuid(item.grupoAgendamentoIdEsperado) && Boolean(Date.parse(item.inicioOperacionalEsperado))
     && (item.funcionarioResponsavelIdEsperado === null || uuid(item.funcionarioResponsavelIdEsperado))
     && uuid(item.funcionarioResponsavelId)
@@ -67,4 +77,7 @@ export function respostaRemarcacaoValida(valor: unknown): valor is RemarcacaoRes
 }
 function registro(v: unknown): v is Record<string, unknown> { return typeof v === 'object' && v !== null && !Array.isArray(v) }
 function texto(v: unknown) { return typeof v === 'string' ? v : '' }
+function precoValido(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 99_999_999.99 && Number(v.toFixed(2)) === v
+}
 function uuid(v: string) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v) }

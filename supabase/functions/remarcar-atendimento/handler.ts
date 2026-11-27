@@ -1,8 +1,8 @@
 import { lerRemarcacaoIntent, type RemarcacaoIntent, type RemarcacaoResposta } from '../../../frontend/src/remarcacao/contrato.ts'
 
-type Usuario = { app_metadata?: Record<string, unknown> }
+type Usuario = { id?: string; app_metadata?: Record<string, unknown> }
 type ClienteAuth = { auth: { getUser(token: string): Promise<{ data: { user: Usuario | null }; error: unknown }> } }
-export type DependenciasRemarcacao = { validarToken(token: string): Promise<Usuario | null>; remarcar(item: RemarcacaoIntent): Promise<RemarcacaoResposta> }
+export type DependenciasRemarcacao = { validarToken(token: string): Promise<Usuario | null>; remarcar(item: RemarcacaoIntent, operadorId?: string): Promise<RemarcacaoResposta> }
 
 export function criarHandlerRemarcacao(deps: DependenciasRemarcacao, origens: ReadonlySet<string>) {
   return async (request: Request) => {
@@ -19,7 +19,8 @@ export function criarHandlerRemarcacao(deps: DependenciasRemarcacao, origens: Re
     let corpo: unknown; try { corpo = await request.json() } catch { return json(400, invalida('JSON invalido.'), cors) }
     const intencao = lerRemarcacaoIntent(corpo)
     if (!intencao) return json(400, invalida('Intencao de remarcacao invalida.'), cors)
-    try { return json(200, await deps.remarcar(intencao), cors) } catch (erro) {
+    if (intencao.removerAdicionalId && !usuario.id) return json(403, { mensagem: 'Operador não identificado.' }, cors)
+    try { return json(200, await deps.remarcar(intencao, usuario.id), cors) } catch (erro) {
       console.error({ evento: 'remarcacao_edge_erro', tipo: erro instanceof Error ? erro.name : 'ErroDesconhecido', mensagem: 'Falha interna durante a remarcacao.' })
       return json(500, { mensagem: 'Nao foi possivel remarcar o atendimento.' }, cors)
     }

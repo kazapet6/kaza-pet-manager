@@ -40,7 +40,9 @@
     "test:outbox-consumidor-hml": "node --experimental-strip-types ../supabase/functions/mensageria-outbox-hml/testes.ts",
     "test:outbox-orquestracao-hml": "node --experimental-strip-types ../supabase/functions/mensageria-outbox-hml/testesOrquestradorDespachoHml.ts",
     "test:transporte-meta-hml": "node --experimental-strip-types ../supabase/functions/mensageria-outbox-hml/testesTransporteMetaHml.ts",
-    "test:adaptador-rpc-outbox-hml": "node --experimental-strip-types ../supabase/functions/mensageria-outbox-hml/testesAdaptadorRpcOutboxHml.ts"
+    "test:adaptador-rpc-outbox-hml": "node --experimental-strip-types ../supabase/functions/mensageria-outbox-hml/testesAdaptadorRpcOutboxHml.ts",
+    "test:retirada-adicional": "node --experimental-strip-types src/remarcacao/testesRetiradaAdicional.ts",
+    "test:recebimento-data-efetiva": "node --experimental-strip-types src/conclusaoAtendimento/testesRecebimentoDataEfetiva.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",

@@ -1,4 +1,4 @@
-import { ocorrenciasDoCiclo } from '../../../supabase/functions/_shared/recorrencia-contrato.ts'
+import { ocorrenciasDoCiclo, opcoesDistribuicaoHidratacao } from '../../../supabase/functions/_shared/recorrencia-contrato.ts'
 import type { ResultadoDisponibilidade, ResultadoDisponibilidadeCiclo } from '../motorDisponibilidade/tipos.ts'
 import type { PacoteServico } from '../pacotes/contrato.ts'
 
@@ -8,8 +8,12 @@ export type OcorrenciaVenda = {
   servicoIds: string[]
 }
 
-export function ocorrenciasDaVenda(servicos: readonly PacoteServico[], dataAncora: string): OcorrenciaVenda[] {
-  return ocorrenciasDoCiclo(servicos.map((item) => ({
+export function opcoesHidratacaoDaVenda(servicos: readonly PacoteServico[], dataAncora: string) {
+  return opcoesDistribuicaoHidratacao(itensRecorrentes(servicos), dataAncora)
+}
+
+function itensRecorrentes(servicos: readonly PacoteServico[]) {
+  return servicos.map((item) => ({
     servicoId: item.servicoId,
     servicoNome: item.servicoNome ?? '',
     quantidadePorCiclo: item.quantidadePorCiclo,
@@ -17,7 +21,11 @@ export function ocorrenciasDaVenda(servicos: readonly PacoteServico[], dataAncor
     intervaloUnidade: item.intervaloUnidade,
     offsetInicialQuantidade: item.offsetInicialQuantidade,
     offsetInicialUnidade: item.offsetInicialUnidade,
-  })), dataAncora).map((ocorrencia) => ({
+  }))
+}
+
+export function ocorrenciasDaVenda(servicos: readonly PacoteServico[], dataAncora: string, hidratacoes?: readonly number[]): OcorrenciaVenda[] {
+  return ocorrenciasDoCiclo(itensRecorrentes(servicos), dataAncora, hidratacoes).map((ocorrencia) => ({
     ordem: ocorrencia.ordem,
     data: ocorrencia.data,
     servicoIds: ocorrencia.itens.map((item) => item.servicoId),

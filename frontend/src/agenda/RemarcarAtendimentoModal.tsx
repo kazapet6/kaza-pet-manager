@@ -5,6 +5,8 @@ import { carregarVersoesConfirmacao } from '../confirmacao/clienteSupabase.ts'
 import { AgendaContext } from '../context/AgendaContext.tsx'
 import { ciclosAtivosNaData } from '../lib/ciclosTaxidog.ts'
 import { supabase } from '../lib/supabase.ts'
+import { calcularPrecificacao, carregarDadosPrecificacaoComCliente } from '../motorDisponibilidade/index.ts'
+import { valorValidoAtendimento } from '../confirmacao/contrato.ts'
 import { calcularDisponibilidade } from '../motorDisponibilidade/motor.ts'
 import { carregarDadosDisponibilidadeComCliente } from '../motorDisponibilidade/supabase.ts'
 import type { OpcaoDisponibilidade } from '../motorDisponibilidade/tipos.ts'
@@ -15,6 +17,10 @@ import { Calendario, Horarios } from './NovoAgendamentoModal.tsx'
 
 export default function RemarcarAtendimentoModal({ atendimento, onClose, onRemarcado }: { atendimento: AgendaDiariaAtendimento; onClose: () => void; onRemarcado: (data: string) => Promise<void> }) {
   const agenda = useContext(AgendaContext)
+  const [adicionalId, setAdicionalId] = useState('')
+  const [removerId, setRemoverId] = useState('')
+  const [originalAdicional, setOriginalAdicional] = useState<number | null>(null)
+  const [valorAdicional, setValorAdicional] = useState('')
   const [data, setData] = useState(atendimento.dataOperacional)
   const [cicloId, setCicloId] = useState(atendimento.taxidog?.cicloId ?? '')
   const [funcionarioResponsavelId, setFuncionarioResponsavelId] = useState(atendimento.funcionarioResponsavelId ?? '')
@@ -28,15 +34,17 @@ export default function RemarcarAtendimentoModal({ atendimento, onClose, onRemar
   const emAndamento = useRef(false)
   const sequenciaConsulta = useRef(0)
   const ciclos = useMemo(() => ciclosAtivosNaData(agenda.taxidogCiclos.map((ciclo) => ({ ...ciclo, diasSemana: agenda.taxidogCicloDias.filter((dia) => dia.cicloId === ciclo.id && dia.ativo).map((dia) => dia.diaSemana) })), data).sort((a, b) => a.ordem - b.ordem), [agenda.taxidogCiclos, agenda.taxidogCicloDias, data])
-  const solicitados = atendimento.servicos.filter((item) => item.origem === 'solicitado').map((item) => item.servicoId)
+  const adicionalComPrecoFixo = agenda.servicos.some(item => item.id === adicionalId && item.exigeCreditoDeServicoId)
+  const removiveis = atendimento.servicos.filter(item => item.adicionalPacote && !item.contratado && item.origem === 'solicitado')
 
-  async function consultar(novaData = data, novoCiclo = cicloId, novoFuncionarioId = funcionarioResponsavelId) {
+  async function consultar(novaData = data, novoCiclo = cicloId, novoFuncionarioId = funcionarioResponsavelId, extra = adicionalId, retirada = removerId) {
     if (!novoFuncionarioId) return setErro('Selecione o funcionário responsável.')
     if (atendimento.modalidade === 'taxidog' && !novoCiclo) return setErro('Selecione um ciclo TaxiDog.')
     const consultaAtual = ++sequenciaConsulta.current
-    setCarregando(true); setErro(null); setOpcao(null); setOpcoes([])
+    setCarregando(true); setErro(null); setOpcao(null); setOpcoes([]); setOriginalAdicional(null)
     try {
-      const entrada = { petId: atendimento.petId, servicoIds: solicitados, data: novaData,
+      const solicitados = atendimento.servicos.filter(item => item.origem === 'solicitado' && item.id !== retirada).map(item => item.servicoId)
+      const entrada = { petId: atendimento.petId, servicoIds: extra ? [...solicitados, extra] : solicitados, data: novaData,
         preferenciaFuncionario: 'obrigatorio' as const,
         funcionarioPreferidoId: novoFuncionarioId,
         tipoPlanejamento: 'normal' as const,
@@ -47,6 +55,17 @@ export default function RemarcarAtendimentoModal({ atendimento, onClose, onRemar
         carregarVersoesConfirmacao(),
       ])
       const resultado = calcularDisponibilidade(entrada, dados)
+      if (extra && resultado.opcoes.length) {
+        const servicosExistentes = new Set(atendimento.servicos.map(item => item.servicoId))
+        const servico = resultado.opcoes[0].servicos.find(item => item.id === extra)
+        if (!servico || resultado.opcoes[0].servicos.some(item => item.id !== extra && !servicosExistentes.has(item.id))) {
+          throw new Error('Este adicional depende de outro serviço que não faz parte do atendimento.')
+        }
+        const preco = await carregarDadosPrecificacaoComCliente(atendimento.petId, supabase)
+        const valor = calcularPrecificacao(preco.pet, [servico], preco.dados).valorCalculadoAtendimento
+        if (consultaAtual !== sequenciaConsulta.current) return
+        setOriginalAdicional(valor)
+      }
       if (consultaAtual !== sequenciaConsulta.current) return
       setVersoes(atuais); setOpcoes(resultado.opcoes)
       if (atendimento.modalidade === 'taxidog') setOpcao(resultado.opcoes[0] ?? null)
@@ -55,12 +74,12 @@ export default function RemarcarAtendimentoModal({ atendimento, onClose, onRemar
     finally { if (consultaAtual === sequenciaConsulta.current) setCarregando(false) }
   }
   function escolherData(valor: string) {
-    setData(valor); setRevisao(false); setOpcoes([]); setOpcao(null); setVersoes(null)
+    sequenciaConsulta.current += 1; chave.current = crypto.randomUUID(); setData(valor); setRevisao(false); setOpcoes([]); setOpcao(null); setVersoes(null); setCarregando(false)
     if (atendimento.modalidade === 'normal') void consultar(valor, '')
     else { setCicloId(''); setErro(null) }
   }
   function escolherFuncionario(valor: string) {
-    sequenciaConsulta.current += 1
+    sequenciaConsulta.current += 1; chave.current = crypto.randomUUID()
     setFuncionarioResponsavelId(valor); setRevisao(false); setOpcoes([]); setOpcao(null); setVersoes(null); setCarregando(false)
     if (!valor) return setErro('Selecione o funcionário responsável.')
     setErro(null)
@@ -69,6 +88,11 @@ export default function RemarcarAtendimentoModal({ atendimento, onClose, onRemar
   }
   async function confirmar() {
     if (!opcao || !versoes || emAndamento.current) return
+    const valor = valorAdicional.trim() ? Number(valorAdicional.replace(',', '.')) : originalAdicional
+    if (adicionalId && (originalAdicional === null || !valorValidoAtendimento(valor))) {
+      setErro('Informe um valor válido para o adicional.')
+      return
+    }
     emAndamento.current = true; setCarregando(true); setErro(null)
     const intencao: RemarcacaoIntent = {
       chaveIdempotencia: chave.current, atendimentoId: atendimento.id,
@@ -81,6 +105,8 @@ export default function RemarcarAtendimentoModal({ atendimento, onClose, onRemar
       horarioEscolhido: atendimento.modalidade === 'taxidog' ? null : opcao.horarioApresentado,
       modalidade: atendimento.modalidade === 'taxidog' ? 'taxidog' : 'sem_transporte',
       cicloTaxidogId: atendimento.modalidade === 'taxidog' ? cicloId : null,
+      ...(removerId ? { removerAdicionalId: removerId } : {}),
+      ...(adicionalId && originalAdicional !== null && valor !== null ? { adicional: { servicoId: adicionalId, original: originalAdicional, valor } } : {}),
       ...versoes,
     }
     try {
@@ -94,13 +120,36 @@ export default function RemarcarAtendimentoModal({ atendimento, onClose, onRemar
   const ciclo = ciclos.find((item) => item.id === cicloId)
   return <Modal aberto titulo={<span className="novo-agendamento-titulo"><strong>Remarcar atendimento</strong><small>{atendimento.petNome}</small></span>} onClose={carregando ? () => undefined : onClose} maxWidth="min(92vw, 1050px)" className="novo-agendamento-modal">
     <div className="remarcacao-modal">
-      {!revisao ? <><div className="novo-data-horarios"><Calendario data={data} selecionar={escolherData} /><section className="novo-horarios-painel"><label className="remarcacao-responsavel"><strong>Funcionário responsável</strong><span>O Motor validará a disponibilidade somente para a pessoa escolhida.</span><select value={funcionarioResponsavelId} onChange={(evento) => escolherFuncionario(evento.target.value)}><option value="">Selecione um funcionário</option>{agenda.funcionarios.filter((item) => item.ativo).map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label><header><span>{atendimento.modalidade === 'taxidog' ? 'Ciclo TaxiDog' : 'Horarios disponiveis'}</span><strong>{dataCurta(data)}</strong></header>
-        {atendimento.modalidade === 'taxidog' ? <div className="novo-ciclos"><div>{ciclos.map((item) => <button type="button" className={cicloId === item.id ? 'selecionada' : ''} key={item.id} onClick={() => { setCicloId(item.id); void consultar(data, item.id) }}><strong>{item.nome}</strong><small>Coleta {item.coletaInicio}–{item.coletaFim}</small></button>)}</div></div>
-          : carregando ? <p>Consultando disponibilidade...</p> : <Horarios opcoes={opcoes} selecionada={opcao} selecionar={setOpcao} />}
+      {!revisao ? <><div className="novo-data-horarios"><Calendario data={data} selecionar={escolherData} /><section className="novo-horarios-painel">
+{atendimento.vinculoContrato && <label className="remarcacao-responsavel"><strong>Serviço adicional do pacote</strong>
+  <select value={adicionalId} disabled={carregando} onChange={evento => {
+    const extra = evento.target.value
+    sequenciaConsulta.current += 1
+    setAdicionalId(extra); setRemoverId(''); setValorAdicional(''); setOriginalAdicional(null); setOpcao(null); setOpcoes([]); setVersoes(null)
+    chave.current = crypto.randomUUID()
+    if (funcionarioResponsavelId && (atendimento.modalidade === 'normal' || cicloId)) void consultar(data, cicloId, funcionarioResponsavelId, extra, '')
+  }}><option value="">Sem novo adicional</option>{agenda.servicos.filter(item => item.ativo && (!item.exigeCreditoDeServicoId || atendimento.servicos.some(servico => servico.contratado && servico.servicoId === item.exigeCreditoDeServicoId)) && !atendimento.servicos.some(servico => servico.servicoId === item.id))
+    .map(item => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label>}
+{atendimento.vinculoContrato && removiveis.length > 0 && <label className="remarcacao-responsavel"><strong>Retirar adicional não pago</strong><span>O horário será recalculado. Se houver pagamento de adicional, a retirada será bloqueada.</span>
+  <select value={removerId} disabled={carregando} onChange={evento => {
+    const retirada = evento.target.value
+    sequenciaConsulta.current += 1; chave.current = crypto.randomUUID()
+    setRemoverId(retirada); setAdicionalId(''); setValorAdicional(''); setOriginalAdicional(null); setOpcao(null); setOpcoes([]); setVersoes(null)
+    if (funcionarioResponsavelId && (atendimento.modalidade === 'normal' || cicloId)) void consultar(data, cicloId, funcionarioResponsavelId, '', retirada)
+  }}><option value="">Não retirar</option>{removiveis.map(item => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label>}
+<label className="remarcacao-responsavel"><strong>Funcionário responsável</strong><span>O Motor validará a disponibilidade somente para a pessoa escolhida.</span><select value={funcionarioResponsavelId} onChange={(evento) => escolherFuncionario(evento.target.value)}><option value="">Selecione um funcionário</option>{agenda.funcionarios.filter((item) => item.ativo).map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label><header><span>{atendimento.modalidade === 'taxidog' ? 'Ciclo TaxiDog' : 'Horarios disponiveis'}</span><strong>{dataCurta(data)}</strong></header>
+        {atendimento.modalidade === 'taxidog' ? <div className="novo-ciclos"><div>{ciclos.map((item) => <button type="button" className={cicloId === item.id ? 'selecionada' : ''} key={item.id} onClick={() => { chave.current = crypto.randomUUID(); setCicloId(item.id); void consultar(data, item.id) }}><strong>{item.nome}</strong><small>Coleta {item.coletaInicio}–{item.coletaFim}</small></button>)}</div></div>
+          : carregando ? <p>Consultando disponibilidade...</p> : <Horarios opcoes={opcoes} selecionada={opcao} selecionar={item => { chave.current = crypto.randomUUID(); setOpcao(item) }} />}
         {erro && <p className="novo-agendamento-erro" role="alert">{erro}</p>}</section></div>
         <footer className="novo-agendamento-acoes"><Button variant="secondary" onClick={onClose}>Cancelar</Button><div>{atendimento.modalidade === 'taxidog' && <Button variant="secondary" disabled={!cicloId || !funcionarioResponsavelId || carregando} onClick={() => void consultar()}>Consultar ciclo</Button>}<Button disabled={!funcionarioResponsavelId || !opcao || !versoes} onClick={() => setRevisao(true)}>Revisar remarcacao</Button></div></footer></>
-        : <><section className="remarcacao-revisao"><h3>Revisar remarcacao</h3><p><strong>{atendimento.petNome}</strong> · {atendimento.servicos.map((item) => item.nome).join(' + ')}</p><p>Funcionário responsável: <strong>{agenda.funcionarios.find((item) => item.id === funcionarioResponsavelId)?.nome}</strong></p><div><article><small>DE</small><strong>{dataCurta(atendimento.dataOperacional)} · {atendimento.modalidade === 'taxidog' ? atendimento.taxidog?.cicloNome : hora(atendimento.inicio)}</strong></article><span>→</span><article><small>PARA</small><strong>{dataCurta(data)} · {atendimento.modalidade === 'taxidog' ? ciclo?.nome : opcao ? minutos(opcao.horarioApresentado) : ''}</strong></article></div>{erro && <p className="novo-agendamento-erro" role="alert">{erro}</p>}</section>
-        <footer className="novo-agendamento-acoes"><Button variant="secondary" disabled={carregando} onClick={() => setRevisao(false)}>Voltar</Button><Button disabled={carregando} onClick={() => void confirmar()}>{carregando ? 'Remarcando...' : 'Confirmar remarcacao'}</Button></footer></>}
+        : <><section className="remarcacao-revisao"><h3>{removerId ? 'Revisar retirada de adicional' : adicionalId ? 'Revisar inclusão de adicional' : 'Revisar remarcação'}</h3><p><strong>{atendimento.petNome}</strong> · {atendimento.servicos.map((item) => item.nome).join(' + ')}</p>
+{removerId && <p><strong>Retirar: {removiveis.find(item => item.id === removerId)?.nome}</strong>. O banho do pacote e seus créditos permanecem.</p>}
+{adicionalId && originalAdicional !== null && <p><strong>{agenda.servicos.find(item => item.id === adicionalId)?.nome}</strong>
+  {" · Valor original: "}{originalAdicional.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+  <label>Valor final do adicional <input inputMode="decimal" placeholder={originalAdicional.toFixed(2)} value={valorAdicional}
+    disabled={carregando || adicionalComPrecoFixo} onChange={evento => { setValorAdicional(evento.target.value); chave.current = crypto.randomUUID() }} /></label>
+</p>}<p>Funcionário responsável: <strong>{agenda.funcionarios.find((item) => item.id === funcionarioResponsavelId)?.nome}</strong></p><div><article><small>DE</small><strong>{dataCurta(atendimento.dataOperacional)} · {atendimento.modalidade === 'taxidog' ? atendimento.taxidog?.cicloNome : hora(atendimento.inicio)}</strong></article><span>→</span><article><small>PARA</small><strong>{dataCurta(data)} · {atendimento.modalidade === 'taxidog' ? ciclo?.nome : opcao ? minutos(opcao.horarioApresentado) : ''}</strong></article></div>{erro && <p className="novo-agendamento-erro" role="alert">{erro}</p>}</section>
+        <footer className="novo-agendamento-acoes"><Button variant="secondary" disabled={carregando} onClick={() => setRevisao(false)}>Voltar</Button><Button disabled={carregando} onClick={() => void confirmar()}>{carregando ? 'Remarcando...' : removerId ? 'Retirar adicional' : adicionalId ? 'Incluir adicional' : 'Confirmar remarcacao'}</Button></footer></>}
     </div>
   </Modal>
 }

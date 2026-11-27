@@ -4,6 +4,7 @@ import type { User } from '@supabase/supabase-js'
 import './App.css'
 import Dashboard from './pages/Dashboard'
 import Agenda from './pages/Agenda'
+import IconeAgenda from './agenda/IconeAgenda'
 import Clientes from './pages/Clientes'
 import Pets from './pages/Pets'
 import Servicos from './pages/Servicos'
@@ -17,6 +18,7 @@ import Importacao from './importacao/Importacao'
 import { supabase } from './lib/supabase'
 import { classificarUsuarioInterno, type EstadoAutenticacao } from './auth/interna'
 import { SistemaProvider } from './context/SistemaProvider'
+import { AgendaProvider } from './context/AgendaProvider'
 import WhatsAppHmlPiloto from './whatsappHml/WhatsAppHmlPiloto'
 import MensageriaCentral from './mensageria/MensageriaCentral'
 import { WHATSAPP_HML_HABILITADO } from './whatsappHml/configuracao'
@@ -421,19 +423,17 @@ function App() {
         </div>
       </aside>
 
-      <main className="dashboard">
+      <main className={paginaAtual === 'agenda' ? 'dashboard dashboard-agenda' : 'dashboard'}>
         <header className="topbar">
-          <div>
-            <p className="breadcrumb">
-              Painel • {nomePagina}
-            </p>
-
-            <h1>Olá, {identidadeUsuario}!</h1>
-
-            <p className="date-label">
-              {dataFormatada}
-            </p>
-          </div>
+          {paginaAtual === 'agenda' ? (
+            <h1 className="kpm-agenda-titulo"><IconeAgenda nome="calendario" />Agenda</h1>
+          ) : (
+            <div>
+              <p className="breadcrumb">Painel • {nomePagina}</p>
+              <h1>Olá, {identidadeUsuario}!</h1>
+              <p className="date-label">{dataFormatada}</p>
+            </div>
+          )}
 
           <div className="profile-card">
             <div className="profile-avatar">
@@ -447,9 +447,11 @@ function App() {
           </div>
         </header>
 
-        <SistemaProvider key={usuarioAtual!.id}>
-          {renderizarPagina()}
-        </SistemaProvider>
+        <AgendaProvider key={usuarioAtual!.id}>
+          <SistemaProvider>
+            {renderizarPagina()}
+          </SistemaProvider>
+        </AgendaProvider>
       </main>
     </div>
   )

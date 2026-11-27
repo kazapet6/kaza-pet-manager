@@ -17,5 +17,5 @@ const origens = criarOrigensPermitidas(Deno.env.get('ALLOWED_ORIGINS'))
 
 Deno.serve(criarHandlerDadosConclusao({
   validarToken: validador(auth),
-  executar: (intencao) => executarDadosConclusaoBackend(intencao, admin),
+  executar: (intencao, usuarioId) => executarDadosConclusaoBackend(intencao, admin, usuarioId),
 }, origens))

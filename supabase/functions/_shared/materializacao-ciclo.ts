@@ -30,6 +30,70 @@ export async function materializarCiclo(
   usuarioId: string,
   admin: SupabaseClient,
 ): Promise<ResultadoMaterializacaoCiclo> {
+  const { data: claimRaw, error: erroClaim } = await admin.rpc('assumir_materializacao_ciclo_042', {
+    p_ciclo_id: cicloId,
+    p_usuario_id: usuarioId,
+  })
+  if (erroClaim) {
+    console.error({ evento: 'materializacao_claim_erro', cicloId, codigo: texto(erroClaim.code) || 'erro' })
+    return falhaErro('MATERIALIZACAO_INDISPONIVEL', 'Não foi possível iniciar a preparação dos atendimentos.', cicloId)
+  }
+  const claim = registro(claimRaw)
+  if (claim.status === 'materializado' && Array.isArray(claim.atendimentos)) {
+    return {
+      status: 'materializado', cicloId,
+      atendimentos: claim.atendimentos.map((item: unknown) => ({
+        ocorrenciaId: texto(registro(item).ocorrenciaId),
+        atendimentoId: texto(registro(item).atendimentoId),
+      })),
+      reutilizado: true,
+    }
+  }
+  if (claim.status === 'materializando') {
+    return {
+      status: 'materializando', codigo: 'MATERIALIZACAO_EM_ANDAMENTO', cicloId,
+      mensagem: texto(claim.mensagem) || 'Os atendimentos deste Ciclo já estão sendo preparados.',
+    }
+  }
+  if (claim.status !== 'assumida' || !texto(claim.token)) {
+    return {
+      status: claim.status === 'conflito' ? 'conflito' : claim.status === 'invalido' ? 'invalido' : 'erro',
+      codigo: texto(claim.codigo) || 'MATERIALIZACAO_NAO_INICIADA',
+      mensagem: texto(claim.mensagem) || 'Não foi possível iniciar a preparação dos atendimentos.',
+      cicloId,
+    }
+  }
+  const token = texto(claim.token)
+  try {
+    const resultado = await executarMaterializacaoAssumida(cicloId, usuarioId, token, admin)
+    if (resultado.status === 'materializado' || resultado.status === 'erro' || resultado.status === 'materializando') return resultado
+    const registrado = await registrarErroMaterializacao(
+      cicloId, token, resultado.codigo, resultado.mensagem, admin,
+    )
+    return { ...registrado, ...(resultado.campos ? { campos: resultado.campos } : {}) }
+  } catch (erro) {
+    console.error({
+      evento: 'materializacao_execucao_erro', cicloId,
+      codigo: erro instanceof ErroCadastroPetIncompleto ? erro.codigo : 'MATERIALIZACAO_INDISPONIVEL',
+    })
+    return registrarErroMaterializacao(
+      cicloId,
+      token,
+      erro instanceof ErroCadastroPetIncompleto ? erro.codigo : 'MATERIALIZACAO_INDISPONIVEL',
+      erro instanceof ErroCadastroPetIncompleto
+        ? erro.message
+        : 'Não foi possível preparar os atendimentos. Tente novamente.',
+      admin,
+    )
+  }
+}
+
+async function executarMaterializacaoAssumida(
+  cicloId: string,
+  usuarioId: string,
+  token: string,
+  admin: SupabaseClient,
+): Promise<ResultadoMaterializacaoCiclo> {
   const [{ data: ciclo, error: erroCiclo }, { data: ocorrenciasRaw, error: erroOcorrencias }, { data: itensRaw, error: erroItens }] = await Promise.all([
     executarLeituraMaterializacao(
       () => admin.from('contrato_ciclos').select('id,contrato_id,estado,funcionario_responsavel_padrao_id,modalidade_transporte_pretendida,taxidog_ciclo_id_pretendido,contratos(pet_id)').eq('id', cicloId).single(),
@@ -126,7 +190,12 @@ export async function materializarCiclo(
     }
     materializacoes.push({ ocorrenciaId: ocorrencia.id, plano })
   }
-  const { data, error } = await admin.rpc('materializar_ciclo_contrato', { p_ciclo_id: cicloId, p_usuario_id: usuarioId, p_materializacoes: materializacoes })
+  const { data, error } = await admin.rpc('materializar_ciclo_contrato', {
+    p_ciclo_id: cicloId,
+    p_usuario_id: usuarioId,
+    p_materializacoes: materializacoes,
+    p_token: token,
+  })
   if (error) throw new Error(`Materialização transacional indisponível: ${texto(error.code) || 'erro'}.`)
   if (!registro(data)) throw new Error('Resposta inválida da materialização do Ciclo.')
   if (data.status === 'materializado' && Array.isArray(data.atendimentos)) {
@@ -139,7 +208,10 @@ export async function materializarCiclo(
       ocorrencias: materializacoes.map((item) => texto(item.ocorrenciaId)),
     })
   }
-  return falha(data.status === 'conflito' ? 'conflito' : 'invalido', texto(data.codigo) || 'MATERIALIZACAO_FALHOU', texto(data.mensagem) || 'Não foi possível criar a Agenda do Ciclo.', cicloId)
+  if (data.status === 'erro') {
+    return falhaErro(texto(data.codigo) || 'MATERIALIZACAO_FALHOU', texto(data.mensagem) || 'Não foi possível criar os atendimentos do Ciclo.', cicloId)
+  }
+  return falha(data.status === 'conflito' ? 'conflito' : 'invalido', texto(data.codigo) || 'MATERIALIZACAO_FALHOU', texto(data.mensagem) || 'Não foi possível criar os atendimentos do Ciclo.', cicloId)
 }
 
 async function uuidMaterializacao(ocorrenciaId: string) {
@@ -150,6 +222,37 @@ async function uuidMaterializacao(ocorrenciaId: string) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 function falha(status: 'invalido' | 'conflito', codigo: string, mensagem: string, cicloId: string, campos?: readonly string[]): ResultadoMaterializacaoCiclo { return { status, codigo, mensagem, cicloId, ...(campos ? { campos } : {}) } }
+function falhaErro(codigo: string, mensagem: string, cicloId: string): ResultadoMaterializacaoCiclo { return { status: 'erro', codigo, mensagem, cicloId } }
+async function registrarErroMaterializacao(
+  cicloId: string,
+  token: string,
+  codigo: string,
+  mensagem: string,
+  admin: SupabaseClient,
+): Promise<ResultadoMaterializacaoCiclo> {
+  const { data, error } = await admin.rpc('registrar_erro_materializacao_ciclo_042', {
+    p_ciclo_id: cicloId,
+    p_token: token,
+    p_codigo: codigo,
+    p_mensagem: mensagem,
+  })
+  if (error) {
+    console.error({ evento: 'materializacao_registro_erro', cicloId, codigo: texto(error.code) || 'erro' })
+    return falhaErro('MATERIALIZACAO_INDISPONIVEL', 'Não foi possível preparar os atendimentos. Tente novamente.', cicloId)
+  }
+  const resposta = registro(data)
+  if (resposta.status === 'conflito' && resposta.codigo === 'LEASE_MATERIALIZACAO_INVALIDO') {
+    return {
+      status: 'materializando', codigo: 'MATERIALIZACAO_EM_ANDAMENTO', cicloId,
+      mensagem: 'Outra tentativa já está preparando os atendimentos deste Ciclo.',
+    }
+  }
+  return falhaErro(
+    texto(resposta.codigo) || codigo,
+    texto(resposta.mensagem) || mensagem,
+    cicloId,
+  )
+}
 function relacao(valor: unknown): Linha { return Array.isArray(valor) ? registro(valor[0]) : registro(valor) }
 function registro(valor: unknown): Linha { return valor && typeof valor === 'object' && !Array.isArray(valor) ? valor as Linha : {} }
 function texto(valor: unknown) { return valor === null || valor === undefined ? '' : String(valor) }

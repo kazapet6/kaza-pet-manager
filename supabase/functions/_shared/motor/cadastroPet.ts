@@ -12,19 +12,22 @@ export class ErroCadastroPetIncompleto extends Error {
   }
 }
 
-export function camposNecessariosDisponibilidade(pet:PetMotor,servicos:ServicoResolvido[],dados:DadosDisponibilidade):CampoCadastroPet[]{
+export function camposNecessariosDisponibilidade(pet:PetMotor,servicos:ServicoResolvido[],dados:Pick<DadosDisponibilidade,'elegibilidade'|'modificadoresDuracao'|'etapas'|'recursosEtapas'>):CampoCadastroPet[]{
   const ids=new Set(servicos.map((s)=>s.id))
   const necessarios=new Set<CampoCadastroPet>()
   if(dados.elegibilidade.especies.some((x)=>x.ativo&&ids.has(x.servicoId)))necessarios.add('especie')
   if(dados.elegibilidade.portes.some((x)=>x.ativo&&ids.has(x.servicoId)))necessarios.add('porte')
   if(dados.elegibilidade.racasBloqueadas.some((x)=>x.ativo&&ids.has(x.servicoId)))necessarios.add('raca')
   for(const regra of dados.modificadoresDuracao.filter((x)=>x.ativo&&ids.has(x.servicoId)))necessarios.add(regra.criterio)
-  const etapas=new Set(dados.etapas.filter((x)=>x.ativo&&ids.has(x.servicoId)).map((x)=>x.id))
+  const etapasServico=dados.etapas.filter((x)=>x.ativo&&ids.has(x.servicoId))
+  if(etapasServico.some((x)=>x.especieAplicavel))necessarios.add('especie')
+  if(etapasServico.some((x)=>x.porteAplicavel))necessarios.add('porte')
+  const etapas=new Set(etapasServico.filter((x)=>(!x.especieAplicavel||x.especieAplicavel===pet.especie)&&(!x.porteAplicavel||x.porteAplicavel===pet.porte)).map((x)=>x.id))
   if(dados.recursosEtapas.some((x)=>x.ativo&&x.tipo==='equipamento'&&etapas.has(x.servicoEtapaId))){necessarios.add('porte');necessarios.add('sexo')}
   return ausentes(pet,necessarios)
 }
 
-export function camposNecessariosPrecificacao(pet:PetMotor,servicos:ServicoResolvido[],dados:DadosPrecificacao):CampoCadastroPet[]{
+export function camposNecessariosPrecificacao(pet:PetMotor,servicos:ServicoResolvido[],dados:Pick<DadosPrecificacao,'regrasPreco'>):CampoCadastroPet[]{
   const ids=new Set(servicos.map((s)=>s.id)),necessarios=new Set<CampoCadastroPet>()
   for(const regra of dados.regrasPreco.filter((x)=>x.ativo&&ids.has(x.servicoId)))necessarios.add(regra.criterio)
   return ausentes(pet,necessarios)

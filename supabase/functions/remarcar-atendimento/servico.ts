@@ -3,9 +3,12 @@ import { calcularDisponibilidade, calcularDisponibilidadeNoHorario } from '../..
 import { carregarDadosDisponibilidadeComCliente } from '../../../frontend/src/motorDisponibilidade/supabase.ts'
 import { calcularHashRemarcacao, type RemarcacaoIntent, type RemarcacaoResposta } from '../../../frontend/src/remarcacao/contrato.ts'
 import { montarPlanoRemarcacaoRpc } from '../../../frontend/src/remarcacao/plano.ts'
+import { carregarDadosPrecificacaoComCliente } from '../_shared/motor/precificacaoSupabase.ts'
+import { calcularPrecificacao } from '../_shared/motor/precificacao.ts'
+import { ErroCadastroPetIncompleto } from '../_shared/motor/cadastroPet.ts'
 
 type Linha = Record<string, unknown>
-export async function remarcarComBackendConfiavel(intencao: RemarcacaoIntent, admin: SupabaseClient): Promise<RemarcacaoResposta> {
+export async function remarcarComBackendConfiavel(intencao: RemarcacaoIntent, admin: SupabaseClient, operadorId?: string): Promise<RemarcacaoResposta> {
   const hash = await calcularHashRemarcacao(intencao)
   const idempotencia = await admin.from('atendimento_remarcacoes').select('hash_requisicao, resposta').eq('chave_idempotencia', intencao.chaveIdempotencia).maybeSingle()
   if (idempotencia.error) throw idempotencia.error
@@ -36,10 +39,16 @@ export async function remarcarComBackendConfiavel(intencao: RemarcacaoIntent, ad
   }
   const modalidadeAtual = String(grupo.modalidade) === 'taxidog' ? 'taxidog' : 'sem_transporte'
   if (modalidadeAtual !== intencao.modalidade) return invalida('A modalidade original deve ser preservada.')
-  const servicosResposta = await admin.from('atendimento_servicos').select('id, servico_id, origem').eq('atendimento_id', intencao.atendimentoId)
+  const servicosResposta = await admin.from('atendimento_servicos').select('id, servico_id, origem, adicional_pacote').eq('atendimento_id', intencao.atendimentoId).eq('ativo', true)
   if (servicosResposta.error) throw servicosResposta.error
   const servicos = (servicosResposta.data ?? []) as unknown as Linha[]
-  const solicitados = servicos.filter((item) => item.origem === 'solicitado').map((item) => String(item.servico_id))
+  const removido = intencao.removerAdicionalId ? servicos.find(item => item.id === intencao.removerAdicionalId && item.adicional_pacote === true && item.origem === 'solicitado') : null
+  if (intencao.removerAdicionalId && (!removido || !operadorId)) return invalida('Escolha um adicional válido e não pago.')
+  const restantes = servicos.filter(item => item.id !== removido?.id)
+  const solicitados = restantes.filter((item) => item.origem === 'solicitado').map((item) => String(item.servico_id))
+  const adicional = intencao.adicional
+  if (adicional && servicos.some(item => item.servico_id === adicional.servicoId)) return invalida('Esse serviço já está no atendimento.')
+  if (adicional) solicitados.push(adicional.servicoId)
   const entrada = { petId: String(atendimento.pet_id), servicoIds: solicitados, data: intencao.data,
     preferenciaFuncionario: 'obrigatorio' as const,
     funcionarioPreferidoId: intencao.funcionarioResponsavelId,
@@ -51,10 +60,32 @@ export async function remarcarComBackendConfiavel(intencao: RemarcacaoIntent, ad
   }
   const opcao = resultado.opcoes[0]
   if (!opcao) return { status: 'disponibilidade_alterada', codigo: intencao.modalidade === 'taxidog' ? 'CICLO_TAXIDOG_INVALIDO' : 'HORARIO_INDISPONIVEL', mensagem: resultado.motivos[0] ?? 'A nova programacao nao esta mais disponivel.', versaoOcupacaoAtual: versaoOcupacao }
-  const mapa = new Map(servicos.map((item) => [String(item.servico_id), String(item.id)]))
+  const mapa = new Map(restantes.map((item) => [String(item.servico_id), String(item.id)]))
+  let dadosAdicional: Record<string, unknown> | null = null
+  if (adicional) {
+    const extra = opcao.servicos.find(item => item.id === adicional.servicoId && item.origem === 'solicitado')
+    if (!extra) return invalida('O serviço adicional não está disponível neste atendimento.')
+    const dadosPreco = await carregarDadosPrecificacaoComCliente(entrada.petId, admin)
+    try {
+      const preco = calcularPrecificacao(dadosPreco.pet, [extra], dadosPreco.dados).servicos[0]
+      if (preco.valorCalculado !== adicional.original) return invalida('O valor original do adicional mudou. Consulte novamente.')
+      const id = crypto.randomUUID()
+      mapa.set(extra.id, id)
+      dadosAdicional = { id, servicoId: extra.id, nome: preco.servicoNome, original: preco.valorCalculado,
+        precoBase: preco.precoBaseSnapshot, valor: adicional.valor, acrescimos: preco.acrescimos }
+    } catch (erro) {
+      if (erro instanceof ErroCadastroPetIncompleto) return { status: 'invalido', codigo: 'CADASTRO_PET_INCOMPLETO', mensagem: erro.message, campos: erro.campos }
+      throw erro
+    }
+  }
   if (opcao.servicos.length !== mapa.size || opcao.servicos.some((item) => !mapa.has(item.id))) return invalida('Os servicos atuais nao correspondem ao plano recalculado.')
   const plano = montarPlanoRemarcacaoRpc(intencao, dados, opcao, mapa, hash)
-  const { data, error } = await admin.rpc('remarcar_atendimento_transacional', { p_plano: plano })
+  const { data, error } = dadosAdicional
+    ? await admin.rpc('incluir_adicional_pacote_049', { p_plano: plano, p_adicional: dadosAdicional, p_servicos_esperados: servicos.map(item => item.id) })
+    : removido
+      ? await admin.rpc('remover_adicional_pacote_058', { p_plano: plano, p_adicional_id: removido.id, p_servicos_esperados: servicos.map(item => item.id), p_operador: operadorId })
+      : await admin.rpc('remarcar_atendimento_transacional', { p_plano: plano })
+  if (error?.code === 'P0054') return invalida(error.message)
   if (error) { console.error({ evento: 'remarcacao_rpc_erro', codigo: error.code, mensagem: error.message, details: error.details, hint: error.hint, chaveIdempotencia: intencao.chaveIdempotencia, atendimentoId: intencao.atendimentoId }); throw error }
   return traduzir(data, opcao, intencao.modalidade)
 }

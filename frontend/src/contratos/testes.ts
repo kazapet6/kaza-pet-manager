@@ -1,4 +1,4 @@
-import assert from'node:assert/strict';import{readFileSync}from'node:fs';import{lerIntencaoVendaContrato,resumoAjuste,validarDiaAncora}from'./contrato.ts';import{datas,ocorrenciasDoCiclo,validarDistribuicaoContrato}from'../../../supabase/functions/_shared/recorrencia-contrato.ts';import{validarJanelaTaxidogContrato}from'../../../supabase/functions/_shared/contrato-venda.ts';import{criarHandlerVendaContrato}from'../../../supabase/functions/vender-contrato/handler.ts';import{consolidarDisponibilidadeSemTransporte,consolidarDisponibilidadeTaxiDog,frequenciaDaRotina,ocorrenciasDaVenda}from'./rotinaVenda.ts'
+import assert from'node:assert/strict';import{readFileSync}from'node:fs';import{lerIntencaoVendaContrato,resumoAjuste,validarDiaAncora}from'./contrato.ts';import{datas,ocorrenciasDoCiclo,validarDistribuicaoContrato,validarHidratacoes}from'../../../supabase/functions/_shared/recorrencia-contrato.ts';import{validarJanelaTaxidogContrato}from'../../../supabase/functions/_shared/contrato-venda.ts';import{criarHandlerVendaContrato}from'../../../supabase/functions/vender-contrato/handler.ts';import{consolidarDisponibilidadeSemTransporte,consolidarDisponibilidadeTaxiDog,frequenciaDaRotina,ocorrenciasDaVenda}from'./rotinaVenda.ts'
 import { calcularComparacaoPacoteCompartilhada } from '../../../supabase/functions/_shared/precificacao.ts'
 import type { CicloTaxidogMotor, OpcaoDisponibilidade, ResultadoDisponibilidade } from '../motorDisponibilidade/tipos.ts'
 let n=0;async function t(nome:string,f:()=>void|Promise<void>){await f();n++;console.log(`✓ ${nome}`)}const sql=readFileSync(new URL('../../../banco/029_venda_autoritativa_contratos.sql',import.meta.url),'utf8'),sql28=readFileSync(new URL('../../../banco/028_contratos_snapshots_comerciais.sql',import.meta.url),'utf8'),sql30=readFileSync(new URL('../../../banco/030_desconto_percentual_pacotes.sql',import.meta.url),'utf8'),sql33=readFileSync(new URL('../../../banco/033_funcionario_responsavel_atendimento.sql',import.meta.url),'utf8'),edge=readFileSync(new URL('../../../supabase/functions/vender-contrato/servico.ts',import.meta.url),'utf8'),ui=readFileSync(new URL('./Contratos.tsx',import.meta.url),'utf8'),id='11111111-1111-4111-8111-111111111111',base={chaveIdempotencia:id,clienteId:'CLI-1',petId:'PET-000011',pacoteId:id,pacoteVersaoEsperada:2,valorContratado:0,motivoAjusteValor:'teste',dataAncora:'2026-08-28',diaSemanaFixo:5,horarioFixo:'09:00',modalidadeTransporte:'sem_transporte',taxidogCicloId:null,funcionarioResponsavelId:id,renovacaoAutomatica:true}
@@ -27,9 +27,9 @@ await t('C18a Agenda e revisão é progressiva e deriva o dia da data',()=>{for(
 await t('C18b Sem transporte consulta automaticamente o Motor autoritativo',()=>{assert.match(ui,/transporte==="sem_transporte"/);assert.match(ui,/consolidarDisponibilidadeSemTransporte\(resultados\)/);assert.match(ui,/void consultarRotina\(\)/);assert.match(ui,/ocorrencias\.map\(async ocorrencia/)})
 await t('C18c mudança anterior invalida apenas a disponibilidade dependente',()=>{assert.match(ui,/function limparDisponibilidade\(\)/);assert.match(ui,/setOpcao\(null\)/);assert.match(ui,/setDisponibilidade\(null\)/);assert.doesNotMatch(ui,/function limparDisponibilidade[^}]*setClienteId/);assert.doesNotMatch(ui,/function limparDisponibilidade[^}]*setPetId/);assert.doesNotMatch(ui,/function limparDisponibilidade[^}]*setPacote/)})
 await t('C18d desconto de 20 por cento preserva preço unitário e quantidade',()=>{const r=calcularComparacaoPacoteCompartilhada({id,versao:1,servicos:[{id,servicoId:'banho',servicoNome:'Banho',quantidadePorCiclo:4,descontoPercentual:20}]},{racaId:'r',racaNome:'Teste',porte:'pequeno',pelagem:'curta',peso:null,temperamento:'calmo'},{servicos:[{servicoId:'banho',servicoNome:'Banho',origem:'solicitado',ordem:1,paisDiretos:[],precoBaseSnapshot:50,acrescimos:[],valorCalculado:50}],valorCalculadoAtendimento:50});assert.equal(r.linhas[0].precoPacoteUnitario,40);assert.equal(r.linhas[0].totalPacote,160);assert.equal(r.linhas[0].quantidadePorCiclo,4)})
-await t('C18e TaxiDog usa configuração oficial e linguagem operacional',()=>{for(const x of['Horário do TaxiDog','Coleta entre','Horário previsto do atendimento','linguagem="operacional"'])assert.ok(ui.includes(x));for(const x of['Janela logística TaxiDog','Disponibilidade da janela','Execução calculada','Usar uma janela logística oficial'])assert.ok(!ui.includes(x));assert.match(ui,/c\.coletaInicio\.slice\(0,5\)/);assert.match(ui,/c\.coletaFim\.slice\(0,5\)/);assert.doesNotMatch(ui,/08:00|09:00|13:00|14:00/);assert.match(agendaUi,/operacional\?'Indisponível para esta coleta'/);assert.match(agendaUi,/disabled=\{!habilitado\}/);assert.match(agendaUi,/sem-capacidade/);assert.match(agendaUi,/fora-janela/)})
+await t('C18e TaxiDog usa configuração oficial e linguagem operacional',()=>{for(const x of['Horário do TaxiDog','Coleta entre','Janela de coleta e atendimento previsto','linguagem="operacional"'])assert.ok(ui.includes(x));for(const x of['Janela logística TaxiDog','Disponibilidade da janela','Execução calculada','Usar uma janela logística oficial'])assert.ok(!ui.includes(x));assert.match(ui,/c\.coletaInicio\.slice\(0,5\)/);assert.match(ui,/c\.coletaFim\.slice\(0,5\)/);assert.doesNotMatch(ui,/08:00|09:00|13:00|14:00/);assert.match(agendaUi,/operacional\?'Indisponível para esta coleta'/);assert.match(agendaUi,/disabled=\{!habilitado\}/);assert.match(agendaUi,/sem-capacidade/);assert.match(agendaUi,/fora-janela/)})
 await t('C18f fluxo revela renovação e revisão somente após opção válida',()=>{assert.match(ui,/\{opcao&&<section className="venda-decisao pronta"/);assert.match(ui,/\{opcao&&<aside className="sale-review"/);assert.match(ui,/disabled=\{salvando\|\|!opcao\|\|!funcionarioResponsavelId\|\|Boolean\(materializacaoPendente\)\}/);assert.match(ui,/transporte==="taxidog"&&cicloTaxidogId&&funcionarioResponsavelId&&<section/);assert.match(ui,/transporte==="sem_transporte"&&funcionarioResponsavelId&&<section/)})
-await t('C18g revisão separa coleta, atendimento e renovação sem termos técnicos',()=>{for(const x of['Data de início','Dia fixo','Atendimento previsto','Renovação automática'])assert.ok(ui.includes(x));assert.match(ui,/nomeTaxidogOperacional/);assert.match(ui,/coletaInicio\.slice\(0,5\)/);assert.match(ui,/horaDaMinuto\(opcao\.inicioOperacional\)/)})
+await t('C18g revisão separa coleta, atendimento e renovação sem termos técnicos',()=>{for(const x of['Data de início','Dia fixo','Início previsto do primeiro atendimento','Conclusão prevista','Renovação automática'])assert.ok(ui.includes(x));assert.match(ui,/nomeTaxidogOperacional/);assert.match(ui,/coletaInicio\.slice\(0,5\)/);assert.match(ui,/horaDaMinuto\(opcao\.inicioOperacional\)/)})
 await t('C19 ciclo comercial não segue mês civil',()=>{const itens=[{servicoId:'b',servicoNome:'Banho',quantidadePorCiclo:4,intervaloQuantidade:1,intervaloUnidade:'semana' as const,offsetInicialQuantidade:0,offsetInicialUnidade:'dia' as const}];const os=ocorrenciasDoCiclo(itens,'2026-01-02');assert.equal(os.length,4);assert.deepEqual(os.map(o=>o.data),['2026-01-02','2026-01-09','2026-01-16','2026-01-23'])})
 await t('C20 dependência coincide sem expansão comercial',()=>{const itens=[{servicoId:'b',servicoNome:'Banho',quantidadePorCiclo:4,intervaloQuantidade:1,intervaloUnidade:'semana' as const,offsetInicialQuantidade:0,offsetInicialUnidade:'dia' as const},{servicoId:'h',servicoNome:'Hidratação',quantidadePorCiclo:2,intervaloQuantidade:2,intervaloUnidade:'semana' as const,offsetInicialQuantidade:0,offsetInicialUnidade:'dia' as const}];const os=ocorrenciasDoCiclo(itens,'2026-01-02');assert.deepEqual(os.map(o=>o.itens.map(i=>i.servicoId)),[['b','h'],['b'],['b','h'],['b']])})
 await t('C21 renovação automática cria pendência sem reserva quando Motor reprova',()=>{assert.match(sql30,/renovar_ciclo_contrato/);assert.match(sql30,/requer_revisao/);assert.match(sql30,/case when v_disponivel then 'reservado' else 'requer_revisao'/)})
@@ -40,7 +40,7 @@ await t('C25 legado operacional permanece explícito sem preenchimento retroativ
 await t('C26 novas vendas declaram modelo 030 e TaxiDog estrito',()=>{assert.match(sql30,/status,modelo_operacional_versao\)/);assert.match(sql30,/v_usuario,'ativo',30\)/);assert.match(sql30,/tg_op='INSERT' and new\.modelo_operacional_versao is null/);assert.match(sql30,/modalidade_transporte='taxidog' and taxidog_ciclo_id is not null/);assert.match(sql30,/Item de Contrato 030 exige desconto_percentual_snapshot/)})
 await t('C33 responsável único é obrigatório na venda e em todas as ocorrências',()=>{assert.equal(lerIntencaoVendaContrato({...base,funcionarioResponsavelId:''}),null);assert.match(edge,/preferenciaFuncionario: "obrigatorio"/);assert.match(edge,/i\.funcionarioResponsavelId/)})
 await t('C34 Migration 033 separa responsável do preferido e preserva o ciclo na renovação',()=>{assert.match(sql33,/funcionario_responsavel_id/);assert.match(sql33,/funcionario_responsavel_padrao_id/);assert.match(sql33,/v_atual\.funcionario_responsavel_padrao_id/)})
-await t('C35 venda antecipa campos obrigatórios do snapshot e preserva erro do Motor',()=>{assert.match(edge,/camposContrato/);assert.match(edge,/CADASTRO_PET_INCOMPLETO/);assert.match(edge,/resultado\.erro\?\.codigo/);assert.match(edge,/campos: resultado\.erro\.campos/);assert.doesNotMatch(sql33,/alter table public\.contratos.*drop not null/is)})
+await t('C35 venda preserva os campos exigidos pelo Motor',()=>{assert.doesNotMatch(edge,/camposContrato/);assert.match(edge,/CADASTRO_PET_INCOMPLETO/);assert.match(edge,/resultado\.erro\?\.codigo/);assert.match(edge,/campos: resultado\.erro\.campos/);assert.doesNotMatch(sql33,/alter table public\.contratos.*drop not null/is)})
 const itemSemanal={id:'s',servicoId:'banho',servicoNome:'Banho',ordem:1,quantidadePorCiclo:4,intervaloQuantidade:1,intervaloUnidade:'semana' as const,offsetInicialQuantidade:0,offsetInicialUnidade:'dia' as const,descontoPercentual:0}
 const itemQuinzenal={...itemSemanal,quantidadePorCiclo:2,intervaloQuantidade:2}
 const opcao=(horarioApresentado:number,cicloTaxidog:CicloTaxidogMotor|null=null):OpcaoDisponibilidade=>({horarioApresentado,inicioOperacional:horarioApresentado,conclusaoPrevista:horarioApresentado+60,cicloTaxidog,servicos:[],etapas:[],esperas:[],duracaoProcessamento:60,tempoEspera:0,duracaoTotal:60,trocasFuncionario:0,trocasRecurso:0})
@@ -55,4 +55,59 @@ await t('C41 TaxiDog válido preserva ciclo e aceita início operacional variáv
 await t('C42 TaxiDog incompatível continua rejeitado',()=>{assert.equal(validarJanelaTaxidogContrato(opcao(870,cicloTaxidog),{taxidogCicloId:id,horarioFixo:'14:00'}),false);assert.equal(validarJanelaTaxidogContrato(opcao(870,{...cicloTaxidog,id:'22222222-2222-4222-8222-222222222222'}),{taxidogCicloId:id,horarioFixo:'13:00'}),false);assert.match(edge,/JANELA_TAXIDOG_DIVERGENTE/);assert.doesNotMatch(edge,/opcao\.horarioApresentado\s*!==\s*horaMinutos\(i\.horarioFixo\)/)})
 await t('C43 janela TaxiDog só é oferecida quando todas as ocorrências têm capacidade',()=>{const consolidado=consolidarDisponibilidadeTaxiDog([{data:'2026-09-19',resultado:{estado:'OK',data:'2026-09-19',disponivel:true,opcao:opcao(870,cicloTaxidog),motivos:[]}},{data:'2026-10-03',resultado:{estado:'SEM_DISPONIBILIDADE',data:'2026-10-03',disponivel:false,opcao:null,motivos:['sem capacidade']}}]);assert.equal(consolidado?.disponivel,false);assert.equal(consolidado?.opcao,null)})
 await t('C44 pacote quinzenal composto consulta os serviços exatos de cada ocorrência',()=>{const adicionalMensal={...itemSemanal,id:'m',servicoId:'hidratacao',servicoNome:'Hidratação',quantidadePorCiclo:1,intervaloUnidade:'mes' as const};const os=ocorrenciasDaVenda([itemQuinzenal,adicionalMensal],'2026-09-19');assert.deepEqual(os,[{ordem:1,data:'2026-09-19',servicoIds:['banho','hidratacao']},{ordem:2,data:'2026-10-03',servicoIds:['banho']}]);assert.equal(frequenciaDaRotina([itemQuinzenal,adicionalMensal],'2026-09-19'),'quinzenal')})
+await t('A venda aloca exatamente as hidratações contratadas nos banhos escolhidos', () => {
+  const recorrencia = { intervaloQuantidade: 1, intervaloUnidade: 'semana' as const, offsetInicialQuantidade: 0, offsetInicialUnidade: 'semana' as const }
+  const itens = [
+    { ...recorrencia, servicoId: 'b', servicoNome: 'Banho', quantidadePorCiclo: 4 },
+    { ...recorrencia, servicoId: 'h', servicoNome: 'Hidratação', quantidadePorCiclo: 2, intervaloQuantidade: 2 },
+  ]
+  const ancora = '2026-12-07'
+  assert.equal(validarHidratacoes(itens, ancora, [2, 4]), true)
+  for (const selecao of [[1], [2, 2], [2, 5], [4, 2]]) assert.equal(validarHidratacoes(itens, ancora, selecao), false)
+  assert.equal(validarDistribuicaoContrato(itens, [{ servicoId: 'h', dependenciaServicoId: 'b' }], ancora, [2, 4]).valido, true)
+  assert.deepEqual(ocorrenciasDoCiclo(itens, ancora, [2, 4]).flatMap(ocorrencia => ocorrencia.itens.filter(item => item.servicoId === 'h').map(item => [ocorrencia.data, item.ordinal])), [['2026-12-14', 1], ['2026-12-28', 2]])
+})
+
+await t('O valor negociado aceita centavos válidos e rejeita fração de centavo', () => {
+  const base = {
+    chaveIdempotencia: '11111111-1111-4111-8111-111111111111',
+    clienteId: 'cliente-ficticio', petId: 'pet-ficticio',
+    pacoteId: '22222222-2222-4222-8222-222222222222', pacoteVersaoEsperada: 1,
+    funcionarioResponsavelId: '33333333-3333-4333-8333-333333333333',
+    dataAncora: '2026-12-07', diaSemanaFixo: 1, horarioFixo: '09:00',
+    modalidadeTransporte: 'sem_transporte', renovacaoAutomatica: false,
+    motivoAjusteValor: 'Acordo fictício', hidratacoesNosBanhos: [2, 4],
+  }
+  assert.equal(lerIntencaoVendaContrato({ ...base, valorContratado: 129.99 })?.valorContratado, 129.99)
+  assert.deepEqual(lerIntencaoVendaContrato({ ...base, valorContratado: 129.99 })?.hidratacoesNosBanhos, [2, 4])
+  assert.equal(lerIntencaoVendaContrato({ ...base, valorContratado: 129.999 }), null)
+  assert.equal(lerIntencaoVendaContrato({ ...base, valorContratado: 129.99, hidratacoesNosBanhos: [2, 2] }), null)
+})
+
+await t('As quatro composições fictícias distribuem hidratações nos banhos previstos', () => {
+  const cenarios = [
+    { intervaloBanho: 1, ocorrenciasComHidratacao: [false, false, false, false] },
+    { intervaloBanho: 1, ocorrenciasComHidratacao: [true, false, true, false] },
+    { intervaloBanho: 2, ocorrenciasComHidratacao: [false, false] },
+    { intervaloBanho: 2, ocorrenciasComHidratacao: [true, false] },
+  ]
+  for (const { intervaloBanho, ocorrenciasComHidratacao } of cenarios) {
+    const hidratacoes = ocorrenciasComHidratacao.filter(Boolean).length
+    const banho = {
+      servicoId: 'banho-ficticio', servicoNome: 'Banho', ordem: 1, descontoPercentual: 0,
+      quantidadePorCiclo: ocorrenciasComHidratacao.length, intervaloQuantidade: intervaloBanho, intervaloUnidade: 'semana' as const,
+      offsetInicialQuantidade: 0, offsetInicialUnidade: 'semana' as const,
+    }
+    const hidratacao = {
+      ...banho, servicoId: 'hidratacao-ficticia', servicoNome: 'Hidratação', ordem: 2,
+      quantidadePorCiclo: hidratacoes, intervaloQuantidade: 2,
+    }
+    const ocorrencias = ocorrenciasDaVenda(hidratacoes ? [banho, hidratacao] : [banho], '2026-12-07')
+    assert.deepEqual(
+      ocorrencias.map(({ servicoIds }) => servicoIds.includes(hidratacao.servicoId)),
+      ocorrenciasComHidratacao,
+    )
+  }
+})
+
 console.log(`${n} testes de Contratos 029 concluídos.`)

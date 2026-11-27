@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   --bg: #F8F5EE;
   --sidebar: #244D2C;
   --primary: #4F7D50;
@@ -2168,7 +2168,6 @@ img {
 .agenda-diaria .agenda-titulo { display:block; }
 .agenda-diaria .agenda-titulo p { text-transform:none; white-space:normal; font-size:14px; }
 .dashboard:has(.agenda-diaria) { gap:12px; }
-.dashboard:has(.agenda-diaria) .topbar h1 { font-size:18px; }
 .agenda-diaria .agenda-cabecalho { margin-bottom:18px; }
 .agenda-diaria .agenda-titulo h1 { color:#142044; font-size:32px; margin:4px 0; }
 .agenda-diaria .agenda-titulo p { color:#64718a; }

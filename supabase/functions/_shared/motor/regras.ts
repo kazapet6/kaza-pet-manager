@@ -1,6 +1,7 @@
+import { validarProcedimentosInclusos } from './procedimentos.ts'
 import type { DadosDisponibilidade, EntradaDisponibilidade, EtapaCalculada, ModificadorDuracaoMotor, PetMotor, ServicoResolvido } from './tipos.ts'
 
-export function resolverServicos(entrada: EntradaDisponibilidade, dados: DadosDisponibilidade) {
+export function resolverServicos(entrada: Pick<EntradaDisponibilidade, 'servicoIds'>, dados: Pick<DadosDisponibilidade, 'servicos' | 'dependencias'>) {
   const solicitados = [...new Set(entrada.servicoIds)]
   if (!solicitados.length) throw new Error('Nenhum serviço foi solicitado.')
   const solicitadosSet = new Set(solicitados)
@@ -31,6 +32,8 @@ export function resolverServicos(entrada: EntradaDisponibilidade, dados: DadosDi
   }
 
   for (const id of solicitados) visitar(id)
+
+  validarProcedimentosInclusos(dados.servicos.filter(servico => resolvidosSet.has(servico.id)))
 
   const paisDiretos = new Map<string, Set<string>>()
   for (const paiId of resolvidosSet) {
@@ -85,10 +88,13 @@ export function validarElegibilidade(pet: PetMotor, servicos: ServicoResolvido[]
 
 export function calcularEtapas(pet: PetMotor, servicos: ServicoResolvido[], dados: DadosDisponibilidade) {
   const etapas: EtapaCalculada[] = []
+  const etapaAplicavel = (etapa: DadosDisponibilidade['etapas'][number]) => etapa.ativo
+    && (!etapa.especieAplicavel || etapa.especieAplicavel === pet.especie)
+    && (!etapa.porteAplicavel || etapa.porteAplicavel === pet.porte)
   const acoplamentos = dados.acoplamentos.filter((item) => item.ativo && servicos.some((servico) => servico.id === item.servicoId))
   const idsAcoplados = new Set(acoplamentos.map((item) => item.servicoId))
   for (const servico of servicos.filter((item) => !idsAcoplados.has(item.id))) {
-    const etapasServico = dados.etapas.filter((item) => item.servicoId === servico.id && item.ativo).sort((a, b) => a.ordem - b.ordem)
+    const etapasServico = dados.etapas.filter((item) => item.servicoId === servico.id && etapaAplicavel(item)).sort((a, b) => a.ordem - b.ordem)
     if (!etapasServico.length) throw new Error(`O serviço ${servico.nome} não possui etapas ativas.`)
     for (const etapa of etapasServico) {
       const calculada = calcularContribuicao(etapa, servico, pet, dados)
@@ -98,7 +104,7 @@ export function calcularEtapas(pet: PetMotor, servicos: ServicoResolvido[], dado
 
   for (const acoplamento of acoplamentos.sort((a, b) => ordemServico(a.servicoId, servicos) - ordemServico(b.servicoId, servicos) || a.servicoId.localeCompare(b.servicoId))) {
     const servico = servicos.find((item) => item.id === acoplamento.servicoId)!
-    const etapasOrigem = dados.etapas.filter((item) => item.servicoId === servico.id && item.ativo)
+    const etapasOrigem = dados.etapas.filter((item) => item.servicoId === servico.id && etapaAplicavel(item))
     if (etapasOrigem.length !== 1) throw new Error(`O serviço acoplado ${servico.nome} deve possuir exatamente uma etapa ativa.`)
     const etapaAlvoConfigurada = dados.etapas.find((item) => item.id === acoplamento.etapaAlvoId && item.ativo)
     if (!etapaAlvoConfigurada || etapaAlvoConfigurada.servicoId === servico.id || !dependeDe(servico.id, etapaAlvoConfigurada.servicoId, dados)) throw new Error(`A configuração de acoplamento de ${servico.nome} é inválida.`)
@@ -116,7 +122,7 @@ export function calcularEtapas(pet: PetMotor, servicos: ServicoResolvido[], dado
 function calcularContribuicao(etapa: DadosDisponibilidade['etapas'][number], servico: ServicoResolvido, pet: PetMotor, dados: DadosDisponibilidade) {
   const modificadores = dados.modificadoresDuracao.filter((item) => item.ativo && item.servicoId === servico.id && item.servicoEtapaId === etapa.id && modificadorAplicavel(item, pet))
   const recursos = dados.recursosEtapas.filter((item) => item.servicoEtapaId === etapa.id && item.ativo)
-  return { servicoId: servico.id, servicoNome: servico.nome, etapaId: etapa.id, etapaNome: etapa.nome, duracaoBase: etapa.duracaoMinutos, duracaoCalculada: etapa.duracaoMinutos + modificadores.reduce((total, item) => total + item.acrescimoMinutos, 0), modificadoresAplicados: modificadores.map((item) => item.id), recursos, habilitacoesNecessarias: recursos.some((item) => item.tipo === 'funcionario') ? [{ servicoId: servico.id, servicoEtapaId: etapa.id }] : [] }
+  return { servicoId: servico.id, servicoNome: servico.nome, etapaId: etapa.id, etapaNome: etapa.nome, duracaoBase: etapa.duracaoMinutos, duracaoCalculada: etapa.duracaoMinutos + modificadores.reduce((total, item) => total + item.acrescimoMinutos, 0), modificadoresAplicados: modificadores.map((item) => item.id), recursos, habilitacoesNecessarias: recursos.some((item) => item.tipo === 'funcionario') ? [{ servicoId: servico.id, servicoEtapaId: etapa.id, ...(etapa.habilitacaoExplicita ? { explicita: true } : {}) }] : [] }
 }
 
 function consolidarRecursos(recursos: DadosDisponibilidade['recursosEtapas']) {

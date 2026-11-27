@@ -1,4 +1,7 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import EditorPet from "../components/EditorPet";
+import type { Pet } from "../types/Pet";
+import { valorValidoVenda } from "../../../supabase/functions/_shared/contrato-venda.ts";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import Modal from "../components/ui/Modal";
@@ -18,7 +21,7 @@ import { listarContratos, materializarCicloContrato, venderContrato } from "./cl
 import type { ContratoResumoVisual } from "./clienteSupabase";
 import { BarraConsumoContrato, ResumoContagemContrato } from "./ConsumoContrato";
 import DetalheContrato from "./DetalheContrato";
-import { consolidarDisponibilidadeSemTransporte, consolidarDisponibilidadeTaxiDog, frequenciaDaRotina, ocorrenciasDaVenda } from "./rotinaVenda";
+import { consolidarDisponibilidadeSemTransporte, consolidarDisponibilidadeTaxiDog, frequenciaDaRotina, ocorrenciasDaVenda, opcoesHidratacaoDaVenda } from "./rotinaVenda";
 import {
   resumoAjuste,
   type ContratoResumo,
@@ -41,6 +44,7 @@ const moeda = new Intl.NumberFormat("pt-BR", {
   diasCurtos = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const diasDaRotina = ["aos domingos", "às segundas-feiras", "às terças-feiras", "às quartas-feiras", "às quintas-feiras", "às sextas-feiras", "aos sábados"];
 export default function Contratos({ contratoInicialId = null, onContratoInicialAberto }: { contratoInicialId?: string | null; onContratoInicialAberto?: () => void }) {
+  const agendaIntegrada = useContext(AgendaContext);
   const { clientes, pets } = useContext(SistemaContext),
     [contratos, setContratos] = useState<ContratoResumoVisual[]>([]),
     [pacotes, setPacotes] = useState<Pacote[]>([]),
@@ -61,6 +65,7 @@ export default function Contratos({ contratoInicialId = null, onContratoInicialA
       setContratos(c);
       setPacotes(p);
       setEstado("pronto");
+      return c;
     } catch (e) {
       setErro(
         e instanceof Error
@@ -200,10 +205,14 @@ export default function Contratos({ contratoInicialId = null, onContratoInicialA
             setDetalhe(c);
             await carregar();
           }}
+          onPending={async (mensagem) => {
+            setSucesso(mensagem);
+            await carregar();
+          }}
         />
       )}
       {detalhe && (
-        <DetalheContrato contrato={detalhe} onClose={() => setDetalhe(null)} />
+        <DetalheContrato contrato={detalhe} onClose={() => setDetalhe(null)} onAtualizar={async () => { const atualizados = await carregar(); if (!atualizados) throw new Error("N?o foi poss?vel atualizar o contrato."); const atual = atualizados.find(x => x.id === detalhe.id); if (atual) setDetalhe(atual); await agendaIntegrada.recarregarAgenda?.(); }} />
       )}
     </div>
   );
@@ -212,6 +221,12 @@ export default function Contratos({ contratoInicialId = null, onContratoInicialA
 function CardContrato({ contrato, onOpen }: { contrato: ContratoResumoVisual; onOpen: () => void }) {
   const ciclo = contrato.cicloResumo;
   const requerRevisao = (ciclo?.estado ?? contrato.cicloEstado) === "requer_revisao";
+  const rotulosPagamento: Record<string, string> = {
+    pendente: "Pendente",
+    parcial: "Parcial",
+    pago: "Pago",
+    isento: "Isento",
+  };
   function veioDeControleInterno(alvo: EventTarget | null, card: HTMLElement) {
     if (!(alvo instanceof Element)) return false;
     const controle = alvo.closest("button, a, input, select, textarea, [role='button'], [data-card-control]");
@@ -249,7 +264,7 @@ function CardContrato({ contrato, onOpen }: { contrato: ContratoResumoVisual; on
         <span>{contrato.itens.map((item) => item.servicoNome).join(" + ")}</span>
       </section>
       <div className="contrato-card-ciclo">
-        <span>{ciclo ? `Ciclo ${ciclo.numero} · ${dataCurta(ciclo.inicio)} → ${dataCurta(ciclo.fim)}` : "Sem ciclo operacional"}</span>
+        <span>{ciclo ? `Ciclo ${ciclo.numero} · Previsão da Agenda: ${dataCurta(ciclo.inicio)} → ${dataCurta(ciclo.fim)}` : "Sem ciclo operacional"}</span>
         {requerRevisao && <strong>Requer revisão</strong>}
       </div>
       {ciclo ? (
@@ -266,6 +281,7 @@ function CardContrato({ contrato, onOpen }: { contrato: ContratoResumoVisual; on
         <div>
           <strong>{moeda.format(contrato.valorContratado)}</strong>
           <small>por ciclo</small>
+          {ciclo && <small>Pagamento do ciclo · {rotulosPagamento[ciclo.situacaoFinanceira ?? ""] ?? "Indisponível"}</small>}
         </div>
         <div>
           <strong>{diasCurtos[contrato.diaSemanaFixo]} · {contrato.horarioFixo}</strong>
@@ -304,12 +320,14 @@ function Venda({
   pacotes,
   onClose,
   onCreated,
+  onPending,
 }: {
   clientes: { id: string; nome: string }[];
-  pets: { id: string; clienteId: string; nome: string; porte: string | null }[];
+  pets: Pet[];
   pacotes: Pacote[];
   onClose: () => void;
   onCreated: (c: ContratoResumo) => void;
+  onPending: (mensagem: string) => void;
 }) {
   const agenda=useContext(AgendaContext);
   const [etapa, setEtapa] = useState(1),
@@ -336,9 +354,15 @@ function Venda({
     [renovacao, setRenovacao] = useState(true),
     [erro, setErro] = useState(""),
     [salvando, setSalvando] = useState(false),
-    [materializacaoPendente,setMaterializacaoPendente]=useState<{contrato:ContratoResumo;cicloId:string}|null>(null),
+    [materializacaoPendente,setMaterializacaoPendente]=useState<{contrato?:ContratoResumo;contratoId:string;cicloId:string;estado:"pendente"|"materializando"|"erro";mensagem:string}|null>(null),
     [chave] = useState(() => crypto.randomUUID());
   const sequenciaConsulta=useRef(0);
+  const [editandoPet, setEditandoPet] = useState(false);
+  const quantidadePetsPorCliente = useMemo(() => {
+    const contagem = new Map<string, number>();
+    for (const pet of pets) contagem.set(pet.clienteId, (contagem.get(pet.clienteId) ?? 0) + 1);
+    return contagem;
+  }, [pets]);
   const cliente = clientes.find((c) => c.id === clienteId),
     pet = pets.find((p) => p.id === petId),
     petsCliente = pets.filter((p) => p.clienteId === clienteId),
@@ -347,13 +371,20 @@ function Venda({
     dia = diaDaData(ancora),
     ciclos=useMemo(()=>ciclosAtivosNaData(agenda.taxidogCiclos.map(c=>({...c,diasSemana:agenda.taxidogCicloDias.filter(d=>d.cicloId===c.id&&d.ativo).map(d=>d.diaSemana)})),ancora),[agenda.taxidogCiclos,agenda.taxidogCicloDias,ancora]);
   const cicloSelecionado = ciclos.find((c) => c.id === cicloTaxidogId);
+  const [hidratacoes, setHidratacoes] = useState<number[]>();
+  const [erroCadastro, setErroCadastro] = useState(false);
+  const opcoesHidratacao = useMemo(() =>
+    pacote && dia >= 0 ? opcoesHidratacaoDaVenda(pacote.servicos, ancora) : null,
+  [pacote, dia, ancora]);
+  const distribuicaoCompleta = hidratacoes === undefined
+    || hidratacoes.length === opcoesHidratacao?.hidratacao.quantidadePorCiclo;
   function limparDisponibilidade(){sequenciaConsulta.current+=1;setOpcao(null);setHora("");setDisponibilidade(null);setDisponibilidadeCiclo(null);setErroAgenda(null);setConsultandoAgenda(false)}
   const consultarRotina=useCallback(async()=>{
-    if(!pacote||!petId||!ancora||dia<0||!transporte||!funcionarioResponsavelId)return;
+    if(!pacote||!petId||!ancora||dia<0||!transporte||!funcionarioResponsavelId||!distribuicaoCompleta)return;
     if(transporte==="taxidog"&&!cicloTaxidogId)return;
     const consultaAtual=++sequenciaConsulta.current;
     setConsultandoAgenda(true);setErroAgenda(null);setOpcao(null);setHora("");setDisponibilidade(null);setDisponibilidadeCiclo(null);
-    try{const ocorrencias=ocorrenciasDaVenda(pacote.servicos,ancora),base={petId,preferenciaFuncionario:"obrigatorio" as const,funcionarioPreferidoId:funcionarioResponsavelId,tipoPlanejamento:"normal" as const};
+    try{const ocorrencias=ocorrenciasDaVenda(pacote.servicos,ancora,hidratacoes),base={petId,preferenciaFuncionario:"obrigatorio" as const,funcionarioPreferidoId:funcionarioResponsavelId,tipoPlanejamento:"normal" as const};
       if(transporte==="taxidog"){
         const [resultados,livres]=await Promise.all([
           Promise.all(ocorrencias.map(async ocorrencia=>({data:ocorrencia.data,resultado:await consultarDisponibilidadeDoCiclo({...base,servicoIds:ocorrencia.servicoIds,data:ocorrencia.data,modalidade:"taxidog",cicloTaxidogId})}))),
@@ -365,14 +396,17 @@ function Venda({
       }
       else{const resultados=await Promise.all(ocorrencias.map(async ocorrencia=>({data:ocorrencia.data,resultado:await consultarDisponibilidade({...base,servicoIds:ocorrencia.servicoIds,data:ocorrencia.data,modalidade:"sem_transporte",cicloTaxidogId:null})})));if(consultaAtual!==sequenciaConsulta.current)return;setDisponibilidade(consolidarDisponibilidadeSemTransporte(resultados))}
     }catch(e){if(consultaAtual===sequenciaConsulta.current)setErroAgenda(e instanceof Error?e.message:"Não foi possível consultar a rotina.")}finally{if(consultaAtual===sequenciaConsulta.current)setConsultandoAgenda(false)}
-  },[pacote,petId,ancora,dia,transporte,cicloTaxidogId,funcionarioResponsavelId,cicloSelecionado]);
+  },[pacote,petId,ancora,dia,transporte,cicloTaxidogId,funcionarioResponsavelId,cicloSelecionado,hidratacoes,distribuicaoCompleta]);
   useEffect(()=>{
     if(etapa!==3)return;
     void consultarRotina();
     return()=>{sequenciaConsulta.current+=1};
   },[etapa,consultarRotina]);
   async function escolherPacote(p: Pacote) {
+    if (!pet) return;
     setPacote(p);
+    setHidratacoes(undefined);
+    setErroCadastro(false);
     setSim(null);
     setErro("");
     setCalculando(true);
@@ -381,7 +415,10 @@ function Venda({
       if (r.status === "calculado") {
         setSim(r.simulacao);
         setValor(r.simulacao.totalPacote);
-      } else setErro(r.mensagem);
+      } else {
+        setErro(r.mensagem);
+        setErroCadastro(r.codigo === "CADASTRO_PET_INCOMPLETO");
+      }
     } catch (e) {
       setErro(
         e instanceof Error ? e.message : "Não foi possível calcular o valor.",
@@ -399,6 +436,11 @@ function Venda({
   }
   async function confirmar() {
     if (!pacote || !sim || !pet) return;
+    if (!distribuicaoCompleta) return;
+    if (!valorValidoVenda(valor)) {
+      setErro("Informe um valor de pacote válido, com até duas casas decimais.");
+      return;
+    }
     if (!ancora || dia < 0) {
       setErro("Escolha uma data inicial válida.");
       return;
@@ -422,6 +464,7 @@ function Venda({
         valorContratado: valor,
         motivoAjusteValor: valor === sim.totalPacote ? null : motivo.trim(),
         dataAncora: ancora,
+        hidratacoesNosBanhos: hidratacoes,
         diaSemanaFixo: dia,
         horarioFixo: hora,
         modalidadeTransporte: transporte,
@@ -431,9 +474,15 @@ function Venda({
       });
       if (r.status === "criado") onCreated(r.contrato);
       else if(r.status==="materializacao_pendente"){
-        setMaterializacaoPendente({contrato:r.contrato,cicloId:r.cicloId});
+        const mensagem=r.materializacaoEstado==="erro"
+          ? "Pacote criado, mas os atendimentos precisam de atenção."
+          : "Pacote criado. Os atendimentos ainda estão sendo preparados.";
+        setMaterializacaoPendente({contrato:r.contrato,contratoId:r.contratoId,cicloId:r.cicloId,estado:r.materializacaoEstado,mensagem});
+        onPending(mensagem);
+      } else {
         setErro(r.mensagem);
-      } else setErro(r.mensagem);
+        setErroCadastro(r.codigo === "CADASTRO_PET_INCOMPLETO");
+      }
     } catch (e) {
       setErro(
         e instanceof Error ? e.message : "Não foi possível confirmar a venda.",
@@ -447,9 +496,18 @@ function Venda({
     setSalvando(true);setErro("");
     try{
       const resposta=await materializarCicloContrato(materializacaoPendente.cicloId);
-      if(resposta.status==="materializado")onCreated(materializacaoPendente.contrato);
-      else setErro(resposta.mensagem);
-    }catch(e){setErro(e instanceof Error?e.message:"Não foi possível criar a Agenda do Ciclo.")}
+      if(resposta.status==="materializado"){
+        if(materializacaoPendente.contrato)onCreated(materializacaoPendente.contrato);
+        else{onPending("Os atendimentos do pacote foram preparados com sucesso.");onClose()}
+      }else{
+        const estado=resposta.status==="materializando"?"materializando":"erro";
+        const mensagem=estado==="materializando"
+          ? "Os atendimentos deste pacote já estão sendo preparados."
+          : "Pacote criado, mas os atendimentos precisam de atenção.";
+        setMaterializacaoPendente(atual=>atual?{...atual,estado,mensagem}:atual);
+        onPending(mensagem);
+      }
+    }catch{const mensagem="Pacote criado, mas não foi possível retomar a preparação dos atendimentos agora.";setMaterializacaoPendente(atual=>atual?{...atual,estado:"erro",mensagem}:atual);onPending(mensagem)}
     finally{setSalvando(false)}
   }
   return (
@@ -505,7 +563,7 @@ function Venda({
                   <span className="avatar">{c.nome[0]}</span>
                   <b>{c.nome}</b>
                   <small>
-                    {pets.filter((p) => p.clienteId === c.id).length} pet(s)
+                    {quantidadePetsPorCliente.get(c.id) ?? 0} pet(s)
                   </small>
                 </button>
               ))}
@@ -517,7 +575,15 @@ function Venda({
                 {petsCliente.map((p) => (
                   <button
                     className={petId === p.id ? "selected" : ""}
-                    onClick={() => setPetId(p.id)}
+                    onClick={() => {
+                      if (p.id === petId) return;
+                      setPetId(p.id);
+                      setPacote(null);
+                      setSim(null);
+                      setAjustar(false);
+                      setMotivo("");
+                      limparDisponibilidade();
+                    }}
                     key={p.id}
                   >
                     <span className="pet-icon">♢</span>
@@ -530,6 +596,18 @@ function Venda({
           )}
         </div>
       )}
+      {pet && (etapa === 1 || erroCadastro || disponibilidade?.estado === "CADASTRO_PET_INCOMPLETO" || etapa === 3) && (
+        <div role="status" className="contrato-aviso">
+          <Button variant="secondary" onClick={() => setEditandoPet(true)}>Editar cadastro do pet</Button>
+        </div>
+      )}
+      {editandoPet && pet && <EditorPet key={pet.id} pet={pet} fixarCliente onClose={() => setEditandoPet(false)} onSaved={() => {
+        limparDisponibilidade();
+        setSim(null);
+        setErro("");
+        setErroCadastro(false);
+        if (etapa > 1) setEtapa(2);
+      }} />}
       {etapa === 2 && (
         <div className="wizard-body">
           <div className="ux-section-title">
@@ -546,6 +624,7 @@ function Venda({
             {ativos.map((p) => (
               <button
                 className={pacote?.id === p.id ? "selected" : ""}
+                disabled={calculando}
                 onClick={() => void escolherPacote(p)}
                 key={p.id}
               >
@@ -680,6 +759,31 @@ function Venda({
                 <Input type="date" value={ancora} onChange={(e) => {limparDisponibilidade();setAncora(e.target.value)}} />
                 {dia>=0&&pacote&&<small>Rotina {frequenciaDaRotina(pacote.servicos,ancora)} <b>{diasDaRotina[dia]}</b></small>}</div>
               </section>
+              {opcoesHidratacao && (
+                <fieldset className="ux-section">
+                  <legend>Hidratações no primeiro ciclo</legend>
+                  <label><input type="checkbox" checked={hidratacoes !== undefined} onChange={(evento) => {
+                    limparDisponibilidade();
+                    setHidratacoes(evento.target.checked ? [] : undefined);
+                  }} /> Escolher os banhos com hidratação</label>
+                  {hidratacoes && (
+                    <>
+                      <p>Selecione {opcoesHidratacao.hidratacao.quantidadePorCiclo} banho(s).</p>
+                      {opcoesHidratacao.datasBanho.map((data, indice) => {
+                        const ordinal = indice + 1;
+                        const selecionado = hidratacoes.includes(ordinal);
+                        return <label key={data}><input type="checkbox" checked={selecionado}
+                          disabled={!selecionado && distribuicaoCompleta}
+                          onChange={() => {
+                            limparDisponibilidade();
+                            setHidratacoes(selecionado ? hidratacoes.filter((item) => item !== ordinal) :
+                              [...hidratacoes, ordinal].sort((a, b) => a - b));
+                          }} /> {dataBr(data)}</label>;
+                      })}
+                    </>
+                  )}
+                </fieldset>
+              )}
               {ancora&&dia>=0&&<section className="venda-decisao pronta">
                 <span>2</span><div><h4>Modalidade de transporte</h4><div className="radio-cards">
                   <label className={transporte==="sem_transporte"?"selected":""}><input type="radio" checked={transporte==="sem_transporte"} onChange={()=>{limparDisponibilidade();setCicloTaxidogId("");setTransporte("sem_transporte")}}/><div><b>Sem transporte</b><small>Cliente leva e busca o pet</small></div></label>
@@ -689,8 +793,8 @@ function Venda({
               {transporte&&<section className="venda-decisao pronta"><span>3</span><div><h4>Funcionário responsável</h4><p>A mesma pessoa será validada pelo Motor em todas as ocorrências do ciclo.</p><select value={funcionarioResponsavelId} onChange={(e)=>{limparDisponibilidade();setFuncionarioResponsavelId(e.target.value)}}><option value="">Selecione um funcionário</option>{agenda.funcionarios.filter(f=>f.ativo).map(f=><option key={f.id} value={f.id}>{f.nome}</option>)}</select></div></section>}
               {transporte==="taxidog"&&funcionarioResponsavelId&&<section className="venda-decisao pronta"><span>4</span><div><h4>Horário do TaxiDog</h4><p>Escolha quando a coleta deve acontecer em {dias[dia]}.</p><div className="novo-ciclos venda-taxidog-periodos"><div>{ciclos.map(c=><button type="button" key={c.id} className={cicloTaxidogId===c.id?"selecionada":""} onClick={()=>{if(cicloTaxidogId===c.id)return;limparDisponibilidade();setCicloTaxidogId(c.id)}}><strong>{nomeTaxidogOperacional(c.nome)}</strong><small>Coleta entre {c.coletaInicio.slice(0,5)} e {c.coletaFim.slice(0,5)}</small></button>)}</div>{!ciclos.length&&<p className="ux-info">Não há horário do TaxiDog configurado para esta data.</p>}</div></div></section>}
               {transporte==="sem_transporte"&&funcionarioResponsavelId&&<section className="venda-decisao"><span>4</span><div><h4>Horários disponíveis pelo Motor</h4><p>Capacidade real do funcionário escolhido para todas as ocorrências.</p>{consultandoAgenda?<div className="ux-info">Consultando equipe, equipamentos e capacidade…</div>:erroAgenda?<div className="ux-error">{erroAgenda} <button onClick={()=>void consultarRotina()}>Tentar novamente</button></div>:disponibilidade?.estado==="OK"?<Horarios opcoes={disponibilidade.opcoes} selecionada={opcao} selecionar={o=>{setOpcao(o);setHora(horaDaOpcao(o))}}/>:disponibilidade?<div className="ux-info"><b>Nenhum horário disponível.</b>{disponibilidade.motivos.map(m=><p key={m}>{m}</p>)}</div>:<div className="ux-info">A consulta começará automaticamente.</div>}</div></section>}
-              {transporte==="taxidog"&&cicloTaxidogId&&funcionarioResponsavelId&&<section className="venda-decisao"><span>5</span><div><h4>Horário previsto do atendimento</h4><p>O Motor verifica a capacidade do responsável em todas as ocorrências do ciclo.</p><PainelHorariosTaxidog linguagem="operacional" ciclo={cicloSelecionado?{...cicloSelecionado,nome:nomeTaxidogOperacional(cicloSelecionado.nome)}:undefined} horarios={disponibilidade} resultado={disponibilidadeCiclo} selecionada={opcao} consultando={consultandoAgenda} erro={erroAgenda} consultar={()=>void consultarRotina()} selecionar={o=>{setOpcao(o);setHora(cicloSelecionado?.coletaInicio.slice(0,5)??"")}}/>{opcao&&<small>Horário previsto do primeiro atendimento: <b>{horaDaMinuto(opcao.inicioOperacional)}–{horaDaMinuto(opcao.conclusaoPrevista)}</b></small>}</div></section>}
-              {opcao&&<section className="venda-decisao pronta"><span>{transporte==="taxidog"?6:5}</span><div><h4>Renovação</h4><label className="ux-switch"><input type="checkbox" checked={renovacao} onChange={(e)=>setRenovacao(e.target.checked)}/><span/><div><b>Renovação automática</b><small>Criar automaticamente o próximo ciclo ao finalizar este.</small></div></label></div></section>}
+              {transporte==="taxidog"&&cicloTaxidogId&&funcionarioResponsavelId&&<section className="venda-decisao"><span>5</span><div><h4>Janela de coleta e atendimento previsto</h4><p>O Motor verifica a capacidade do responsável em todas as ocorrências do ciclo.</p><PainelHorariosTaxidog linguagem="operacional" ciclo={cicloSelecionado?{...cicloSelecionado,nome:nomeTaxidogOperacional(cicloSelecionado.nome)}:undefined} horarios={disponibilidade} resultado={disponibilidadeCiclo} selecionada={opcao} consultando={consultandoAgenda} erro={erroAgenda} consultar={()=>void consultarRotina()} selecionar={o=>{setOpcao(o);setHora(cicloSelecionado?.coletaInicio.slice(0,5)??"")}}/>{opcao&&<small>Horário previsto do primeiro atendimento: <b>{horaDaMinuto(opcao.inicioOperacional)}–{horaDaMinuto(opcao.conclusaoPrevista)}</b></small>}</div></section>}
+              {opcao&&<section className="venda-decisao pronta"><span>{transporte==="taxidog"?6:5}</span><div><h4>Renovação</h4><label className="ux-switch"><input type="checkbox" checked={renovacao} onChange={(e)=>setRenovacao(e.target.checked)}/><span/><div><b>Renovação automática</b><small>Tenta criar o próximo ciclo após a conclusão comercial e o pagamento integral. Sem capacidade, o ciclo fica para revisão.</small></div></label></div></section>}
             </div>
           </main>
           {opcao&&<aside className="sale-review">
@@ -715,6 +819,12 @@ function Venda({
                 <dt>Valor avulso</dt>
                 <dd>{moeda.format(sim?.totalAvulso ?? 0)}</dd>
               </div>
+              {sim && valor !== sim.totalPacote && (
+                <div>
+                  <dt>Valor original do pacote</dt>
+                  <dd>{moeda.format(sim.totalPacote)}</dd>
+                </div>
+              )}
               <div className="total">
                 <dt>Valor contratado</dt>
                 <dd>{moeda.format(valor)}</dd>
@@ -732,20 +842,38 @@ function Venda({
                 <dd>{dias[dia]}</dd>
               </div>
               <div><dt>Funcionário responsável</dt><dd>{agenda.funcionarios.find(f=>f.id===funcionarioResponsavelId)?.nome}</dd></div>
-              {transporte==="sem_transporte"?<><div><dt>Horário</dt><dd>{hora}–{horaDaMinuto(opcao.conclusaoPrevista)}</dd></div><div><dt>Transporte</dt><dd>Sem transporte</dd></div></>:<><div><dt>TaxiDog</dt><dd>TaxiDog · {nomeTaxidogOperacional(cicloSelecionado?.nome)}</dd></div><div><dt>Coleta</dt><dd>{cicloSelecionado?.coletaInicio.slice(0,5)}–{cicloSelecionado?.coletaFim.slice(0,5)}</dd></div><div><dt>Atendimento previsto</dt><dd>{horaDaMinuto(opcao.inicioOperacional)}–{horaDaMinuto(opcao.conclusaoPrevista)}</dd></div></>}
+              {transporte==="sem_transporte"?<><div><dt>Horário</dt><dd>{hora}–{horaDaMinuto(opcao.conclusaoPrevista)}</dd></div><div><dt>Transporte</dt><dd>Sem transporte</dd></div></>:<><div><dt>TaxiDog</dt><dd>TaxiDog · {nomeTaxidogOperacional(cicloSelecionado?.nome)}</dd></div><div><dt>Coleta</dt><dd>{cicloSelecionado?.coletaInicio.slice(0,5)}–{cicloSelecionado?.coletaFim.slice(0,5)}</dd></div><div><dt>Início previsto do primeiro atendimento</dt><dd>{horaDaMinuto(opcao.inicioOperacional)}</dd></div><div><dt>Conclusão prevista</dt><dd>{horaDaMinuto(opcao.conclusaoPrevista)}</dd></div></>}
               <div>
                 <dt>Renovação automática</dt>
                 <dd>{renovacao ? "Sim" : "Não"}</dd>
               </div>
             </dl>
+            {pacote && (
+              <section aria-label="Serviços previstos por atendimento">
+                <h4>Serviços previstos por atendimento</h4>
+                <ul>
+                  {ocorrenciasDaVenda(pacote.servicos, ancora, hidratacoes).map(({ data, servicoIds }) => (
+                    <li key={data}>
+                      <time dateTime={data}>{dataBr(data)}</time>
+                      {" · "}
+                      {pacote.servicos
+                        .filter((servico) => servicoIds.includes(servico.servicoId))
+                        .map((servico) => servico.servicoNome || servico.servicoId)
+                        .join(", ")}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
           </aside>}
         </div>
       )}
-      {erro && <div className="ux-error">{erro}{materializacaoPendente&&<button type="button" disabled={salvando||!materializacaoPendente.cicloId} onClick={()=>void tentarMaterializacaoNovamente()}>{salvando?"Tentando…":"Tentar criar agenda novamente"}</button>}</div>}
+      {erro && <div className="ux-error">{erro}</div>}
+      {materializacaoPendente&&<div className="contrato-aviso"><strong>{materializacaoPendente.estado==="erro"?"Pacote criado · requer atenção":materializacaoPendente.estado==="materializando"?"Materializando atendimentos":"Materialização pendente"}</strong><span>{materializacaoPendente.mensagem}</span>{materializacaoPendente.estado!=="materializando"&&<button type="button" disabled={salvando||!materializacaoPendente.cicloId} onClick={()=>void tentarMaterializacaoNovamente()}>{salvando?"Tentando…":"Tentar preparar atendimentos novamente"}</button>}</div>}
       <div className="ux-modal-footer">
         <div>
           {etapa > 1 && (
-            <Button variant="secondary" onClick={() => setEtapa(etapa - 1)}>
+            <Button variant="secondary" disabled={calculando || salvando} onClick={() => setEtapa(etapa - 1)}>
               Voltar
             </Button>
           )}
@@ -755,7 +883,7 @@ function Venda({
             Cancelar
           </Button>
           {etapa < 3 ? (
-            <Button onClick={avancar}>Continuar</Button>
+            <Button disabled={etapa === 1 && !pet} onClick={avancar}>Continuar</Button>
           ) : (
             <Button disabled={salvando||!opcao||!funcionarioResponsavelId||Boolean(materializacaoPendente)} onClick={() => void confirmar()}>
               {salvando ? "Confirmando…" : "Confirmar venda"}

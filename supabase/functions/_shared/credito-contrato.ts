@@ -19,11 +19,19 @@ export type ContagemCreditos = {
 export type CreditoBase = { estadoComercial: EstadoCreditoContrato }
 
 export type ResumoCicloCredito = ContagemCreditos & {
+  comercialmenteConcluido: boolean; elegivelRenovacao: boolean
   id: string; numero: number; estado: string; inicio: string; fim: string
   atual: boolean; encerramentoPendente: boolean; valor: number | null
+  materializacaoEstado: 'pendente' | 'materializando' | 'materializado' | 'erro' | null
+  materializacaoTentativas: number
+  materializacaoUltimoCodigoErro: string | null
+  materializacaoUltimoErro: string | null
+  materializacaoUltimaTentativaEm: string | null
+  materializacaoConcluidaEm: string | null
 }
 export type ResumoContratoCreditos = { status: 'carregado'; contratoId: string; ciclos: ResumoCicloCredito[] }
 export type UnidadeCredito = CreditoBase & {
+  reaproveitavel?: boolean; eventoLiberacaoId?: string | null; sequenciaVinculo?: number; atendimentoOriginalId?: string | null
   ocorrenciaId: string; contratoItemId: string; cicloId: string; ordinal: number
   ocorrenciaOrdem: number; data: string; horarioInicio: string; horarioFim: string
   atendimentoId: string | null; statusAtendimento: string | null; versao: number
@@ -32,7 +40,10 @@ export type ResumoServicoCredito = ContagemCreditos & {
   contratoItemId: string; servicoId: string; nome: string; ordem: number
   intervaloQuantidade: number; intervaloUnidade: string; unidades: UnidadeCredito[]
 }
-export type DetalheCicloCreditos = ResumoCicloCredito & { status: 'carregado'; servicos: ResumoServicoCredito[] }
+export type DetalheCicloCreditos = ResumoCicloCredito & {
+  status: 'carregado'; servicos: ResumoServicoCredito[];
+  pulos?: { id: string; ocorridoEm: string; numero: number; motivo: string; autorizado: boolean }[];
+}
 export type EventoCredito = {
   id: string; tipo: string; estadoAnterior: EstadoCreditoContrato | null; estadoNovo: EstadoCreditoContrato
   responsavelId: string | null; motivo: string | null; ocorridoEm: string

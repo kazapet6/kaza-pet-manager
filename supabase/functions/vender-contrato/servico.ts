@@ -8,6 +8,7 @@ import { executarSimulacaoPacote } from "../_shared/simulacao-pacote.ts";
 import {
   ocorrenciasDoCiclo,
   validarDistribuicaoContrato,
+  validarHidratacoes,
   type ItemRecorrente,
 } from "../_shared/recorrencia-contrato.ts";
 import { calcularDisponibilidade, calcularDisponibilidadeNoHorario } from "../_shared/motor/motor.ts";
@@ -15,13 +16,32 @@ import { carregarDadosDisponibilidadeComCliente } from "../_shared/motor/supabas
 import { materializarCiclo } from "../_shared/materializacao-ciclo.ts";
 type Linha = Record<string, unknown>;
 type Usuario = { id: string };
+type DependenciasVenda = { materializar: typeof materializarCiclo };
+const dependenciasPadrao: DependenciasVenda = { materializar: materializarCiclo };
 const consultaPacote =
   "id,nome,ativo,versao,pacote_servicos(id,servico_id,ordem_exibicao,quantidade_por_ciclo,intervalo_quantidade,intervalo_unidade,offset_inicial_quantidade,offset_inicial_unidade,desconto_percentual,ativo,servicos(nome))";
 export async function executarVendaContrato(
   i: IntencaoVendaContrato,
   u: Usuario,
   admin: SupabaseClient,
+  dependencias: DependenciasVenda = dependenciasPadrao,
 ): Promise<RespostaVendaContrato> {
+  const { data: consultaIdempotenteRaw, error: erroConsultaIdempotente } = await admin.rpc(
+    "consultar_venda_contrato_idempotente_042",
+    { p_intencao: { ...i, usuarioId: u.id } },
+  );
+  if (erroConsultaIdempotente) throw new Error("Não foi possível verificar a tentativa da venda.");
+  const consultaIdempotente = registro(consultaIdempotenteRaw);
+  if (consultaIdempotente.status === "criado") {
+    return retomarVendaConfirmada(consultaIdempotente, u.id, admin, dependencias);
+  }
+  if (consultaIdempotente.status !== "nova") {
+    return {
+      status: consultaIdempotente.status === "invalido" ? "invalido" : "conflito",
+      codigo: String(consultaIdempotente.codigo ?? "VENDA_EM_PROCESSAMENTO"),
+      mensagem: String(consultaIdempotente.mensagem ?? "A venda ainda está sendo confirmada."),
+    };
+  }
   const [
     { data: pet, error: ep },
     { data: pacote, error: epa },
@@ -48,23 +68,6 @@ export async function executarVendaContrato(
   ]);
   if (ep || !pet) return invalido("PET_NAO_ENCONTRADO", "Pet não encontrado.");
   const p = pet as unknown as Linha;
-  const camposContrato = [
-    ["especie", p.especie],
-    ["raca_id", p.raca_id],
-    ["porte", p.porte],
-    ["pelagem", p.pelagem],
-    ["temperamento", p.temperamento],
-  ].filter(([, valor]) => valor === null || valor === undefined || valor === "")
-    .map(([campo]) => String(campo));
-  if (camposContrato.length) {
-    const rotulos: Record<string, string> = { especie: "espécie", raca_id: "raça" };
-    return {
-      status: "invalido",
-      codigo: "CADASTRO_PET_INCOMPLETO",
-      mensagem: `Complete o cadastro do pet: ${camposContrato.map((campo) => rotulos[campo] ?? campo).join(", ")}.`,
-      campos: camposContrato,
-    };
-  }
   if (String(p.cliente_id) !== i.clienteId)
     return invalido(
       "CLIENTE_PET_INCOMPATIVEL",
@@ -115,6 +118,9 @@ export async function executarVendaContrato(
       "DEPENDENCIAS_INDISPONIVEIS",
       "Não foi possível validar as dependências dos Serviços.",
     );
+  if (!validarHidratacoes(itens, i.dataAncora, i.hidratacoesNosBanhos)) {
+    return invalido("HIDRATACOES_INVALIDAS", "Distribua a quantidade contratada de hidratações entre banhos distintos.");
+  }
   const distribuicao = validarDistribuicaoContrato(
     itens,
     ((deps ?? []) as unknown as Linha[]).map((x) => ({
@@ -122,16 +128,34 @@ export async function executarVendaContrato(
       dependenciaServicoId: String(x.dependencia_servico_id),
     })),
     i.dataAncora,
+    i.hidratacoesNosBanhos,
   );
   if (!distribuicao.valido)
     return invalido("DEPENDENCIA_IMPOSSIVEL", distribuicao.mensagem);
+  const simulada = await executarSimulacaoPacote(
+    {
+      pacoteId: i.pacoteId,
+      pacoteVersaoEsperada: i.pacoteVersaoEsperada,
+      petId: i.petId,
+    },
+    admin,
+  );
+  if (simulada.status !== "calculado") return simulada;
+  if (
+    i.valorContratado !== simulada.simulacao.totalPacote &&
+    !i.motivoAjusteValor
+  )
+    return invalido(
+      "MOTIVO_AJUSTE_OBRIGATORIO",
+      "Informe o motivo do ajuste comercial.",
+    );
   const { data: versaoOcupacao, error: erroVersaoOcupacao } = await admin
     .from("agenda_versao_ocupacao").select("versao").eq("id", true).single();
   const { data: versaoConfiguracao, error: erroVersaoConfiguracao } = await admin
     .from("agenda_versao_configuracao").select("versao").eq("id", true).single();
   if (erroVersaoOcupacao || !versaoOcupacao || erroVersaoConfiguracao || !versaoConfiguracao) throw new Error("Versões da Agenda indisponíveis.");
   const ocorrencias = [] as Record<string, unknown>[];
-  for (const ocorrencia of ocorrenciasDoCiclo(itens, i.dataAncora)) {
+  for (const ocorrencia of ocorrenciasDoCiclo(itens, i.dataAncora, i.hidratacoesNosBanhos)) {
     const entrada = {
       petId: i.petId, servicoIds: ocorrencia.itens.map((x) => x.servicoId), data: ocorrencia.data,
       preferenciaFuncionario: "obrigatorio" as const, funcionarioPreferidoId: i.funcionarioResponsavelId,
@@ -161,23 +185,6 @@ export async function executarVendaContrato(
       itens: ocorrencia.itens, plano: { ...opcao, petPorte: p.porte, petSexo: p.sexo },
     });
   }
-  const simulada = await executarSimulacaoPacote(
-    {
-      pacoteId: i.pacoteId,
-      pacoteVersaoEsperada: i.pacoteVersaoEsperada,
-      petId: i.petId,
-    },
-    admin,
-  );
-  if (simulada.status !== "calculado") return simulada;
-  if (
-    i.valorContratado !== simulada.simulacao.totalPacote &&
-    !i.motivoAjusteValor
-  )
-    return invalido(
-      "MOTIVO_AJUSTE_OBRIGATORIO",
-      "Informe o motivo do ajuste comercial.",
-    );
   const perfil = perfilPet(p),
     regrasAvulsas = await regrasAvulsasAplicadas(
       admin,
@@ -225,7 +232,7 @@ export async function executarVendaContrato(
       nome: p.nome,
       especie: p.especie,
       racaId: p.raca_id,
-      racaNome: raca?.nome,
+      racaNome: raca?.nome ?? null,
       porte: p.porte,
       pelagem: p.pelagem,
       peso: p.peso,
@@ -248,28 +255,56 @@ export async function executarVendaContrato(
     );
   const resposta = data as Record<string, unknown>;
   if (resposta.status !== "criado") return resposta as RespostaVendaContrato;
-  const contrato = await carregarContrato(String(resposta.contratoId), admin);
-  const { data: ciclo, error: erroCiclo } = await admin.from("contrato_ciclos")
-    .select("id").eq("contrato_id", contrato.id).eq("numero", 1).single();
-  if (erroCiclo || !ciclo) return {
-    status: "materializacao_pendente", contrato, cicloId: "",
-    codigo: "CICLO_NAO_RECARREGADO",
-    mensagem: "O Contrato foi criado, mas o primeiro Ciclo não pôde ser preparado para a Agenda. Tente novamente.",
-  };
-  const cicloId = String((ciclo as Linha).id);
+  return retomarVendaConfirmada(resposta, u.id, admin, dependencias);
+}
+
+export async function retomarVendaConfirmada(
+  resposta: Linha,
+  usuarioId: string,
+  admin: SupabaseClient,
+  dependencias: DependenciasVenda = dependenciasPadrao,
+): Promise<RespostaVendaContrato> {
+  const contratoId = String(resposta.contratoId ?? "");
+  const cicloIdPersistido = String(resposta.cicloId ?? "");
+  let contrato: Awaited<ReturnType<typeof carregarContrato>> | undefined;
   try {
-    const materializacao = await materializarCiclo(cicloId, u.id, admin);
+    contrato = await carregarContrato(contratoId, admin);
+  } catch {
+    console.error({ evento: "venda_pos_commit_pendente", contratoId, etapa: "carregar_contrato" });
+    return {
+      status: "materializacao_pendente", contratoId, cicloId: cicloIdPersistido,
+      materializacaoEstado: "pendente", codigo: "CONTRATO_NAO_RECARREGADO",
+      mensagem: "Pacote criado. Os atendimentos ainda estão sendo preparados.",
+    };
+  }
+  let cicloId = cicloIdPersistido;
+  if (!cicloId) {
+    const { data: ciclo, error: erroCiclo } = await admin.from("contrato_ciclos")
+      .select("id").eq("contrato_id", contrato.id).eq("numero", 1).single();
+    if (erroCiclo || !ciclo) {
+      console.error({ evento: "venda_pos_commit_pendente", contratoId, etapa: "carregar_ciclo" });
+      return {
+        status: "materializacao_pendente", contratoId, contrato, cicloId: "",
+        materializacaoEstado: "pendente", codigo: "CICLO_NAO_RECARREGADO",
+        mensagem: "Pacote criado. Os atendimentos ainda estão sendo preparados.",
+      };
+    }
+    cicloId = String((ciclo as Linha).id);
+  }
+  try {
+    const materializacao = await dependencias.materializar(cicloId, usuarioId, admin);
     if (materializacao.status !== "materializado") return {
-      status: "materializacao_pendente", contrato, cicloId,
+      status: "materializacao_pendente", contratoId, contrato, cicloId,
+      materializacaoEstado: materializacao.status === "materializando" ? "materializando" : "erro",
       codigo: materializacao.codigo, mensagem: materializacao.mensagem,
     };
     return { status: "criado", contrato, materializacao: { cicloId, quantidadeAtendimentos: materializacao.atendimentos.length } };
-  } catch (erro) {
-    console.error({ evento: "venda_materializacao_pendente", contratoId: contrato.id, cicloId, mensagem: erro instanceof Error ? erro.message : "Falha desconhecida" });
+  } catch {
+    console.error({ evento: "venda_pos_commit_pendente", contratoId, cicloId, etapa: "materializar" });
     return {
-      status: "materializacao_pendente", contrato, cicloId,
-      codigo: "MATERIALIZACAO_INDISPONIVEL",
-      mensagem: "O Contrato foi criado, mas a Agenda ainda não. Tente novamente com segurança.",
+      status: "materializacao_pendente", contratoId, contrato, cicloId,
+      materializacaoEstado: "erro", codigo: "MATERIALIZACAO_INDISPONIVEL",
+      mensagem: "Pacote criado, mas os atendimentos precisam de atenção.",
     };
   }
 }
@@ -332,12 +367,12 @@ function aplica(r: Linha, p: ReturnType<typeof perfilPet>) {
 function perfilPet(p: Linha) {
   const r = Array.isArray(p.raca) ? (p.raca[0] as Linha) : (p.raca as Linha);
   return {
-    porte: String(p.porte),
-    pelagem: String(p.pelagem),
-    racaId: String(p.raca_id),
-    racaNome: String(r?.nome ?? ""),
+    porte: p.porte == null ? null : String(p.porte),
+    pelagem: p.pelagem == null ? null : String(p.pelagem),
+    racaId: p.raca_id == null ? null : String(p.raca_id),
+    racaNome: r?.nome == null ? null : String(r.nome),
     peso: p.peso == null ? null : Number(p.peso),
-    temperamento: String(p.temperamento),
+    temperamento: p.temperamento == null ? null : String(p.temperamento),
   };
 }
 async function carregarContrato(id: string, admin: SupabaseClient) {
@@ -373,6 +408,7 @@ function nomeRelacao(v: unknown) {
 }
 function horaMinutos(v:string){const[h,m]=v.split(":").map(Number);return h*60+m}
 function horaTexto(v:number){const minutos=((v%1440)+1440)%1440;return `${String(Math.floor(minutos/60)).padStart(2,"0")}:${String(minutos%60).padStart(2,"0")}`}
+function registro(v: unknown): Linha { return v && typeof v === "object" && !Array.isArray(v) ? v as Linha : {}; }
 function invalido(c: string, m: string): RespostaVendaContrato {
   return { status: "invalido", codigo: c, mensagem: m };
 }

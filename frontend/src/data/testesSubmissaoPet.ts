@@ -55,7 +55,7 @@ await teste('edição executa um único UPDATE', async () => {
 })
 
 await teste('formulário usa trava imediata, botão desabilitado e estado visual', () => {
-  const pagina = readFileSync(new URL('../pages/Pets.tsx', import.meta.url), 'utf8')
+  const pagina = readFileSync(new URL('../components/EditorPet.tsx', import.meta.url), 'utf8')
   assert.match(pagina, /useRef\(criarTravaSubmissaoPet\(\)\)/)
   assert.match(pagina, /if \(travaSubmissao\.current\.ativa\(\)\) return/)
   assert.match(pagina, /disabled=\{salvando\}/)

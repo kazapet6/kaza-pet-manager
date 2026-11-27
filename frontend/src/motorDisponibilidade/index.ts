@@ -14,6 +14,7 @@ export { calcularPrecificacao } from './precificacao.ts'
 export { ErroCadastroPetIncompleto } from '../../../supabase/functions/_shared/motor/cadastroPet.ts'
 export { carregarDadosPrecificacaoComCliente } from './precificacaoSupabase.ts'
 export { resumirDisponibilidadeDoCiclo } from './ciclo.ts'
+export { exigirResponsavelUnico, funcionarioResponsavelDaOpcao } from '../../../supabase/functions/_shared/motor/responsavel.ts'
 export type * from './tipos.ts'
 
 export async function consultarDisponibilidade(entrada: import('./tipos.ts').EntradaDisponibilidade) {

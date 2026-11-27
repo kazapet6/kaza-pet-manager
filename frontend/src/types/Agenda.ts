@@ -13,6 +13,10 @@ export type Servico = {
   nome: string
   descricao: string
   ativo: boolean
+  exigeCreditoDeServicoId?: string | null
+  procedimentoInclusoEmServicoId?: string | null
+  procedimentosInclusos?: import('../../../supabase/functions/_shared/motor/procedimentos.ts').CodigoProcedimento[]
+  procedimentoAvulsoCodigo?: import('../../../supabase/functions/_shared/motor/procedimentos.ts').CodigoProcedimento | null
   precoBase: number
   agendamentoCliente: boolean
   criadoEm: string
