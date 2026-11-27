@@ -17,6 +17,7 @@ import FinanceiroPacotePainel from '../agenda/FinanceiroPacotePainel.tsx'
 import ConclusaoAtendimentoModal from '../conclusaoAtendimento/ConclusaoAtendimentoModal.tsx'
 import { podeAbrirConclusao } from '../conclusaoAtendimento/contrato.ts'
 import { executarDadosConclusao } from '../conclusaoAtendimento/clienteSupabase.ts'
+import { FORMAS_PAGAMENTO, dataEfetivaValida, hojeFinanceiro, type FormaPagamento } from '../conclusaoAtendimento/contrato.ts'
 import { financeiroDaResposta, textoFinanceiro } from '../agenda/financeiroAtendimento.ts'
 import { statusAtendimento, type AcaoExcepcionalAtendimento, type AlterarStatusIntent, type AlterarStatusResposta, type StatusOperacionalEditavel } from '../statusAtendimento/contrato.ts'
 import { opcoesStatusOperacional, podeEditarStatus, podeExecutarAcaoExcepcional, rotuloStatusAtendimento } from '../statusAtendimento/politica.ts'
@@ -151,14 +152,14 @@ export default function Agenda({ onVerContrato }: { onVerContrato: (contratoId: 
       : erro ? <EstadoTela titulo="Não foi possível carregar a Agenda" texto={erro}><Button variant="secondary" onClick={() => void carregar(data || undefined)}>Tentar novamente</Button></EstadoTela>
         : agenda && <GradeAgenda key={agenda.dataOperacional} visao={visao} mudarVisao={setVisao} agenda={agenda} blocos={blocos} agora={agora} mudarData={mudarData} hoje={() => void carregar()} abrir={item => void abrirDetalhe(item)} novo={abrirNovo} acao={item => void executarAcaoRapida(item)} atualizandoId={acaoRapidaAtualizandoId} />}
 
-    <Detalhes atendimento={detalhe} timezone={agenda?.timezone ?? 'America/Sao_Paulo'} fechar={() => setDetalhe(null)} executarAcao={executarAcaoStatus} pularBanho={pularBanho} remarcar={(item) => { setDetalhe(null); setRemarcando(item) }} concluir={(item) => { setDetalhe(null); setConcluindo(item) }} verContrato={onVerContrato} notificar={(mensagem) => setSucesso(mensagem ?? 'Observacoes do atendimento salvas.')} />
+    <Detalhes atendimento={detalhe} timezone={agenda?.timezone ?? 'America/Sao_Paulo'} fechar={() => setDetalhe(null)} executarAcao={executarAcaoStatus} pularBanho={pularBanho} remarcar={(item) => { setDetalhe(null); setRemarcando(item) }} concluir={(item) => { setDetalhe(null); setConcluindo(item) }} verContrato={onVerContrato} notificar={(mensagem) => setSucesso(mensagem ?? 'Observacoes do atendimento salvas.')} atualizarFinanceiro={(id, financeiro) => setDetalhe(atual => atual?.id === id ? { ...atual, financeiro } : atual)} />
     {novoAberto && <NovoAgendamentoModal aberto dataInicial={data} contextoInicial={contextoNovo} onClose={() => setNovoAberto(false)} onConfirmado={concluirNovoAgendamento} />}
     {remarcando && <RemarcarAtendimentoModal atendimento={remarcando} onClose={() => setRemarcando(null)} onRemarcado={concluirRemarcacao} />}
     {concluindo && <ConclusaoAtendimentoModal atendimento={concluindo} statusEsperado={concluindo.status} onClose={() => setConcluindo(null)} onConcluir={(item, statusEsperado) => executarAcaoStatus(item, 'concluido', false, statusEsperado)} />}
   </section>
 }
 
-function Detalhes({ atendimento, timezone, fechar, executarAcao, pularBanho, remarcar, concluir, verContrato, notificar }: { atendimento: AgendaDiariaAtendimento | null; timezone: string; fechar: () => void; executarAcao: (atendimento: AgendaDiariaAtendimento, alteracao: StatusOperacionalEditavel | AcaoExcepcionalAtendimento) => Promise<AlterarStatusResposta>; pularBanho: (atendimento: AgendaDiariaAtendimento, motivo: string, senha?: string) => Promise<void>; remarcar: (atendimento: AgendaDiariaAtendimento) => void; concluir: (atendimento: AgendaDiariaAtendimento) => void; verContrato: (contratoId: string) => void; notificar: (mensagem?: string) => void }) {
+function Detalhes({ atendimento, timezone, fechar, executarAcao, pularBanho, remarcar, concluir, verContrato, notificar, atualizarFinanceiro }: { atendimento: AgendaDiariaAtendimento | null; timezone: string; fechar: () => void; executarAcao: (atendimento: AgendaDiariaAtendimento, alteracao: StatusOperacionalEditavel | AcaoExcepcionalAtendimento) => Promise<AlterarStatusResposta>; pularBanho: (atendimento: AgendaDiariaAtendimento, motivo: string, senha?: string) => Promise<void>; remarcar: (atendimento: AgendaDiariaAtendimento) => void; concluir: (atendimento: AgendaDiariaAtendimento) => void; verContrato: (contratoId: string) => void; notificar: (mensagem?: string) => void; atualizarFinanceiro: (id: string, financeiro: AgendaDiariaAtendimento['financeiro']) => void }) {
   const [atualizando, setAtualizando] = useState(false)
   const [statusAtualizando, setStatusAtualizando] = useState<StatusOperacionalEditavel | null>(null)
   const [confirmacao, setConfirmacao] = useState<AcaoExcepcionalAtendimento | null>(null)
@@ -214,7 +215,7 @@ function Detalhes({ atendimento, timezone, fechar, executarAcao, pularBanho, rem
         <Item rotulo="Data" valor={dataCurta(atendimento.dataOperacional)} />
         <Item rotulo="Modalidade" valor={atendimento.modalidade === 'taxidog' ? 'TaxiDog' : 'Sem transporte'} />
         <Item rotulo={atendimento.vinculoContrato ? 'Valor de referência' : 'Valor final'} valor={moeda(atendimento.valorFinal)} />
-        {!atendimento.vinculoContrato && <Item rotulo="Financeiro" valor={textoFinanceiro(atendimento.financeiro)} />}
+        {!atendimento.vinculoContrato && <FinanceiroAvulsoResumo key={atendimento.id} atendimento={atendimento} atualizar={financeiro => atualizarFinanceiro(atendimento.id, financeiro)} />}
       </div>
       {!atendimento.vinculoContrato && (status === 'agendado' || status === 'confirmado')
         && atendimento.financeiro?.versao !== undefined
@@ -269,6 +270,63 @@ function Detalhes({ atendimento, timezone, fechar, executarAcao, pularBanho, rem
       {!puloAberto && !confirmacao && <footer className="agenda-fechar-rodape"><AcaoModal disabled={atualizando} onClick={fechar}>Fechar</AcaoModal></footer>}
     </div>}
   </Modal>{atendimento && observacoesAberto && <ObservacoesAtendimentoModal atendimento={atendimento} onClose={() => setObservacoesAberto(false)} onSalvo={notificar} />}</>
+}
+
+
+function FinanceiroAvulsoResumo({ atendimento, atualizar }: { atendimento: AgendaDiariaAtendimento; atualizar: (financeiro: AgendaDiariaAtendimento['financeiro']) => void }) {
+  const [aberto, setAberto] = useState(false)
+  const [valor, setValor] = useState('')
+  const [forma, setForma] = useState<FormaPagamento>('pix')
+  const [dia, setDia] = useState(hojeFinanceiro)
+  const [ocupado, setOcupado] = useState(false)
+  const [mensagem, setMensagem] = useState('')
+  const [erro, setErro] = useState(false)
+  const [incerto, setIncerto] = useState(false)
+  const chave = useRef<string | null>(null)
+  const trava = useRef(false)
+  const financeiro = atendimento.financeiro
+  const elegivel = Boolean(financeiro && financeiro.saldo > 0 && financeiro.situacao !== 'isento' && atendimento.status !== 'cancelado' && atendimento.status !== 'faltou')
+  const numero = Number(valor.replace(',', '.'))
+  async function consultar() {
+    const resposta = await executarDadosConclusao({ operacao: 'carregar', atendimentoId: atendimento.id })
+    if (resposta.status !== 'carregado' || resposta.financeiro.cicloPacoteId) throw new Error('Financeiro avulso indisponível.')
+    atualizar(financeiroDaResposta(resposta))
+    return resposta.financeiro.saldo
+  }
+  async function receber() {
+    if (trava.current || (!incerto && !elegivel) || !Number.isFinite(numero) || numero <= 0 || (!incerto && numero > (financeiro?.saldo ?? 0)) || !dataEfetivaValida(dia)) return
+    trava.current = true; setOcupado(true); setMensagem(''); setErro(false)
+    chave.current ??= crypto.randomUUID()
+    try {
+      const resposta = await executarDadosConclusao({ operacao: 'receber', atendimentoId: atendimento.id, chaveIdempotencia: chave.current, valor: numero, formaPagamento: forma, dataEfetiva: dia })
+      if (resposta.status !== 'registrado') {
+        chave.current = null; setIncerto(false); setErro(true)
+        setMensagem('mensagem' in resposta && typeof resposta.mensagem === 'string' ? resposta.mensagem : 'Recebimento não registrado.')
+        try { await consultar() } catch { /* manter mensagem da rejeição */ }
+        return
+      }
+      const reutilizado = resposta.reutilizado === true
+      setIncerto(true)
+      await consultar()
+      chave.current = null; setIncerto(false); setAberto(false)
+      setMensagem(reutilizado ? 'Pagamento já registrado anteriormente. Nenhum novo lançamento realizado.' : 'Pagamento registrado com sucesso.')
+    } catch {
+      setIncerto(true); setErro(true)
+      setMensagem('Resultado ainda não confirmado. Repita com os mesmos dados para evitar duplicidade.')
+    } finally { trava.current = false; setOcupado(false) }
+  }
+  return <div>
+    <span>Financeiro</span><strong>{textoFinanceiro(financeiro)}</strong>
+    {elegivel && !aberto && <AcaoModal variante="primario" onClick={() => { setValor((financeiro?.saldo ?? 0).toFixed(2).replace('.', ',')); setDia(hojeFinanceiro()); setMensagem(''); setErro(false); setAberto(true) }}>Registrar pagamento</AcaoModal>}
+    {aberto && (elegivel || incerto) && <form className="conclusao-receber" onSubmit={evento => { evento.preventDefault(); void receber() }}>
+      <label>Valor a receber<input inputMode="decimal" value={valor} disabled={ocupado || incerto} onChange={evento => setValor(evento.target.value)} required /></label>
+      <label>Data efetiva<input type="date" value={dia} max={hojeFinanceiro()} disabled={ocupado || incerto} onChange={evento => setDia(evento.target.value)} required /></label>
+      <label>Forma de pagamento<select value={forma} disabled={ocupado || incerto} onChange={evento => setForma(evento.target.value as FormaPagamento)}>{FORMAS_PAGAMENTO.map(item => <option key={item} value={item}>{({pix:'Pix',dinheiro:'Dinheiro',debito:'Débito',credito:'Crédito',outro:'Outro'})[item]}</option>)}</select></label>
+      <AcaoModal variante="primario" type="submit" disabled={ocupado || !Number.isFinite(numero) || numero <= 0 || (!incerto && numero > (financeiro?.saldo ?? 0)) || !dataEfetivaValida(dia)}>{ocupado ? 'Registrando...' : incerto ? 'Confirmar resultado' : 'Confirmar pagamento'}</AcaoModal>
+      <AcaoModal disabled={ocupado || incerto} onClick={() => setAberto(false)}>Voltar</AcaoModal>
+    </form>}
+    {mensagem && <p role={erro ? 'alert' : 'status'}>{mensagem}</p>}
+  </div>
 }
 
 type NomeAcao = 'observacoes' | 'remarcar' | 'pular' | 'falta' | 'cancelar'
