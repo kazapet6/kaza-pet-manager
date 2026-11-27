@@ -8,7 +8,11 @@ export type DensidadeSegmento = 'curta' | 'media' | 'normal'
 export const ESCALA_GRADE = 3.6
 export function minutos(hora: string) { const [h, m] = hora.split(':').map(Number); return h * 60 + m }
 export function horario(minuto: number) { return `${String(Math.floor(minuto / 60)).padStart(2, '0')}:${String(minuto % 60).padStart(2, '0')}` }
-export function minutoLocal(valor: string, timezone: string) { return minutos(new Intl.DateTimeFormat('pt-BR', { timeZone: timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(valor))) }
+export function minutoLocal(valor: string, timezone: string) {
+  const instante = Date.parse(valor)
+  if (!Number.isFinite(instante)) return NaN
+  return minutos(new Intl.DateTimeFormat('pt-BR', { timeZone: timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(instante))
+}
 export function alturaSegmento(segmento: Pick<Segmento, 'inicio' | 'fim'>, escala = ESCALA_GRADE) { return Math.max(0, (segmento.fim - segmento.inicio) * escala - 4) }
 export function densidadeSegmento(segmento: Pick<Segmento, 'inicio' | 'fim'>, escala = ESCALA_GRADE): DensidadeSegmento {
   const altura = alturaSegmento(segmento, escala)
