@@ -73,6 +73,8 @@ export default function Agenda({ onVerContrato }: { onVerContrato: (contratoId: 
   async function abrirDetalhe(item: AgendaDiariaAtendimento) {
     const consulta = ++detalheConsulta.current
     setDetalhe(item)
+    // O painel financeiro do pacote já consulta o ciclo e os adicionais em conjunto.
+    if (item.vinculoContrato && (item.status === 'agendado' || item.status === 'confirmado')) return
     try {
       const resposta = await executarDadosConclusao({ operacao: 'carregar', atendimentoId: item.id })
       if (consulta === detalheConsulta.current) setDetalhe(atual => atual?.id === item.id ? { ...atual, financeiro: financeiroDaResposta(resposta) } : atual)
