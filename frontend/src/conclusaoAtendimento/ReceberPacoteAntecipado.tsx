@@ -7,8 +7,8 @@ type Pagamento = Extract<ConclusaoDadosIntent, { operacao: 'receber' }>
 const moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
 
 /** Registra pagamento que o operador confirma ter ocorrido; não realiza cobrança externa. */
-export default function ReceberPacoteAntecipado({ atendimentoId }: { atendimentoId: string }) {
-  const [financeiro, setFinanceiro] = useState<FinanceiroAtendimento | null>(null)
+export default function ReceberPacoteAntecipado({ atendimentoId, inicial }: { atendimentoId: string; inicial?: FinanceiroAtendimento }) {
+  const [financeiro, setFinanceiro] = useState<FinanceiroAtendimento | null>(inicial ?? null)
   const [forma, setForma] = useState<FormaPagamento>('pix')
   const [data, setData] = useState('')
   const [ocupado, setOcupado] = useState(false)
@@ -47,16 +47,16 @@ export default function ReceberPacoteAntecipado({ atendimentoId }: { atendimento
     } finally { trava.current = false; setOcupado(false) }
   }
 
-  return <section aria-label="Pagamento antecipado do pacote" className="conclusao-pagamento">
-    <h4>Pagamento do ciclo</h4>
+  return <section aria-label="Pagamento antecipado do pacote" className="conclusao-pagamento agenda-financeiro-item">
+    <div className="agenda-financeiro-titulo"><h4>Pagamento do ciclo</h4>{financeiro && <span className={'agenda-financeiro-status ' + (financeiro.saldo > 0 ? 'pendente' : 'quitado')}>{financeiro.isento ? 'Isento' : financeiro.saldo > 0 ? 'Pendente' : 'Quitado'}</span>}</div>
     {!financeiro && <Button variant="secondary" disabled={ocupado} onClick={() => void operar(false)}>Consultar pagamento do pacote</Button>}
     {financeiro && <>
-      <p>Pacote: {moeda.format(financeiro.valorFinal)} · Recebido: {moeda.format(financeiro.totalRecebido)} · Saldo: {moeda.format(financeiro.saldo)}</p>
-      {financeiro.recebimentos.map(r => <p key={r.id}>Recebimento {moeda.format(r.valor)} · {r.formaPagamento} · Data efetiva: {r.dataEfetiva ? r.dataEfetiva.split('-').reverse().join('/') : 'não informada (legado)'}</p>)}
+      <div className="agenda-financeiro-valores"><div><small>Valor do ciclo</small><strong>{moeda.format(financeiro.valorFinal)}</strong></div><div><small>Recebido</small><strong>{moeda.format(financeiro.totalRecebido)}</strong></div><div><small>Saldo a receber</small><strong>{moeda.format(financeiro.saldo)}</strong></div></div>
+      {financeiro.recebimentos.length > 0 && <details className="agenda-financeiro-historico"><summary>Histórico de recebimentos ({financeiro.recebimentos.length})</summary>{financeiro.recebimentos.map(r => <p key={r.id}>{moeda.format(r.valor)} · {r.formaPagamento} · {r.dataEfetiva ? r.dataEfetiva.split('-').reverse().join('/') : 'Data não informada (legado)'}</p>)}</details>}
       {(financeiro.saldo > 0 || pendente) && <>
-        <label>Data efetiva do pagamento <input type="date" max={hojeFinanceiro()} value={data} disabled={ocupado || Boolean(pendente)} onChange={e => setData(e.target.value)} required /></label>
-        <label>Forma de pagamento <select value={forma} disabled={ocupado || Boolean(pendente)} onChange={e => setForma(e.target.value as FormaPagamento)}>{FORMAS_PAGAMENTO.map(f => <option key={f} value={f}>{f}</option>)}</select></label>
-        <p>Confirme somente valores já recebidos. Nenhum atendimento será iniciado ou concluído.</p>
+        <div className="agenda-financeiro-campos"><label>Data efetiva do pagamento <input type="date" max={hojeFinanceiro()} value={data} disabled={ocupado || Boolean(pendente)} onChange={e => setData(e.target.value)} required /></label>
+        <label>Forma de pagamento <select value={forma} disabled={ocupado || Boolean(pendente)} onChange={e => setForma(e.target.value as FormaPagamento)}>{FORMAS_PAGAMENTO.map(f => <option key={f} value={f}>{f}</option>)}</select></label></div>
+        <p className="agenda-financeiro-nota">Registre somente valores já recebidos. Esta operação não inicia nem conclui o atendimento.</p>
         <Button disabled={ocupado || (!pendente && !dataEfetivaValida(data))} onClick={() => void operar(true)}>{pendente ? 'Verificar recebimento anterior' : `Registrar recebimento de ${moeda.format(financeiro.saldo)}`}</Button>
       </>}
     </>}
