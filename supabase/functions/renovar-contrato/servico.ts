@@ -88,7 +88,11 @@ export async function renovarAutomaticamente(cicloId: string, usuarioId: string,
     .select('data_operacional').eq('ciclo_id', cicloId).order('data_operacional')
   if (erroOcorrencias || !ocorrencias.length) throw new Error('Rotina original do ciclo indisponível.')
   const hoje = new Intl.DateTimeFormat('sv-SE', { timeZone: contrato.timezone_snapshot }).format(new Date())
-  const dataAncora = proximaAncora(ocorrencias.map(o => o.data_operacional), ultima.data_atual, hoje)
+  const { data: itens, error: erroItens } = await admin.from('contrato_itens').select('servico_nome_snapshot,intervalo_quantidade,intervalo_unidade').eq('contrato_id', ciclo.contrato_id)
+  if (erroItens) throw erroItens
+  const cadencias = (itens ?? []).filter(i => String(i.servico_nome_snapshot).trim().toLowerCase() === 'banho').map(i => Number(i.intervalo_quantidade) * (i.intervalo_unidade === 'semana' ? 7 : i.intervalo_unidade === 'dia' ? 1 : NaN)).filter(i => i === 7 || i === 14)
+  const cadenciaBanho = cadencias.length ? Math.min(...cadencias) : undefined
+  const dataAncora = proximaAncora(ocorrencias.map(o => o.data_operacional), ultima.data_atual, hoje, cadenciaBanho)
   const intencao = { operacao: 'preparar' as const, contratoId: ciclo.contrato_id, cicloAnteriorId: cicloId, chaveIdempotencia: cicloId, dataAncora }
   for (let tentativa = 0; tentativa < 2; tentativa++) {
     const preparo = await executarRenovacao(intencao, usuarioId, admin, assinador, padrao, true)
@@ -113,12 +117,12 @@ async function confirmarMaterializacaoAutomatica(cicloId: string, usuarioId: str
   if (resultado.status !== 'materializado') throw new Error('A Agenda do ciclo sucessor permanece pendente.')
 }
 
-export function proximaAncora(rotina: string[], ultima: string, hoje: string) {
+export function proximaAncora(rotina: string[], ultima: string, hoje: string, periodicidadeDias?: number) {
   const dia = 86_400_000
   const planejadas = [...new Set(rotina)].map(data => Date.parse(`${data}T00:00:00Z`))
   const intervalos = planejadas.slice(1).map((data, i) => data - planejadas[i])
   const uniforme = intervalos[0] > 0 && intervalos.every(i => i === intervalos[0])
-  const intervalo = uniforme ? intervalos[0] : 7 * dia
+  const intervalo = periodicidadeDias === 7 || periodicidadeDias === 14 ? periodicidadeDias * dia : uniforme ? intervalos[0] : 7 * dia
   const fimPlanejado = planejadas[planejadas.length - 1]
   const limite = Math.max(Date.parse(ultima) + dia, Date.parse(hoje))
   const passos = Math.max(1, Math.ceil((limite - fimPlanejado) / intervalo))
