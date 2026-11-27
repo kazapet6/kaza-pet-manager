@@ -230,7 +230,7 @@ function Detalhes({ atendimento, timezone, fechar, executarAcao, pularBanho, rem
         {atendimento.taxidog && <Bloco titulo="TaxiDog"><div className="agenda-taxidog-resumo"><Item rotulo="Ciclo" valor={atendimento.taxidog.cicloNome} /><Item rotulo="Janela de coleta" valor={`${horaSimples(atendimento.taxidog.coletaInicio)}–${horaSimples(atendimento.taxidog.coletaFim)}`} /><Item rotulo="Limite operacional de conclusão" valor={horaSimples(atendimento.taxidog.conclusaoLimite)} /></div></Bloco>}
         {atendimento.observacoes && <Bloco titulo="Observações"><p className="agenda-observacoes">{atendimento.observacoes}</p></Bloco>}
       </div>
-      {atendimento.vinculoContrato && (status === 'agendado' || status === 'confirmado') && <FinanceiroPacotePainel key={atendimento.id} atendimentoId={atendimento.id} />}
+      {atendimento.vinculoContrato && status && podeEditarStatus(status) && status !== 'concluido' && <FinanceiroPacotePainel key={atendimento.id} atendimentoId={atendimento.id} />}
       <section className="agenda-acoes-painel" aria-label="Ações do atendimento">
         {puloAberto && podePular ? <PuloBanho key={atendimento.id} executar={executarPulo} voltar={() => setPuloAberto(false)} />
           : confirmacao ? <div className="agenda-acao-confirmar" role="group" aria-labelledby="agenda-confirmacao-titulo">

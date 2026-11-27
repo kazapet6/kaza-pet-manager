@@ -79,7 +79,11 @@ await teste('SA53', 'ações excepcionais têm destinos fechados', () => { asser
 await teste('SA54', 'contrato aceita ações conhecidas e rejeita ação arbitrária', () => { assert.ok(lerAlterarStatusIntent({ atendimentoId: 'a', statusEsperado: 'agendado', acao: 'cancelar' })); assert.equal(lerAlterarStatusIntent({ atendimentoId: 'a', statusEsperado: 'agendado', acao: 'excluir' }), null) })
 await teste('SA55', 'migration 022 preserva histórico e restringe transições', () => assert.ok(migration022.includes("old.status in ('cancelado', 'faltou')") && migration022.includes("old.status not in ('agendado', 'confirmado')") && migration022.includes('v_origens_cancelamento')))
 await teste('SA56', 'interface exige confirmação sem alert nativo', () => assert.ok(agenda.includes('Cancelar atendimento?') && agenda.includes('Registrar falta?') && agenda.includes('Confirmar cancelamento') && agenda.includes('Confirmar falta') && !agenda.includes('window.confirm') && !agenda.includes('window.alert')))
-await teste('SA57', 'ações ficam agrupadas à esquerda do rodapé sem seção própria', () => assert.ok(agenda.includes('<footer>') && agenda.includes('className="agenda-rodape-acoes"') && !agenda.includes('Ações do atendimento') && !agenda.includes('agenda-acoes-excepcionais') && css.includes('justify-content: space-between') && css.includes('margin-left: auto')))
+await teste('SA57', 'ações operacionais, rotina e ocorrências mantêm grupos separados', () => {
+  assert.ok(agenda.includes('className="agenda-acoes-painel"'))
+  for (const grupo of ['Gestão do atendimento', 'Rotina do pacote', 'Ocorrências']) assert.ok(agenda.includes(grupo))
+  assert.ok(agenda.includes('className="agenda-fechar-rodape"'))
+})
 await teste('SA58', 'duplo clique é bloqueado durante ação excepcional', () => assert.ok(agenda.includes('|| emAndamento.current) return') && agenda.includes('disabled={atualizando}')))
 await teste('SA59', 'processamento excepcional é localizado', () => assert.ok(agenda.includes('acaoAtualizando === confirmacao') && agenda.includes('agenda-status-spinner')))
 await teste('SA60', 'cancelado e faltou mantêm cores semânticas', () => assert.ok(css.includes('.status-cancelado') && css.includes('.status-faltou')))

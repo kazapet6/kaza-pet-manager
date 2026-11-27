@@ -29,7 +29,9 @@ await teste('hash independe da chave de retry', async () => assert.equal(await c
 await teste('hash muda com horario', async () => assert.notEqual(await calcularHashRemarcacao(base), await calcularHashRemarcacao({ ...base, horarioEscolhido: 615 })))
 await teste('resposta tipada aceita sucesso', () => assert.equal(respostaRemarcacaoValida({ status: 'remarcado', codigo: 'REMARCADO', atendimentoId: base.atendimentoId, grupoAgendamentoId: base.grupoAgendamentoIdEsperado, funcionarioResponsavelId: base.funcionarioResponsavelId }), true))
 const loader = lerRepositorio('supabase/functions/_shared/motor/supabase.ts')
-await teste('loader ignora somente atendimento selecionado', () => assert.match(loader, /texto\(item\.id\) !== atendimentoidignorado/))
+await teste('loader exclui somente os IDs informados, com suporte à série do pulo', () => {
+  assert.match(loader, /!\(typeof atendimentoidignorado === 'string' \? texto\(item\.id\) === atendimentoidignorado : atendimentoidignorado\?\.includes\(texto\(item\.id\)\)\)/)
+})
 await teste('loader mantem filtro de status dos demais atendimentos', () => assert.match(loader, /statusbloqueiadisponibilidade/))
 const servico = lerRepositorio('supabase/functions/remarcar-atendimento/servico.ts')
 await teste('edge usa motor oficial', () => assert.match(servico, /calculardisponibilidade/))

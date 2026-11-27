@@ -172,7 +172,10 @@ t("comparacao comportamental evita salvar retorno inalterado", () => {
   assert.equal(retornosForamAlterados(retornos, { s: '' }), true);
 });
 t("observacoes independente preservada", () =>
-  assert.match(agenda, /setObservacoesAberto\(true\).*Observacoes<\/button>/),
+  assert.match(agenda, /<AcaoModal[^\n]+setObservacoesAberto\(true\)\}>Observações<\/AcaoModal>/),
+);
+t("painel do pacote segue disponível nos status operacionais anteriores à conclusão", () =>
+  assert.match(agenda, /atendimento\.vinculoContrato && status && podeEditarStatus\(status\) && status !== 'concluido' && <FinanceiroPacotePainel/),
 );
 t("recebimentos individuais", () =>
   assert.match(migration, /create table public\.atendimento_recebimentos/),
