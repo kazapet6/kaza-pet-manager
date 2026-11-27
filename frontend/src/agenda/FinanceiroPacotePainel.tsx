@@ -28,7 +28,7 @@ export default function FinanceiroPacotePainel({ atendimentoId }: { atendimentoI
       : !financeiro ? <p className="agenda-financeiro-carregando" role="status"><i className="agenda-status-spinner" aria-hidden="true"/>Carregando pagamentos...</p>
       : <div className="agenda-financeiro-itens">
         <ReceberPacoteAntecipado atendimentoId={atendimentoId} inicial={financeiro}/>
-        {financeiro.adicionais ? <ReceberAdicionais atendimentoId={atendimentoId} inicial={financeiro.adicionais}/> : <section className="agenda-financeiro-item"><h4>Serviços adicionais</h4><p className="agenda-financeiro-sem-adicionais">Nenhum adicional neste atendimento.</p></section>}
+        {financeiro.adicionais ? <ReceberAdicionais atendimentoId={atendimentoId} inicial={financeiro.adicionais} painelAgenda/> : <section className="agenda-financeiro-item"><h4>Serviços adicionais</h4><p className="agenda-financeiro-sem-adicionais">Nenhum adicional neste atendimento.</p></section>}
       </div>}
   </section>
 }
