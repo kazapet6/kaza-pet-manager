@@ -6,6 +6,7 @@ import { criarModelo, extrairTags, lerRascunhosLocal, previaModelo, validarModel
 import './MensageriaCentral.css'
 import MensageriaConfirmacoesHml from './MensageriaConfirmacoesHml'
 import TemplateMetaHml from './TemplateMetaHml'
+import { AgendaComercialHml, HistoricoMensagensHml } from './OperacaoComercialHml'
 
 const CHAVE = 'kaza-mensageria-hml-rascunhos-v1'
 const PUBLICACAO_UI_HML = import.meta.env.VITE_MENSAGERIA_HML_PUBLICAR_UI_ENABLED==='true'
@@ -378,21 +379,19 @@ export default function MensageriaCentral() {
           </aside>
         </div>
       ) : aba==='confirmacoes' ? (
-        <MensageriaConfirmacoesHml />
+        <div style={{display:'grid',gap:16}}><AgendaComercialHml /><MensageriaConfirmacoesHml /></div>
+      ) : aba==='historico' ? (
+        <HistoricoMensagensHml />
       ) : aba==='integracoes' ? (
         <TemplateMetaHml />
       ) : (
         <section className="msg-coming">
-          <div className="msg-coming-icon">{aba==='automacoes'?'⚡':aba==='historico'?'🕘':'🔌'}</div>
-          <h2>{aba==='automacoes'?'Regras e automações':aba==='historico'?'Histórico de mensagens':'Configurações e integrações'}</h2>
-          {aba==='automacoes' ? <>
-            <p>Os gatilhos de agendamento, confirmação, consumo de pacotes e planos serão conectados aos eventos reais do sistema.</p>
-            <div className="msg-event-grid">{eventosMensageria.map(e=><div key={e.codigo}>
-              <strong>{e.nome}</strong><small>{e.descricao}</small><span>Desativado</span>
-            </div>)}</div>
-          </> : aba==='historico'
-            ? <p>O próximo marco exibirá entregas, leituras, confirmações, erros e o vínculo com os agendamentos. Nenhuma mensagem é enviada por este editor.</p>
-            : <p>A conexão Meta e os templates aprovados ficarão aqui. Credenciais nunca serão apresentadas nem armazenadas no navegador.</p>}
+          <div className="msg-coming-icon">⚡</div>
+          <h2>Regras e automações</h2>
+          <p>Os gatilhos de agendamento, confirmação, consumo de pacotes e planos serão conectados aos eventos reais do sistema.</p>
+          <div className="msg-event-grid">{eventosMensageria.map(e=><div key={e.codigo}>
+            <strong>{e.nome}</strong><small>{e.descricao}</small><span>Desativado</span>
+          </div>)}</div>
         </section>
       )}
     </div>
