@@ -41,11 +41,43 @@ export function AgendaComercialHml(){
  const [ocupado,setOcupado]=useState(false)
  const trava=useRef(false)
  const incertos=useRef(new Set<string>())
- const envioUI=import.meta.env.VITE_WHATSAPP_HML_SEND_UI_ENABLED==='true'
+ const [operacao,setOperacao]=useState<{receptor:boolean;processamento:boolean;envio_expira_em:string|null}|null>(null)
+ const [meta,setMeta]=useState<Record<string,unknown>|null>(null)
+ const [relogio,setRelogio]=useState(Date.now)
+ const envioUI=WHATSAPP_HML_HABILITADO && window.location.hostname==='hml.kazapetcare.com.br'
+ const janelaAtiva=!!operacao?.envio_expira_em && Date.parse(operacao.envio_expira_em)>relogio
+ const metaOk=!!meta && ['credencial_aceita','telefone_acessivel','telefone_na_waba','aplicativo_hml','permissao_envio'].every(k=>meta[k]===true)
+ useEffect(()=>{const id=window.setInterval(()=>setRelogio(Date.now()),1000);return ()=>window.clearInterval(id)},[])
+ async function chamar(body:Record<string,unknown>){
+  const {data,error}=await supabase.functions.invoke<Record<string,unknown>>('mensageria-confirmacao-hml',{body})
+  if(error){
+   let codigo='OPERACAO_NAO_CONFIRMADA'
+   try{const contexto=(error as {context?:Response}).context;const detalhe=await contexto?.json();if(typeof detalhe?.codigo==='string'&&/^[A-Z_0-9]+$/.test(detalhe.codigo))codigo=detalhe.codigo}catch{/* sem detalhes */}
+   throw Error(codigo)
+  }
+  if(!data)throw Error('RESPOSTA_INDISPONIVEL')
+  return data
+ }
+ async function controle(acao:string,comando?:string){
+  if(!envioUI||trava.current)return
+  if(comando==='abrir_envio'&&(!metaOk||!window.confirm('Abrir janela de envio de teste por 180 segundos, somente para o destinatário autorizado?')))return
+  if(acao==='processar_ciclo'&&(!janelaAtiva||!window.confirm('Processar até um clique e um agradecimento elegível na fila HML?')))return
+  if(comando==='ligar_receptor'||comando==='ligar_processamento'){if(!window.confirm('Habilitar este controle de homologação?'))return}
+  trava.current=true;setOcupado(true);setResultado('')
+  try{
+   const data=await chamar(comando?{acao,comando,...(comando==='abrir_envio'?{segundos:180}:{})}:acao==='processar_ciclo'?{acao,limite:1}:{acao})
+   if(acao==='operacao'){
+    setOperacao({receptor:data.receptor===true,processamento:data.processamento===true,envio_expira_em:typeof data.envio_expira_em==='string'?data.envio_expira_em:null});setRelogio(Date.now())
+    setResultado('Controles de homologação atualizados.')
+   }else if(acao==='prevalidar_meta'){setMeta(data);setResultado('Pré-validação concluída. Confira os indicadores abaixo.')}
+   else {const d=data.despacho as Record<string,unknown>|null;setResultado('Ciclo: '+String(data.codigo??'concluído')+' · agradecimento: '+String(d?.estado??d?.status??'não confirmado')+'. Confira o histórico.');atualizar()}
+  }catch(e){if(acao==='prevalidar_meta')setMeta(null);if(acao==='operacao')setOperacao(null);setResultado('Operação não confirmada: '+(e instanceof Error?e.message:'ERRO')+'. Atualize o estado antes de repetir.')}
+  finally{trava.current=false;setOcupado(false)}
+ }
  const alvo=itens?.find(x=>x.id===selecionado)
  const filtrados=itens?.filter(x=>[x.tutor,x.pet,x.servicos,x.data].some(v=>v.toLocaleLowerCase('pt-BR').includes(busca.toLocaleLowerCase('pt-BR').trim())))??[]
  async function enviar(){
-  if(!envioUI||!alvo||alvo.elegibilidade!=='elegivel_piloto'||trava.current||incertos.current.has(alvo.id))return
+  if(!envioUI||!janelaAtiva||!alvo||alvo.elegibilidade!=='elegivel_piloto'||trava.current||incertos.current.has(alvo.id))return
   if(!window.confirm('Autorizar um único convite de teste para o destinatário restrito do HML?'))return
   trava.current=true;setOcupado(true);incertos.current.add(alvo.id);setResultado('')
   try{
@@ -57,11 +89,29 @@ export function AgendaComercialHml(){
  if(!WHATSAPP_HML_HABILITADO)return null
  return <section className="msg-coming msg-operacao-lista" aria-label="Agenda comercial">
   <div className="msg-panel-heading"><div><h2>Agendamentos comerciais</h2><p>Próximos atendimentos da unidade autorizada. A listagem não autoriza envios.</p></div><button type="button" className="msg-quiet" disabled={ocupado} onClick={atualizar}>Atualizar</button></div>
+  {envioUI&&<div className="msg-operacao-detalhe"><h3>Operação controlada do WhatsApp · HML</h3>
+   <p className="msg-hint">Somente destinatário de teste autorizado pelo servidor. Nenhum disparo automático por este painel.</p>
+   <div className="msg-controls">
+    <button type="button" className="msg-quiet" disabled={ocupado} onClick={()=>void controle('prevalidar_meta')}>Validar conexão com a Meta</button>
+    <button type="button" className="msg-quiet" disabled={ocupado} onClick={()=>void controle('operacao','status')}>Consultar estado</button>
+    <button type="button" className="msg-primary" disabled={ocupado||!metaOk||janelaAtiva} onClick={()=>void controle('operacao','abrir_envio')}>Abrir janela de teste (3 min)</button>
+    <button type="button" className="msg-quiet" disabled={ocupado} onClick={()=>void controle('operacao','fechar_envio')}>Encerrar janela</button>
+   </div>
+   {meta&&<p role="status">{['credencial_aceita','telefone_acessivel','telefone_na_waba','aplicativo_hml','permissao_gestao','permissao_envio'].map(k=>k+': '+(meta[k]===true?'OK':'não validado')).join(' · ')}</p>}
+   <p>Janela: {janelaAtiva?'ativa até '+dataHora(operacao?.envio_expira_em??null):'fechada ou não consultada'} · Receptor: {operacao?.receptor?'ativo':'não confirmado'} · Processamento: {operacao?.processamento?'ativo':'não confirmado'}</p>
+   <div className="msg-controls">
+    <button type="button" className="msg-quiet" disabled={ocupado||operacao?.receptor===true} onClick={()=>void controle('operacao','ligar_receptor')}>Habilitar receptor</button>
+    <button type="button" className="msg-quiet" disabled={ocupado||operacao?.processamento===true} onClick={()=>void controle('operacao','ligar_processamento')}>Habilitar processamento</button>
+    <button type="button" className="msg-primary" disabled={ocupado||!janelaAtiva||!operacao?.processamento} onClick={()=>void controle('processar_ciclo')}>Processar clique e agradecimento</button>
+    <button type="button" className="msg-danger" disabled={ocupado} onClick={()=>void controle('operacao','emergencia')}>Bloquear operação</button>
+   </div>
+   {resultado&&<p role="status" className="msg-issues">{resultado}</p>}
+  </div>}
   {erro?<p role="alert" className="msg-issues">{erro}</p>:itens===null?<p role="status">Consultando agenda...</p>:<>
    <label className="msg-operacao-busca">Buscar tutor, pet, serviço ou data<input className="msg-input" value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar agendamentos"/></label>
    <p className="msg-hint">{filtrados.length} de {itens.length} registro(s) · até 100 próximos atendimentos. Agendamentos sem unidade determinada não são exibidos.</p>
    {filtrados.length===0?<p>Nenhum atendimento encontrado neste escopo.</p>:<div className="msg-operacao-linhas">{filtrados.map(x=><button type="button" key={x.id} className="msg-operacao-item" aria-pressed={selecionado===x.id} disabled={ocupado} onClick={()=>{setSelecionado(x.id);setResultado('')}}><span><strong>{x.pet}</strong><small>{x.tutor} · {x.servicos}</small></span><span><strong>{dataHora(x.compromisso??x.inicio)}</strong><small>{x.modalidade==='taxidog'?'Coleta TaxiDog':'Sem transporte'} · {rotulo(x.status)}</small></span><span className="msg-operacao-situacao">{elegibilidade[x.elegibilidade]}</span></button>)}</div>}
-   {alvo&&<div className="msg-operacao-detalhe"><h3>Agendamento selecionado</h3><dl><dt>Tutor</dt><dd>{alvo.tutor}</dd><dt>Pet</dt><dd>{alvo.pet}</dd><dt>Serviços</dt><dd>{alvo.servicos}</dd><dt>{alvo.modalidade==='taxidog'?'Coleta':'Horário combinado'}</dt><dd>{dataHora(alvo.compromisso)}</dd><dt>Início operacional</dt><dd>{dataHora(alvo.inicio)}</dd><dt>Último convite</dt><dd>{rotulo(alvo.convite_estado)}</dd><dt>Elegibilidade</dt><dd>{elegibilidade[alvo.elegibilidade]}</dd></dl><p className="msg-hint">O envio exige autorização temporária no servidor e o destinatário de teste aprovado. A prévia é apenas informativa.</p><button type="button" className="msg-primary" disabled={!envioUI||alvo.elegibilidade!=='elegivel_piloto'||ocupado||incertos.current.has(alvo.id)} onClick={()=>void enviar()}>{ocupado?'Solicitando...':'Enviar convite de teste'}</button>{!envioUI&&<p className="msg-hint">Envio bloqueado nesta implantação.</p>}</div>}
+   {alvo&&<div className="msg-operacao-detalhe"><h3>Agendamento selecionado</h3><dl><dt>Tutor</dt><dd>{alvo.tutor}</dd><dt>Pet</dt><dd>{alvo.pet}</dd><dt>Serviços</dt><dd>{alvo.servicos}</dd><dt>{alvo.modalidade==='taxidog'?'Coleta':'Horário combinado'}</dt><dd>{dataHora(alvo.compromisso)}</dd><dt>Início operacional</dt><dd>{dataHora(alvo.inicio)}</dd><dt>Último convite</dt><dd>{rotulo(alvo.convite_estado)}</dd><dt>Elegibilidade</dt><dd>{elegibilidade[alvo.elegibilidade]}</dd></dl><p className="msg-hint">O envio exige autorização temporária no servidor e o destinatário de teste aprovado. A prévia é apenas informativa.</p><button type="button" className="msg-primary" disabled={!envioUI||!janelaAtiva||alvo.elegibilidade!=='elegivel_piloto'||ocupado||incertos.current.has(alvo.id)} onClick={()=>void enviar()}>{ocupado?'Solicitando...':'Enviar convite de teste'}</button>{!envioUI&&<p className="msg-hint">Envio bloqueado nesta implantação.</p>}</div>}
    {resultado&&<p role="status" className="msg-issues">{resultado}</p>}
   </>}
  </section>
