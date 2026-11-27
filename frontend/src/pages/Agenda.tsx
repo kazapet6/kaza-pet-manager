@@ -24,6 +24,7 @@ import type {
 
 export default function Agenda({ onVerContrato }: { onVerContrato: (contratoId: string) => void }) {
   const [data, setData] = useState('')
+  const [visao, setVisao] = useState<'cards' | 'grade'>('cards')
   const [agenda, setAgenda] = useState<AgendaDiariaResultado | null>(null)
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
@@ -123,7 +124,7 @@ export default function Agenda({ onVerContrato }: { onVerContrato: (contratoId: 
 
     {carregando ? <EstadoTela titulo="Carregando agenda..." texto="Buscando os atendimentos desta data." />
       : erro ? <EstadoTela titulo="Não foi possível carregar a Agenda" texto={erro}><Button variant="secondary" onClick={() => void carregar(data || undefined)}>Tentar novamente</Button></EstadoTela>
-        : agenda && <GradeAgenda key={agenda.dataOperacional} agenda={agenda} blocos={blocos} agora={agora} mudarData={mudarData} hoje={() => void carregar()} abrir={item => void abrirDetalhe(item)} novo={abrirNovo} acao={item => void executarAcaoRapida(item)} atualizandoId={acaoRapidaAtualizandoId} />}
+        : agenda && <GradeAgenda key={agenda.dataOperacional} visao={visao} mudarVisao={setVisao} agenda={agenda} blocos={blocos} agora={agora} mudarData={mudarData} hoje={() => void carregar()} abrir={item => void abrirDetalhe(item)} novo={abrirNovo} acao={item => void executarAcaoRapida(item)} atualizandoId={acaoRapidaAtualizandoId} />}
 
     <Detalhes atendimento={detalhe} timezone={agenda?.timezone ?? 'America/Sao_Paulo'} fechar={() => setDetalhe(null)} executarAcao={executarAcaoStatus} remarcar={(item) => { setDetalhe(null); setRemarcando(item) }} concluir={(item) => { setDetalhe(null); setConcluindo(item) }} verContrato={onVerContrato} notificar={(mensagem) => setSucesso(mensagem ?? 'Observacoes do atendimento salvas.')} />
     {novoAberto && <NovoAgendamentoModal aberto dataInicial={data} contextoInicial={contextoNovo} onClose={() => setNovoAberto(false)} onConfirmado={concluirNovoAgendamento} />}
