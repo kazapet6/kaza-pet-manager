@@ -7,6 +7,7 @@ RUN npm ci --include=dev
 WORKDIR /app
 COPY frontend/ ./frontend/
 COPY supabase/functions/ ./supabase/functions/
+COPY banco/admin/go_live/revisao_racas.csv ./banco/admin/go_live/revisao_racas.csv
 WORKDIR /app/frontend
 ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_PUBLISHABLE_KEY
