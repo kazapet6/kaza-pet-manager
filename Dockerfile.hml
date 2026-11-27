@@ -1,0 +1,19 @@
+# HML only: build from repository root so shared TypeScript modules remain available.
+FROM node:24-bookworm-slim AS build
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json ./frontend/
+WORKDIR /app/frontend
+RUN npm ci --include=dev
+WORKDIR /app
+COPY frontend/ ./frontend/
+COPY supabase/functions/ ./supabase/functions/
+WORKDIR /app/frontend
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_PUBLISHABLE_KEY
+RUN node -e 'const u=process.env.VITE_SUPABASE_URL||""; const k=process.env.VITE_SUPABASE_PUBLISHABLE_KEY||""; if (!/^https:\/\/jgtctzqieyorhvqxjbpk\.supabase\.co\/?$/.test(u)) throw Error("HML_SUPABASE_URL_INVALID"); let ok=k.startsWith("sb_publishable_")&&k.length>20; if(!ok){try{const p=JSON.parse(Buffer.from(k.split(".")[1],"base64url").toString());ok=p.role==="anon"&&p.ref==="jgtctzqieyorhvqxjbpk"}catch{}} if(!ok)throw Error("HML_PUBLIC_KEY_REQUIRED")'
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=build /app/frontend/dist/ /usr/share/nginx/html/
+RUN printf '%s\n' 'server {' '    listen 80;' '    server_name _;' '    root /usr/share/nginx/html;' '    index index.html;' '    add_header X-Robots-Tag "noindex, nofollow" always;' '    location / { try_files $uri $uri/ /index.html; }' '    location /assets/ { try_files $uri =404; }' '}' > /etc/nginx/conf.d/default.conf
+EXPOSE 80
