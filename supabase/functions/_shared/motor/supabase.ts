@@ -12,7 +12,7 @@ export async function carregarDadosDisponibilidadeComCliente(
   entrada: EntradaDisponibilidade,
   cliente: SupabaseClient,
   chaveIdempotenciaIgnorada?: string,
-  atendimentoIdIgnorado?: string,
+  atendimentoIdIgnorado?: string | readonly string[],
   ocorrenciaContratoIdIgnorada?: string,
 ): Promise<DadosDisponibilidade> {
   async function consultar(tabela: string, colunas = '*') {
@@ -67,7 +67,7 @@ export async function carregarDadosDisponibilidadeComCliente(
   const gruposIgnoradosIds = new Set(gruposIgnorados.map((item) => texto(item.id)))
   const atendimentosAtivos = new Set(atendimentos.filter((item) =>
     statusBloqueiaDisponibilidade(texto(item.status))
-    && texto(item.id) !== atendimentoIdIgnorado
+    && !(typeof atendimentoIdIgnorado === 'string' ? texto(item.id) === atendimentoIdIgnorado : atendimentoIdIgnorado?.includes(texto(item.id)))
     && !gruposIgnoradosIds.has(texto(item.grupo_agendamento_id)),
   ).map((item) => texto(item.id)))
   const etapasAtivas = new Set(atendimentoEtapas.filter((item) => atendimentosAtivos.has(texto(item.atendimento_id))).map((item) => texto(item.id)))
