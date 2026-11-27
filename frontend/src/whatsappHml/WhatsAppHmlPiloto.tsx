@@ -8,9 +8,10 @@ type Props = {
   email: string
   autorizado: boolean
   onSair: () => Promise<void>
+  integrado?: boolean
 }
 
-export default function WhatsAppHmlPiloto({ email, autorizado, onSair }: Props) {
+export default function WhatsAppHmlPiloto({ email, autorizado, onSair, integrado = false }: Props) {
   const [pagina, setPagina] = useState<'mensageria' | 'piloto'>('mensageria')
   const [cliente, setCliente] = useState<Cliente | null>(null)
   const [erro, setErro] = useState('')
@@ -47,8 +48,9 @@ export default function WhatsAppHmlPiloto({ email, autorizado, onSair }: Props) 
     return () => { ativo = false }
   }, [autorizado, recarregar, pagina])
 
+  const Container = integrado ? 'section' : 'main'
   return (
-    <main aria-label="Ambiente de homologação" tabIndex={0} style={{
+    <Container aria-label="Ambiente de homologação" tabIndex={0} style={{
       flex: '1 1 0%', width: '100%', minHeight: 0, height: '100%',
       overflow: 'auto', background: '#f7f4ee',
       padding: 'clamp(20px, 4vw, 60px)', color: '#253a2b',
@@ -114,6 +116,6 @@ export default function WhatsAppHmlPiloto({ email, autorizado, onSair }: Props) 
           </section>
         )}
       </div>
-    </main>
+    </Container>
   )
 }

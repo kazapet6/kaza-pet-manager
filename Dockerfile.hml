@@ -12,6 +12,11 @@ WORKDIR /app/frontend
 ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_PUBLISHABLE_KEY
 RUN node -e 'const u=process.env.VITE_SUPABASE_URL||""; const k=process.env.VITE_SUPABASE_PUBLISHABLE_KEY||""; if (!/^https:\/\/jgtctzqieyorhvqxjbpk\.supabase\.co\/?$/.test(u)) throw Error("HML_SUPABASE_URL_INVALID"); let ok=k.startsWith("sb_publishable_")&&k.length>20; if(!ok){try{const p=JSON.parse(Buffer.from(k.split(".")[1],"base64url").toString());ok=p.role==="anon"&&p.ref==="jgtctzqieyorhvqxjbpk"}catch{}} if(!ok)throw Error("HML_PUBLIC_KEY_REQUIRED")'
+ARG VITE_MENSAGERIA_STUDIO_ENABLED=true
+ARG VITE_WHATSAPP_HML_ENABLED=true
+ARG VITE_WHATSAPP_HML_INTEGRADO=true
+# A publicação de modelos permanece desligada por padrão.
+ARG VITE_MENSAGERIA_HML_PUBLICAR_UI_ENABLED=false
 RUN npm run build
 
 FROM nginx:alpine

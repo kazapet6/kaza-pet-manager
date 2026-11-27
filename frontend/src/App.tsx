@@ -21,7 +21,7 @@ import { SistemaProvider } from './context/SistemaProvider'
 import { AgendaProvider } from './context/AgendaProvider'
 import WhatsAppHmlPiloto from './whatsappHml/WhatsAppHmlPiloto'
 import MensageriaCentral from './mensageria/MensageriaCentral'
-import { WHATSAPP_HML_HABILITADO } from './whatsappHml/configuracao'
+import { WHATSAPP_HML_HABILITADO, WHATSAPP_HML_INTEGRADO } from './whatsappHml/configuracao'
 
 function App() {
   const [estadoAutenticacao, setEstadoAutenticacao] = useState<EstadoAutenticacao>('carregando')
@@ -130,6 +130,10 @@ function App() {
               ? 'Financeiro'
               : 'Visão geral'
 
+  const adminWhatsAppHml = usuarioAtual?.app_metadata?.whatsapp_admin === true
+  const mostrarMensageria = import.meta.env.VITE_MENSAGERIA_STUDIO_ENABLED === 'true' &&
+    (!WHATSAPP_HML_HABILITADO || adminWhatsAppHml)
+
   function renderizarPagina() {
     switch (paginaAtual) {
       case 'importacao':
@@ -138,6 +142,8 @@ function App() {
         return <Agenda onVerContrato={(contratoId) => { setContratoEmFocoId(contratoId); setPaginaAtual('contratos') }} />
 
       case 'mensageria':
+        if (!mostrarMensageria) return <p role="alert">Mensageria indisponível para esta conta.</p>
+        if (WHATSAPP_HML_INTEGRADO) return <WhatsAppHmlPiloto integrado email={usuarioAtual?.email ?? ''} autorizado={adminWhatsAppHml} onSair={sairDoSistema} />
         return <MensageriaCentral />
 
       case 'clientes':
@@ -248,8 +254,8 @@ function App() {
     )
   }
 
-  // A homologação WhatsApp nunca instancia o provedor operacional de produção.
-  if (WHATSAPP_HML_HABILITADO) {
+  // Preserva o piloto isolado; o modo integrado exige identidade HML e opt-in explícito.
+  if (WHATSAPP_HML_HABILITADO && !WHATSAPP_HML_INTEGRADO) {
     return (
       <WhatsAppHmlPiloto
         email={usuarioAtual?.email ?? ''}
@@ -299,7 +305,7 @@ function App() {
             <span>Agenda</span>
           </button>
 
-          {import.meta.env.VITE_MENSAGERIA_STUDIO_ENABLED === 'true' && (
+          {mostrarMensageria && (
             <button
               className={paginaAtual === 'mensageria' ? 'nav-item ativo' : 'nav-item'}
               onClick={() => setPaginaAtual('mensageria')}
