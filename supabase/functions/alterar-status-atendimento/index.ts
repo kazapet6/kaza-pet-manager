@@ -2,6 +2,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2.112.2'
 import { criarOrigensPermitidas } from '../_shared/cors.ts'
 import { criarHandlerStatus, criarValidadorTokenStatus } from './handler.ts'
 import { alterarStatusComBackendConfiavel } from './servico.ts'
+import { pularCicloComMotor } from './pulo-ciclo.ts'
 import { criarAssinadorRenovacao } from '../renovar-contrato/assinatura.ts'
 import { renovarAutomaticamente } from '../renovar-contrato/servico.ts'
 
@@ -26,15 +27,7 @@ Deno.serve(criarHandlerStatus({
     await verificacao.auth.signOut({ scope: 'local' })
     return autorizado
   },
-  pular: async (intencao, usuarioId, autorizado) => {
-    const { data, error } = await admin.rpc('pular_banho_046', {
-      p_atendimento_id: intencao.atendimentoId, p_usuario_id: usuarioId,
-      p_motivo: intencao.motivo, p_autorizado: autorizado,
-    })
-    if (error?.code === 'P0049') return { status: 'invalido', codigo: 'ADICIONAL_JA_RECEBIDO', mensagem: 'O adicional já foi recebido. Resolva o pagamento antes de pular o banho.' }
-    if (error) throw error
-    return data
-  },
+  pular: (intencao, usuarioId, autorizado) => pularCicloComMotor(intencao, usuarioId, autorizado, admin),
   alterar: (intencao, usuarioId) => alterarStatusComBackendConfiavel(
     intencao, usuarioId, admin, cicloId => renovarAutomaticamente(cicloId, usuarioId, admin, assinador),
   ),
