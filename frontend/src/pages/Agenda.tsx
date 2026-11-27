@@ -302,7 +302,13 @@ function FinanceiroAvulsoResumo({ atendimento, atualizar }: { atendimento: Agend
       if (resposta.status !== 'registrado') {
         chave.current = null; setIncerto(false); setErro(true)
         setMensagem('mensagem' in resposta && typeof resposta.mensagem === 'string' ? resposta.mensagem : 'Recebimento não registrado.')
-        try { await consultar() } catch { /* manter mensagem da rejeição */ }
+        try {
+          const saldoAtual = await consultar()
+          if ('codigo' in resposta && resposta.codigo === 'VALOR_SUPERA_SALDO') {
+            setMensagem(saldoAtual === 0 ? 'Este atendimento já está pago. Nenhum novo pagamento foi registrado.' : `O saldo foi alterado. Saldo atual: ${moeda(saldoAtual)}. Nenhum pagamento foi registrado.`)
+            if (saldoAtual === 0) setAberto(false)
+          }
+        } catch { /* manter mensagem da rejeição */ }
         return
       }
       const reutilizado = resposta.reutilizado === true
@@ -325,7 +331,7 @@ function FinanceiroAvulsoResumo({ atendimento, atualizar }: { atendimento: Agend
       <AcaoModal variante="primario" type="submit" disabled={ocupado || !Number.isFinite(numero) || numero <= 0 || (!incerto && numero > (financeiro?.saldo ?? 0)) || !dataEfetivaValida(dia)}>{ocupado ? 'Registrando...' : incerto ? 'Confirmar resultado' : 'Confirmar pagamento'}</AcaoModal>
       <AcaoModal disabled={ocupado || incerto} onClick={() => setAberto(false)}>Voltar</AcaoModal>
     </form>}
-    {mensagem && <p role={erro ? 'alert' : 'status'}>{mensagem}</p>}
+    {mensagem && <p role={erro ? 'alert' : 'status'} style={{ color: erro ? '#991b1b' : '#166534', background: erro ? '#fef2f2' : '#f0fdf4', border: `1px solid ${erro ? '#fecaca' : '#bbf7d0'}`, borderRadius: 8, padding: '10px 12px', fontWeight: 600 }}>{mensagem}</p>}
   </div>
 }
 
