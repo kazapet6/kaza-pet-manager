@@ -15,7 +15,7 @@ type Base = { atendimentoId: string; statusEsperado: StatusAtendimento }
 export type AlterarStatusIntent = Base & (
   | { novoStatus: StatusOperacionalEditavel; acao?: never }
   | { acao: AcaoExcepcionalAtendimento; novoStatus?: never }
-  | { acao: 'pular_banho'; motivo: string; senha?: string; novoStatus?: never }
+  | { acao: 'pular_banho'; motivo: string; senha?: string; inicioOperacionalEsperado?: string; novoStatus?: never }
 )
 export type AlterarStatusResposta =
   | { status: 'atualizado'; atendimentoId: string; statusAnterior: StatusAtendimento; statusAtual: StatusAtendimento; reutilizado: boolean; renovacaoPendente?: boolean }
@@ -40,7 +40,8 @@ export function lerAlterarStatusIntent(valor: unknown): AlterarStatusIntent | nu
   if (valor.acao === 'pular_banho' && valor.novoStatus === undefined &&
       typeof valor.motivo === 'string' && valor.motivo.trim() && valor.motivo.length <= 500 &&
       (valor.senha === undefined || typeof valor.senha === 'string' && valor.senha.length <= 1024)) {
-    return { atendimentoId: valor.atendimentoId, statusEsperado: valor.statusEsperado, acao: valor.acao, motivo: valor.motivo.trim(), senha: valor.senha }
+    if (valor.inicioOperacionalEsperado !== undefined && (typeof valor.inicioOperacionalEsperado !== 'string' || !Number.isFinite(Date.parse(valor.inicioOperacionalEsperado)))) return null
+    return { atendimentoId: valor.atendimentoId, statusEsperado: valor.statusEsperado, acao: valor.acao, motivo: valor.motivo.trim(), senha: valor.senha, ...(typeof valor.inicioOperacionalEsperado === 'string' ? { inicioOperacionalEsperado: valor.inicioOperacionalEsperado } : {}) }
   }
   return null
 }
