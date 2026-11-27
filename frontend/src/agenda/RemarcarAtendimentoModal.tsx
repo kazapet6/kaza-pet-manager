@@ -12,6 +12,7 @@ import { carregarDadosDisponibilidadeComCliente } from '../motorDisponibilidade/
 import type { OpcaoDisponibilidade } from '../motorDisponibilidade/tipos.ts'
 import { remarcarAtendimento } from '../remarcacao/clienteSupabase.ts'
 import type { RemarcacaoIntent } from '../remarcacao/contrato.ts'
+import { mesmaSemanaContrato } from '../remarcacao/semanaContrato.ts'
 import type { AgendaDiariaAtendimento } from '../types/AgendaDiaria.ts'
 import { Calendario, Horarios } from './NovoAgendamentoModal.tsx'
 
@@ -38,6 +39,7 @@ export default function RemarcarAtendimentoModal({ atendimento, onClose, onRemar
   const removiveis = atendimento.servicos.filter(item => item.adicionalPacote && !item.contratado && item.origem === 'solicitado')
 
   async function consultar(novaData = data, novoCiclo = cicloId, novoFuncionarioId = funcionarioResponsavelId, extra = adicionalId, retirada = removerId) {
+    if (atendimento.vinculoContrato && !mesmaSemanaContrato(atendimento.dataOperacional, novaData)) return setErro('Remarque dentro da mesma semana. Para a semana seguinte, use Pular banho.')
     if (!novoFuncionarioId) return setErro('Selecione o funcionário responsável.')
     if (atendimento.modalidade === 'taxidog' && !novoCiclo) return setErro('Selecione um ciclo TaxiDog.')
     const consultaAtual = ++sequenciaConsulta.current
@@ -74,6 +76,7 @@ export default function RemarcarAtendimentoModal({ atendimento, onClose, onRemar
     finally { if (consultaAtual === sequenciaConsulta.current) setCarregando(false) }
   }
   function escolherData(valor: string) {
+    if (atendimento.vinculoContrato && !mesmaSemanaContrato(atendimento.dataOperacional, valor)) { setErro('Remarque dentro da mesma semana. Para a semana seguinte, use Pular banho.'); return }
     sequenciaConsulta.current += 1; chave.current = crypto.randomUUID(); setData(valor); setRevisao(false); setOpcoes([]); setOpcao(null); setVersoes(null); setCarregando(false)
     if (atendimento.modalidade === 'normal') void consultar(valor, '')
     else { setCicloId(''); setErro(null) }
@@ -88,6 +91,7 @@ export default function RemarcarAtendimentoModal({ atendimento, onClose, onRemar
   }
   async function confirmar() {
     if (!opcao || !versoes || emAndamento.current) return
+    if (atendimento.vinculoContrato && !mesmaSemanaContrato(atendimento.dataOperacional, data)) { setErro('Remarque dentro da mesma semana. Para a semana seguinte, use Pular banho.'); return }
     const valor = valorAdicional.trim() ? Number(valorAdicional.replace(',', '.')) : originalAdicional
     if (adicionalId && (originalAdicional === null || !valorValidoAtendimento(valor))) {
       setErro('Informe um valor válido para o adicional.')
@@ -121,6 +125,7 @@ export default function RemarcarAtendimentoModal({ atendimento, onClose, onRemar
   return <Modal aberto titulo={<span className="novo-agendamento-titulo"><strong>Remarcar atendimento</strong><small>{atendimento.petNome}</small></span>} onClose={carregando ? () => undefined : onClose} maxWidth="min(92vw, 1050px)" className="novo-agendamento-modal">
     <div className="remarcacao-modal">
       {!revisao ? <><div className="novo-data-horarios"><Calendario data={data} selecionar={escolherData} /><section className="novo-horarios-painel">
+{atendimento.vinculoContrato && <p>Remarcação permitida dentro da mesma semana (segunda a domingo). Para a próxima semana, use Pular banho.</p>}
 {atendimento.vinculoContrato && <label className="remarcacao-responsavel"><strong>Serviço adicional do pacote</strong>
   <select value={adicionalId} disabled={carregando} onChange={evento => {
     const extra = evento.target.value
