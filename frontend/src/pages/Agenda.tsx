@@ -127,11 +127,11 @@ export default function Agenda({ onVerContrato }: { onVerContrato: (contratoId: 
   async function pularBanho(atendimento: AgendaDiariaAtendimento, motivo: string, senha?: string) {
     if (!statusAtendimento(atendimento.status)) throw new Error('Status desconhecido.')
     const resposta = await alterarStatusAtendimento({
-      atendimentoId: atendimento.id, statusEsperado: atendimento.status, acao: 'pular_banho', motivo, senha,
+      atendimentoId: atendimento.id, statusEsperado: atendimento.status, acao: 'pular_banho', motivo, senha, inicioOperacionalEsperado: atendimento.inicio,
     })
     if (resposta.status !== 'atualizado') throw new Error(resposta.mensagem)
     await carregar(atendimento.dataOperacional)
-    setSucesso('Banho pulado. O crédito foi preservado.')
+    setSucesso('Banho pulado. O ciclo foi reprogramado automaticamente, sem gerar créditos livres.')
   }
 
   return <section className="agenda-diaria">
@@ -258,8 +258,8 @@ function PuloBanho({ executar }: { executar(motivo: string, senha?: string): Pro
   if (!aberto) return <Button variant="secondary" onClick={() => setAberto(true)}>Pular banho</Button>
   return <form className="agenda-confirmacao-excepcional" onSubmit={(evento) => { evento.preventDefault(); void confirmar() }}>
     <div>
-      <strong>Pular banho e preservar o crédito</strong>
-      <p>O horário será liberado. O crédito permanece no ciclo para reaproveitamento.</p>
+      <strong>Pular banho e reprogramar o ciclo</strong>
+      <p>O banho será transferido para o dia fixo da próxima semana, e os atendimentos seguintes serão recalculados. Nenhum crédito será liberado.</p>
       <label>Motivo do pulo <input value={motivo} maxLength={500} onChange={(evento) => setMotivo(evento.target.value)} required /></label>
       <label><input type="checkbox" checked={administrativo} onChange={(evento) => { setAdministrativo(evento.target.checked); setSenha('') }} /> Autorizar como administrador</label>
       {administrativo && <label>Senha administrativa <input type="password" autoComplete="current-password" value={senha} onChange={(evento) => setSenha(evento.target.value)} required /></label>}
